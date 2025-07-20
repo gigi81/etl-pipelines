@@ -1,0 +1,46 @@
+# Project name (ex. YourOrganization.Project)
+name: EtlPipelines
+
+# Authors of the project, this could be your name or your company Name
+authors: 'Luigi Grilli'
+
+# Product description
+product: 'ETL Pipelines C# .NET'
+
+# The github repository name where this project will be hosted (ex. yourUsername/repo)
+github: 'gigi81/etl-pipelines'
+
+# Copyright years (ex. 2021 or 2010-2021)
+copyrightYears: 2025
+
+# The project license's SPDX identifier or 'none' for no explicit license. Only OSI and FSF approved licenses supported, see https://spdx.org/licenses/
+license: MIT
+
+# Your test framework of choice (ex xunit or nunit)
+testFramework: xunit
+
+# Tags used to generate the .gitignore file, see https://www.toptal.com/developers/gitignore
+ignoreTags:
+- csharp
+- visualstudio
+- visualstudiocode
+- rider
+- node
+
+# Set to true if you want a BenchmarkDotnet project added to the solution
+benchmark: false
+
+# Your Azure DevOps url (ex. https://organization.visualstudio.com/DefaultCollection/project/_git/reponame)
+adourl: ''
+
+# Set to true if you plan to build the project in Azure DevOps Pipelines
+adobuild: false
+
+# Set to true if you plan to build the project in appveyor
+appveyor: false
+
+# Your Twitter account handle (ex. @john)
+twitter: ''
+
+# Set to true if you want a minimal or empty readme
+emptyReadme: true
