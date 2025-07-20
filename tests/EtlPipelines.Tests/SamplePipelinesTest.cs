@@ -10,9 +10,10 @@ public class SamplePipelinesTest
         var pipeline = EtlPipeline.CreateBuilder()
             .AddStage<DownloadStage>()
             .AddStage<TransformStage>()
-            .AddStage<UploadStage>();
+            .AddStage<UploadStage>()
+            .Build();
 
         //act
-        pipeline.Build().Run();
+        pipeline.Run();
     }
 }
