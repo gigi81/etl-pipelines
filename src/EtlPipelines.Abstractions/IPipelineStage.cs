@@ -1,6 +1,6 @@
 ﻿namespace EtlPipelines.Abstractions;
 
-public interface IPipelineStage
+public interface IPipelineStage : IInitializable
 {
-    
+    Task Execute();
 }

@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel;
 using EtlPipelines.Abstractions;
+using Microsoft.Extensions.Logging;
 
 namespace EtlPipelines.Tests.Stages;
 
@@ -9,5 +10,10 @@ public class DownloadStage : IPipelineStage
     public DownloadStage(ILogger<DownloadStage> logger)
     {
         
+    }
+
+    public Task Execute()
+    {
+        throw new NotImplementedException();
     }
 }

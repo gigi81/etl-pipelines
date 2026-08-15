@@ -2,9 +2,9 @@
 
 namespace EtlPipelines;
 
-public static class EtlPipeline
+public class EtlPipeline : IPipeline
 {
-    public static IPipelineBuilder CreateBuilder()
+    public Task Run()
     {
         throw new NotImplementedException();
     }

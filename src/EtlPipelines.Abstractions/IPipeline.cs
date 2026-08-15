@@ -2,5 +2,5 @@
 
 public interface IPipeline
 {
-    void Run();
+    Task Run();
 }
