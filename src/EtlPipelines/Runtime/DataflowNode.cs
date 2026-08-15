@@ -17,6 +17,17 @@ internal abstract class DataflowNode
     /// <summary>The node's name, for diagnostics.</summary>
     public abstract string Name { get; }
 
+    /// <summary>
+    /// Produces a fresh node with the same configuration.
+    /// </summary>
+    /// <remarks>
+    /// The builder assembles one set of nodes as a template, but a node accumulates per-run state —
+    /// row counters, its channel, its completion task. Each run therefore gets its own set, so counts
+    /// do not carry over between runs and two concurrent runs of the same pipeline cannot race on the
+    /// same fields.
+    /// </remarks>
+    public abstract DataflowNode CreateInstance();
+
     /// <summary>Rows this node consumed.</summary>
     public long RowsIn { get; protected set; }
 

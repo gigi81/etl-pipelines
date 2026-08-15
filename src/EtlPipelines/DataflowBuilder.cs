@@ -27,6 +27,15 @@ internal sealed class DataflowBuilder<TRow>(EtlPipelineBuilder owner, List<Dataf
     {
     }
 
+    public IDataflowBuilder<TOut> Through<TTransform, TOut>()
+        where TTransform : class, IDataTransform<TRow, TOut> =>
+        Append<TOut>(
+            typeof(TTransform).Name,
+            services => ActivatorUtilities.CreateInstance<TTransform>(services),
+            // Known statically here, unlike the container-resolved overload, so a stateful transform
+            // is caught by WithParallelism at build time instead of at the run.
+            stateful: typeof(TTransform).IsAssignableTo(typeof(IDrainable<TOut>)));
+
     public IDataflowBuilder<TOut> Through<TOut>() =>
         Through(EtlPipelineBuilder.Required<IDataTransform<TRow, TOut>>);
 
@@ -122,6 +131,9 @@ internal sealed class DataflowBuilder<TRow>(EtlPipelineBuilder owner, List<Dataf
         parallelizable.DegreeOfParallelism = degreeOfParallelism;
         return this;
     }
+
+    public IPipelineBuilder To<TSink>() where TSink : class, IDataSink<TRow> =>
+        To(services => (IDataSink<TRow>)ActivatorUtilities.CreateInstance<TSink>(services));
 
     public IPipelineBuilder To() => To(EtlPipelineBuilder.Required<IDataSink<TRow>>);
 

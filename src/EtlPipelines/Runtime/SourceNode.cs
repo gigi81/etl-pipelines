@@ -7,6 +7,8 @@ internal sealed class SourceNode<TRow>(string name, Func<IServiceProvider, IData
 {
     public override string Name { get; } = name;
 
+    public override DataflowNode CreateInstance() => new SourceNode<TRow>(Name, factory);
+
     public override object? Start(object? input, DataflowRunContext context)
     {
         var channel = CreateChannel<TRow>(context, singleWriter: true);

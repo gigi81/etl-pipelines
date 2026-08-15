@@ -82,7 +82,7 @@ public class RowErrorPolicyTests
             .To(sink));
 
         var provider = services.BuildServiceProvider();
-        var result = await provider.GetRequiredService<IPipelineFactory>().Get("errors")
+        var result = await provider.GetRequiredEtlPipeline("errors")
             .RunAsync(CancellationToken.None);
 
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);

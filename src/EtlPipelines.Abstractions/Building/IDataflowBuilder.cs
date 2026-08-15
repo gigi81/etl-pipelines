@@ -11,6 +11,17 @@ namespace EtlPipelines.Abstractions.Building;
 /// <typeparam name="TRow">The row type currently flowing.</typeparam>
 public interface IDataflowBuilder<TRow>
 {
+    /// <summary>
+    /// Appends a transform the pipeline constructs and owns, built fresh for each run.
+    /// </summary>
+    /// <remarks>
+    /// Naming the concrete type here is the registration; constructor dependencies still come from
+    /// the container. Because the type is known statically, an <see cref="IDrainable{TOut}"/>
+    /// implementation is detected at build time, so <see cref="WithParallelism"/> can reject a
+    /// stateful transform immediately rather than at the run.
+    /// </remarks>
+    IDataflowBuilder<TOut> Through<TTransform, TOut>() where TTransform : class, IDataTransform<TRow, TOut>;
+
     /// <summary>Appends a transform resolved from the service provider.</summary>
     IDataflowBuilder<TOut> Through<TOut>();
 
@@ -80,6 +91,15 @@ public interface IDataflowBuilder<TRow>
     /// resolved from the container the concrete type is unknown until the run, so it throws there.
     /// </remarks>
     IDataflowBuilder<TRow> WithParallelism(int degreeOfParallelism);
+
+    /// <summary>
+    /// Terminates the dataflow with a sink the pipeline constructs and owns, built fresh per run.
+    /// </summary>
+    /// <remarks>
+    /// Only the sink type is named — the row type is already known here, so unlike
+    /// <c>From</c> and <c>Through</c> this needs no second type argument.
+    /// </remarks>
+    IPipelineBuilder To<TSink>() where TSink : class, IDataSink<TRow>;
 
     /// <summary>Terminates the dataflow with a sink resolved from the service provider.</summary>
     IPipelineBuilder To();

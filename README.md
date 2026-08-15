@@ -7,17 +7,38 @@ overlap rather than run one after another.
 
 ```csharp
 services.AddEtlPipeline("orders", builder => builder
-    .From<OrderRow>()               // resolves IDataSource<OrderRow>
+    .From<CsvSource, OrderRow>()
     .Where(o => o.Amount > 0)
-    .Through<OrderDto>()            // resolves IDataTransform<OrderRow, OrderDto>
-    .To());                         // resolves IDataSink<OrderDto>
+    .Through<NormalizeOrders, OrderDto>()
+    .To<SqlSink>());
 
-var result = await factory.Get("orders").RunAsync(cancellationToken);
+var pipeline = provider.GetRequiredEtlPipeline("orders");
+var result = await pipeline.RunAsync(cancellationToken);
 // result.Value: RowsRead, RowsWritten, RowsFailed, Elapsed, per-stage detail
 ```
 
+That is the whole registration. Naming the port types in the pipeline declaration *is* how they are
+registered — there is no separate pass adding `IDataSource<OrderRow>` and friends to the container
+and then a second one referring back to them. Constructor dependencies are still injected normally.
+
 Each step re-types the builder, so a step whose input does not match the previous step's output is a
-compile error rather than a run-time surprise.
+compile error rather than a run-time surprise. `To<SqlSink>()` needs only one type argument because
+the row type is already known by then; `From` and `Through` need two, since C# cannot infer a row
+type from a port type.
+
+Ports named this way are **built fresh for each run**, which is what stateful ports need: a source
+tracks its read position and an aggregate accumulates state, so one shared instance would carry the
+previous run's leftovers into the next. When something else should own the lifetime — a port
+configured elsewhere, a shared pool — name only the row type and the container keeps ownership:
+
+```csharp
+services.AddScoped<IDataSource<OrderRow>>(sp => /* ... */);
+
+services.AddEtlPipeline("orders", builder => builder
+    .From<OrderRow>()               // resolved from the container
+    .Through<NormalizeOrders, OrderDto>()
+    .To<SqlSink>());
+```
 
 ## Layout
 

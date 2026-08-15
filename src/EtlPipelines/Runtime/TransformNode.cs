@@ -12,6 +12,9 @@ internal sealed class TransformNode<TIn, TOut>(
     /// <inheritdoc />
     public int DegreeOfParallelism { get; set; } = 1;
 
+    public override DataflowNode CreateInstance() =>
+        new TransformNode<TIn, TOut>(Name, factory) { DegreeOfParallelism = DegreeOfParallelism };
+
     public override object? Start(object? input, DataflowRunContext context)
     {
         var reader = (ChannelReader<PooledBatch<TIn>>)input!;

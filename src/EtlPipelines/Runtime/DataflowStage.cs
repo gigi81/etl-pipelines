@@ -11,7 +11,7 @@ namespace EtlPipelines.Runtime;
 /// being read while batch N is still being written. Sequencing them instead would leave every port
 /// idle waiting for the others, which is the single largest throughput cost an ETL engine can pay.
 /// </remarks>
-internal sealed class DataflowStage(string name, IReadOnlyList<DataflowNode> nodes) : IPipelineStage
+internal sealed class DataflowStage(string name, IReadOnlyList<DataflowNode> template) : IPipelineStage
 {
     public string Name { get; } = name;
 
@@ -19,6 +19,14 @@ internal sealed class DataflowStage(string name, IReadOnlyList<DataflowNode> nod
         PipelineContext context,
         CancellationToken cancellationToken)
     {
+        // The builder produced one set of nodes; this run gets its own copies. Reusing them would
+        // make row counts accumulate across runs and let concurrent runs corrupt each other's state.
+        var nodes = new DataflowNode[template.Count];
+        for (var i = 0; i < nodes.Length; i++)
+        {
+            nodes[i] = template[i].CreateInstance();
+        }
+
         var started = Stopwatch.GetTimestamp();
         var tracker = new RowErrorTracker(context.Options);
 

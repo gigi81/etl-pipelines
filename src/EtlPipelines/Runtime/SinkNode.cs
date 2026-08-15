@@ -7,6 +7,8 @@ internal sealed class SinkNode<TRow>(string name, Func<IServiceProvider, IDataSi
 {
     public override string Name { get; } = name;
 
+    public override DataflowNode CreateInstance() => new SinkNode<TRow>(Name, factory);
+
     public override object? Start(object? input, DataflowRunContext context)
     {
         var reader = (ChannelReader<PooledBatch<TRow>>)input!;

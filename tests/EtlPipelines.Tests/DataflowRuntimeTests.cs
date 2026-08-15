@@ -229,6 +229,64 @@ public class DataflowRuntimeTests
         result.Value.Stages.Select(s => s.Name).Should().Equal("download", "swap");
     }
 
+    [Fact]
+    public async Task Supports_concurrent_runs_of_the_same_pipeline()
+    {
+        // Nodes hold per-run state — row counters, channels, completion tasks. If a run reused the
+        // node objects the builder produced, eight runs at once would trample each other's counts.
+        var pipeline = EtlPipeline.CreateBuilder("concurrent")
+            .WithOptions(o => o.BatchSize = 16)
+            .From<FixedSource, int>()
+            .Select(x => x * 2)
+            .To<NullSink>()
+            .Build();
+
+        var runs = await Task.WhenAll(
+            Enumerable.Range(0, 8).Select(_ => pipeline.RunAsync(CancellationToken.None)));
+
+        runs.Should().OnlyContain(r => !r.IsError);
+        runs.Should().OnlyContain(
+            r => r.Value.RowsRead == FixedSource.Total && r.Value.RowsWritten == FixedSource.Total,
+            "each run must report its own row counts, not a total shared with its siblings");
+    }
+
+    private sealed class FixedSource : IDataSource<int>
+    {
+        public const int Total = 500;
+
+        private int _position;
+
+        public ValueTask<ErrorOr<int>> ReadAsync(Memory<int> buffer, CancellationToken cancellationToken)
+        {
+            var count = Math.Min(buffer.Length, Total - _position);
+            if (count <= 0)
+            {
+                return ValueTask.FromResult<ErrorOr<int>>(0);
+            }
+
+            var span = buffer.Span;
+            for (var i = 0; i < count; i++)
+            {
+                span[i] = _position + i;
+            }
+
+            _position += count;
+            return ValueTask.FromResult<ErrorOr<int>>(count);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class NullSink : IDataSink<int>
+    {
+        public ValueTask<ErrorOr<int>> WriteAsync(
+            ReadOnlyMemory<int> batch,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<ErrorOr<int>>(batch.Length);
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class TimestampedSource(int rows, Action onRead) : IDataSource<int>
     {
         private int _position;

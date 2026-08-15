@@ -19,10 +19,18 @@ public sealed record OrderDto(int Id, string Customer, decimal AmountInCents);
 [Description("Downloads orders from the upstream system")]
 public sealed class DownloadStage(ILogger<DownloadStage> logger) : IDataSource<OrderRow>, IAsyncInitializable
 {
+    /// <summary>Stands in for whatever the upstream system would return.</summary>
+    public static readonly OrderRow[] SampleOrders =
+    [
+        new(1, "acme", 10.00m),
+        new(2, "globex", 25.50m),
+        new(3, "initech", 3.99m),
+    ];
+
     private int _position;
 
-    /// <summary>Rows this source will hand out. Set by tests.</summary>
-    public IReadOnlyList<OrderRow> Rows { get; init; } = [];
+    /// <summary>Rows this source will hand out. Defaults to <see cref="SampleOrders"/>.</summary>
+    public IReadOnlyList<OrderRow> Rows { get; init; } = SampleOrders;
 
     public ValueTask InitializeAsync(CancellationToken cancellationToken)
     {

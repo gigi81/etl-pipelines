@@ -29,14 +29,32 @@ public interface IPipelineBuilder
         Func<PipelineContext, CancellationToken, ValueTask<ErrorOr<Success>>> execute);
 
     /// <summary>
-    /// Begins a typed dataflow whose source is resolved from the service provider.
+    /// Begins a typed dataflow from a source the pipeline constructs and owns.
     /// </summary>
     /// <remarks>
-    /// Only the row type is named. Spelling the source's concrete type as well would mean writing
-    /// <c>From&lt;CsvSource, Order&gt;()</c> at every call site, because C# has no partial generic
-    /// inference — naming just the row type keeps the meaningful half and lets the terminating
-    /// <see cref="IDataflowBuilder{TRow}.To()"/> infer completely.
+    /// <para>
+    /// This is the usual form. Naming the concrete type here <i>is</i> the registration — there is no
+    /// separate <c>services.AddSingleton&lt;IDataSource&lt;Order&gt;, CsvSource&gt;()</c> to write and
+    /// keep in step. Constructor dependencies are still injected from the container.
+    /// </para>
+    /// <para>
+    /// The source is built fresh for each run, which is what a stateful port needs: a source tracks
+    /// its read position and an aggregate accumulates state, so sharing one across runs would carry
+    /// the previous run's leftovers into the next. Use <see cref="From{TRow}()"/> instead when the
+    /// container should own the lifetime.
+    /// </para>
+    /// <para>
+    /// Both type arguments are required because C# has no partial generic inference: <c>TRow</c>
+    /// cannot be deduced from <c>TSource</c>. The terminating <see cref="IDataflowBuilder{TRow}.To{TSink}()"/>
+    /// needs only one, since the row type is already known by then.
+    /// </para>
     /// </remarks>
+    IDataflowBuilder<TRow> From<TSource, TRow>() where TSource : class, IDataSource<TRow>;
+
+    /// <summary>
+    /// Begins a typed dataflow whose source is resolved from the service provider, for when the
+    /// container already owns the port and its lifetime.
+    /// </summary>
     IDataflowBuilder<TRow> From<TRow>();
 
     /// <summary>Begins a typed dataflow from a keyed service, for when two sources share a row type.</summary>

@@ -89,8 +89,14 @@ public sealed class EtlPipelineBuilder : IPipelineBuilder
     }
 
     /// <inheritdoc />
+    public IDataflowBuilder<TRow> From<TSource, TRow>() where TSource : class, IDataSource<TRow> =>
+        // Constructed per run rather than registered as a service: a source carries read position,
+        // so one shared instance would resume mid-stream on the second run.
+        From(services => ActivatorUtilities.CreateInstance<TSource>(services));
+
+    /// <inheritdoc />
     public IDataflowBuilder<TRow> From<TRow>() =>
-        From<TRow>(services => Required<IDataSource<TRow>>(services));
+        From(Required<IDataSource<TRow>>);
 
     /// <inheritdoc />
     public IDataflowBuilder<TRow> From<TRow>(object serviceKey)

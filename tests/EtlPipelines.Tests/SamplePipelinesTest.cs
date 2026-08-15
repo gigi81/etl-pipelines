@@ -11,12 +11,7 @@ namespace EtlPipelines.Tests;
 /// </summary>
 public class SamplePipelinesTest
 {
-    private static readonly OrderRow[] Orders =
-    [
-        new(1, "acme", 10.00m),
-        new(2, "globex", 25.50m),
-        new(3, "initech", 3.99m),
-    ];
+    private static readonly OrderRow[] Orders = DownloadStage.SampleOrders;
 
     [Fact]
     public async Task Runs_a_source_transform_sink_dataflow()
@@ -45,32 +40,97 @@ public class SamplePipelinesTest
     }
 
     [Fact]
-    public async Task Resolves_ports_from_the_container()
+    public async Task Declares_the_whole_pipeline_in_one_call()
     {
         var services = new ServiceCollection();
         services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
-        services.AddSingleton<IDataSource<OrderRow>>(sp =>
-            new DownloadStage(sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<DownloadStage>>())
-            {
-                Rows = Orders,
-            });
-        services.AddSingleton<IDataTransform<OrderRow, OrderDto>, TransformStage>();
-        services.AddSingleton<IDataSink<OrderDto>, UploadStage>();
 
-        // Only the row types are named; To() infers completely.
+        // Naming the port types here is the registration. There is no second pass registering
+        // IDataSource<OrderRow> and friends and then a third referring back to them by row type —
+        // the pipeline declaration is the single place the composition lives.
         services.AddEtlPipeline("orders", builder => builder
-            .From<OrderRow>()
-            .Through<OrderDto>()
-            .To());
+            .From<DownloadStage, OrderRow>()
+            .Through<TransformStage, OrderDto>()
+            .To<UploadStage>());
 
         var provider = services.BuildServiceProvider();
-        var pipeline = provider.GetRequiredService<IPipelineFactory>().Get("orders");
+        var pipeline = provider.GetRequiredEtlPipeline("orders");
 
         var result = await pipeline.RunAsync(CancellationToken.None);
 
-        result.IsError.Should().BeFalse();
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
+        result.Value.RowsRead.Should().Be(3);
         result.Value.RowsWritten.Should().Be(3);
         result.Value.Stages.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Injects_constructor_dependencies_into_ports_it_constructs()
+    {
+        // The ports are never registered, but DownloadStage and UploadStage both take an
+        // ILogger<T> — resolved from the container like any other constructor dependency.
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
+        services.AddEtlPipeline("orders", builder => builder
+            .From<DownloadStage, OrderRow>()
+            .Through<TransformStage, OrderDto>()
+            .To<UploadStage>());
+
+        var provider = services.BuildServiceProvider();
+
+        var act = async () => await provider.GetRequiredEtlPipeline("orders")
+            .RunAsync(CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task Builds_stateful_ports_fresh_for_every_run()
+    {
+        // A source tracks its read position. Were the pipeline to reuse one instance, the second run
+        // would resume past the end and read nothing — so each run gets its own.
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
+        services.AddEtlPipeline("orders", builder => builder
+            .From<DownloadStage, OrderRow>()
+            .Through<TransformStage, OrderDto>()
+            .To<UploadStage>());
+
+        var pipeline = services.BuildServiceProvider()
+            .GetRequiredEtlPipeline("orders");
+
+        var first = await pipeline.RunAsync(CancellationToken.None);
+        var second = await pipeline.RunAsync(CancellationToken.None);
+
+        first.Value.RowsWritten.Should().Be(3);
+        second.Value.RowsWritten.Should().Be(3, "the second run must not inherit the first run's position");
+    }
+
+    [Fact]
+    public async Task Still_resolves_ports_the_container_owns()
+    {
+        // The other half of the split: when something else already registers the port — a shared
+        // connection pool, a port configured elsewhere — name only the row type and the container
+        // keeps ownership of the lifetime.
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
+        services.AddScoped<IDataSource<OrderRow>>(sp =>
+            new DownloadStage(sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<DownloadStage>>())
+            {
+                Rows = Orders.Take(2).ToArray(),
+            });
+
+        services.AddEtlPipeline("orders", builder => builder
+            .From<OrderRow>()
+            .Through<TransformStage, OrderDto>()
+            .To<UploadStage>());
+
+        var provider = services.BuildServiceProvider();
+        var result = await provider.GetRequiredEtlPipeline("orders")
+            .RunAsync(CancellationToken.None);
+
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
+        result.Value.RowsWritten.Should().Be(2);
     }
 
     [Fact]
@@ -89,6 +149,37 @@ public class SamplePipelinesTest
 
         result.IsError.Should().BeTrue();
         result.FirstError.Code.Should().Be("order.negative_amount");
+    }
+
+    [Fact]
+    public void Says_so_plainly_when_no_pipelines_are_registered_at_all()
+    {
+        var provider = new ServiceCollection().BuildServiceProvider();
+
+        var act = () => provider.GetRequiredEtlPipeline("orders");
+
+        // Distinct from the wrong-name case below: forgetting AddEtlPipeline entirely is a different
+        // mistake, and the container's stock "no service for type IPipelineFactory" names neither.
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*No ETL pipelines are registered*")
+            .WithMessage("*AddEtlPipeline*");
+    }
+
+    [Fact]
+    public void Lists_the_known_names_when_asked_for_one_that_does_not_exist()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
+        services.AddEtlPipeline("orders", builder => builder
+            .From<DownloadStage, OrderRow>()
+            .Through<TransformStage, OrderDto>()
+            .To<UploadStage>());
+
+        var provider = services.BuildServiceProvider();
+
+        var act = () => provider.GetRequiredEtlPipeline("invoices");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*orders*");
     }
 
     [Fact]
