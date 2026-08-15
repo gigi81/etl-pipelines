@@ -1,4 +1,4 @@
-namespace EtlPipelines.Abstractions;
+namespace EtlPipelines.Abstractions.Execution;
 
 /// <summary>An ordered sequence of stages that can be run.</summary>
 public interface IPipeline

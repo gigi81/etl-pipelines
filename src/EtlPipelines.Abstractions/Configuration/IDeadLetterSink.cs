@@ -1,4 +1,4 @@
-namespace EtlPipelines.Abstractions;
+namespace EtlPipelines.Abstractions.Configuration;
 
 /// <summary>
 /// Receives rows rejected by the pipeline when <see cref="PipelineOptions.OnRowError"/> is

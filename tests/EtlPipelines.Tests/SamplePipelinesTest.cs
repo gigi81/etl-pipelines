@@ -1,6 +1,6 @@
-using FluentAssertions;
-using EtlPipelines.Abstractions;
+using EtlPipelines.Abstractions.Ports;
 using EtlPipelines.Tests.Stages;
+using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 

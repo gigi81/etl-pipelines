@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using EtlPipelines.Abstractions;
 
 namespace EtlPipelines;
 

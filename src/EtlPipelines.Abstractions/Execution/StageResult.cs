@@ -1,4 +1,6 @@
-namespace EtlPipelines.Abstractions;
+using EtlPipelines.Abstractions.Configuration;
+
+namespace EtlPipelines.Abstractions.Execution;
 
 /// <summary>What one stage did during a run.</summary>
 /// <param name="Name">The stage's name, for logs and metrics.</param>

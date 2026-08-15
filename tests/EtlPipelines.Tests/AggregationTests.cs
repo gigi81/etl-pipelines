@@ -1,4 +1,5 @@
-using EtlPipelines.Abstractions;
+using EtlPipelines.Abstractions.Execution;
+using EtlPipelines.Abstractions.Ports;
 using EtlPipelines.Tests.Fixtures;
 using FluentAssertions;
 

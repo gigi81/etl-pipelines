@@ -1,4 +1,4 @@
-namespace EtlPipelines.Abstractions;
+namespace EtlPipelines.Abstractions.Lifecycle;
 
 /// <summary>
 /// Opt-in capability: the runtime calls <see cref="CompleteAsync"/> exactly once after the last row

@@ -1,4 +1,6 @@
-namespace EtlPipelines.Abstractions;
+using EtlPipelines.Abstractions.Lifecycle;
+
+namespace EtlPipelines.Abstractions.Ports;
 
 /// <summary>
 /// Implemented by transforms that hold state across batches and must emit rows once input ends.

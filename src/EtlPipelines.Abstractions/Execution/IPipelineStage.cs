@@ -1,4 +1,6 @@
-namespace EtlPipelines.Abstractions;
+using EtlPipelines.Abstractions.Lifecycle;
+
+namespace EtlPipelines.Abstractions.Execution;
 
 /// <summary>
 /// One unit of work in a pipeline.

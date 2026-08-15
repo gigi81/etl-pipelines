@@ -1,4 +1,6 @@
-using EtlPipelines.Abstractions;
+using EtlPipelines.Abstractions.Configuration;
+using EtlPipelines.Abstractions.Lifecycle;
+using EtlPipelines.Abstractions.Ports;
 
 namespace EtlPipelines.Tests.Fixtures;
 

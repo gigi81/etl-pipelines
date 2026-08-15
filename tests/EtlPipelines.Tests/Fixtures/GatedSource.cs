@@ -1,4 +1,4 @@
-using EtlPipelines.Abstractions;
+using EtlPipelines.Abstractions.Ports;
 
 namespace EtlPipelines.Tests.Fixtures;
 

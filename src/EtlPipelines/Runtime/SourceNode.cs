@@ -1,5 +1,4 @@
 using System.Threading.Channels;
-using EtlPipelines.Abstractions;
 
 namespace EtlPipelines.Runtime;
 

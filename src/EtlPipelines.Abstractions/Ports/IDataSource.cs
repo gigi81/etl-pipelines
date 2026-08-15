@@ -1,4 +1,4 @@
-namespace EtlPipelines.Abstractions;
+namespace EtlPipelines.Abstractions.Ports;
 
 /// <summary>
 /// Produces rows into caller-supplied buffers. The extract side of an ETL pipeline.

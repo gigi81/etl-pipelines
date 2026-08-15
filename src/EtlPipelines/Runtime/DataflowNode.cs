@@ -1,5 +1,4 @@
 using System.Threading.Channels;
-using EtlPipelines.Abstractions;
 
 namespace EtlPipelines.Runtime;
 
@@ -29,6 +28,7 @@ internal abstract class DataflowNode
     /// a terminal node.
     /// </summary>
     /// <param name="input">The upstream reader, or <see langword="null"/> for a source.</param>
+    /// <param name="context">Shared state for the stage: options, error tracking and the abort token.</param>
     public abstract object? Start(object? input, DataflowRunContext context);
 
     /// <summary>Completes when this node has finished pumping.</summary>

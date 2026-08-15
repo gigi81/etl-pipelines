@@ -1,4 +1,6 @@
-namespace EtlPipelines.Abstractions;
+using EtlPipelines.Abstractions.Lifecycle;
+
+namespace EtlPipelines.Abstractions.Ports;
 
 /// <summary>
 /// Consumes batches of rows. The load side of an ETL pipeline.

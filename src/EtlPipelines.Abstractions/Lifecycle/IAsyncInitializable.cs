@@ -1,4 +1,7 @@
-namespace EtlPipelines.Abstractions;
+using EtlPipelines.Abstractions.Execution;
+using EtlPipelines.Abstractions.Ports;
+
+namespace EtlPipelines.Abstractions.Lifecycle;
 
 /// <summary>
 /// Opt-in capability: the runtime calls <see cref="InitializeAsync"/> once, before any rows flow.

@@ -1,4 +1,4 @@
-namespace EtlPipelines.Abstractions;
+namespace EtlPipelines.Abstractions.Execution;
 
 /// <summary>
 /// What a run did. Returned from <see cref="IPipeline.RunAsync"/> so a caller has something concrete

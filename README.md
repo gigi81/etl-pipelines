@@ -19,6 +19,22 @@ var result = await factory.Get("orders").RunAsync(cancellationToken);
 Each step re-types the builder, so a step whose input does not match the previous step's output is a
 compile error rather than a run-time surprise.
 
+## Layout
+
+`EtlPipelines.Abstractions` is grouped by concern, with each folder its own namespace:
+
+| Namespace | Contains |
+|---|---|
+| `.Ports` | `IDataSource`, `IDataSink`, `IDataTransform`, `TransformResult`, `IDrainable` |
+| `.Lifecycle` | `IAsyncInitializable`, `IAsyncCompletable` |
+| `.Execution` | `IPipeline`, `IPipelineStage`, `PipelineContext`, `PipelineResult`, `StageResult` |
+| `.Building` | `IPipelineBuilder`, `IDataflowBuilder` |
+| `.Configuration` | `PipelineOptions`, `RowErrorAction`, `IDeadLetterSink` |
+
+Implementing a source needs `.Ports` alone; a coarse job stage needs `.Execution`. Projects that
+touch most groups can collapse the noise with a `GlobalUsings.cs`, which is what the runtime package
+itself does.
+
 ## Three ports
 
 | Port | Contract |

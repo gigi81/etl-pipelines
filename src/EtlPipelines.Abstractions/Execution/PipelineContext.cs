@@ -1,4 +1,7 @@
-namespace EtlPipelines.Abstractions;
+using EtlPipelines.Abstractions.Configuration;
+using EtlPipelines.Abstractions.Ports;
+
+namespace EtlPipelines.Abstractions.Execution;
 
 /// <summary>
 /// Ambient state for one pipeline run, handed to each stage as it executes.
