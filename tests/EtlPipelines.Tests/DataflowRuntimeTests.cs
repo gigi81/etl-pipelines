@@ -85,7 +85,7 @@ public class DataflowRuntimeTests
                 o.BatchSize = 1;
                 o.ChannelCapacity = 1;
             })
-            .From<int>(source)
+            .From(source)
             .To(sink)
             .Build();
 

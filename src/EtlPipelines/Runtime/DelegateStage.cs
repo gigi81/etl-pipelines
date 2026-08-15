@@ -1,3 +1,4 @@
+using System.Diagnostics;
 
 namespace EtlPipelines.Runtime;
 
@@ -12,11 +13,11 @@ internal sealed class DelegateStage(
         PipelineContext context,
         CancellationToken cancellationToken)
     {
-        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        var started = Stopwatch.StartNew();
         var result = await execute(context, cancellationToken).ConfigureAwait(false);
 
         return result.IsError
             ? result.Errors
-            : new StageResult(Name, 0, 0, 0, System.Diagnostics.Stopwatch.GetElapsedTime(started));
+            : new StageResult(Name, 0, 0, 0, started.Elapsed);
     }
 }

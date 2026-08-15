@@ -19,7 +19,7 @@ public class SamplePipelinesTest
         var upload = new UploadStage(NullLogger<UploadStage>.Instance);
 
         var pipeline = EtlPipeline.CreateBuilder("orders")
-            .From<OrderRow>(new DownloadStage(NullLogger<DownloadStage>.Instance) { Rows = Orders })
+            .From(new DownloadStage(NullLogger<DownloadStage>.Instance) { Rows = Orders })
             .Through(new TransformStage())
             .To(upload)
             .Build();
@@ -137,7 +137,7 @@ public class SamplePipelinesTest
     public async Task Rejects_a_bad_row_and_fails_the_run_by_default()
     {
         var pipeline = EtlPipeline.CreateBuilder("orders")
-            .From<OrderRow>(new DownloadStage(NullLogger<DownloadStage>.Instance)
+            .From(new DownloadStage(NullLogger<DownloadStage>.Instance)
             {
                 Rows = [new OrderRow(1, "acme", -5m)],
             })
@@ -190,7 +190,7 @@ public class SamplePipelinesTest
             .To<UploadStage>());
 
         services.AddEtlPipeline("first-order-only", builder => builder
-            .From<OrderRow>(_ => new DownloadStage(NullLogger<DownloadStage>.Instance)
+            .From(_ => new DownloadStage(NullLogger<DownloadStage>.Instance)
             {
                 Rows = Orders.Take(1).ToArray(),
             })

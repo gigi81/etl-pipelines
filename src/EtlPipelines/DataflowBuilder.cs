@@ -34,7 +34,7 @@ internal sealed class DataflowBuilder<TRow>(EtlPipelineBuilder owner, List<Dataf
         var key = owner.NextKey("transform");
         owner.Services.AddKeyedScoped<IDataTransform<TRow, TOut>, TTransform>(key);
 
-        return Append<TOut>(
+        return Append(
             typeof(TTransform).Name,
             EtlPipelineBuilder.Keyed<IDataTransform<TRow, TOut>>(key),
             // Known statically here, unlike the container-resolved overload, so a stateful transform
@@ -43,7 +43,7 @@ internal sealed class DataflowBuilder<TRow>(EtlPipelineBuilder owner, List<Dataf
     }
 
     public IDataflowBuilder<TOut> Through<TOut>() =>
-        Append<TOut>(
+        Append(
             $"{typeof(TRow).Name}->{typeof(TOut).Name}",
             EtlPipelineBuilder.Required<IDataTransform<TRow, TOut>>,
             stateful: false);
@@ -183,7 +183,7 @@ internal sealed class DataflowBuilder<TRow>(EtlPipelineBuilder owner, List<Dataf
     {
         var key = owner.NextKey("transform");
         owner.Services.AddKeyedScoped(key, implementation);
-        return Append<TOut>(name, EtlPipelineBuilder.Keyed<IDataTransform<TRow, TOut>>(key), stateful);
+        return Append(name, EtlPipelineBuilder.Keyed<IDataTransform<TRow, TOut>>(key), stateful);
     }
 
     private DataflowBuilder<TOut> Append<TOut>(

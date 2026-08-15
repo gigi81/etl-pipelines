@@ -27,7 +27,7 @@ internal sealed class DataflowStage(string name, IReadOnlyList<DataflowNode> tem
             nodes[i] = template[i].CreateInstance();
         }
 
-        var started = Stopwatch.GetTimestamp();
+        var started = Stopwatch.StartNew();
         var tracker = new RowErrorTracker(context.Options);
 
         using var run = new DataflowRunContext(context, tracker, cancellationToken);
@@ -50,7 +50,7 @@ internal sealed class DataflowStage(string name, IReadOnlyList<DataflowNode> tem
             run.Fail(Error.Failure($"stage.{Name}.faulted", $"{ex.GetType().Name}: {ex.Message}"));
         }
 
-        var elapsed = Stopwatch.GetElapsedTime(started);
+        var elapsed = started.Elapsed;
 
         if (run.FirstError is { } error)
         {

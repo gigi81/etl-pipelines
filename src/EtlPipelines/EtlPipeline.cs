@@ -29,7 +29,7 @@ public sealed class EtlPipeline : IPipeline
     /// <inheritdoc />
     public async Task<ErrorOr<PipelineResult>> RunAsync(CancellationToken cancellationToken = default)
     {
-        var started = Stopwatch.GetTimestamp();
+        var started = Stopwatch.StartNew();
 
         using var activity = EtlDiagnostics.ActivitySource.StartActivity($"etl.pipeline {Name}");
 
@@ -57,6 +57,6 @@ public sealed class EtlPipeline : IPipeline
             results.Add(result.Value);
         }
 
-        return PipelineResult.FromStages(Name, results, Stopwatch.GetElapsedTime(started));
+        return PipelineResult.FromStages(Name, results, started.Elapsed);
     }
 }
