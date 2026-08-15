@@ -6,29 +6,22 @@ namespace EtlPipelines;
 /// <summary>Runs an ordered list of stages and reports what they did.</summary>
 public sealed class EtlPipeline : IPipeline
 {
-    private readonly IReadOnlyList<Func<IServiceProvider, IPipelineStage>> _stages;
+    private readonly PipelineBlueprint _blueprint;
     private readonly IServiceProvider _services;
-    private readonly PipelineOptions _options;
 
-    internal EtlPipeline(
-        string name,
-        IReadOnlyList<Func<IServiceProvider, IPipelineStage>> stages,
-        IServiceProvider services,
-        PipelineOptions options)
+    internal EtlPipeline(PipelineBlueprint blueprint, IServiceProvider services)
     {
-        Name = name;
-        _stages = stages;
+        _blueprint = blueprint;
         _services = services;
-        _options = options;
     }
 
     /// <inheritdoc />
-    public string Name { get; }
+    public string Name => _blueprint.Name;
 
     /// <summary>
     /// Starts a standalone pipeline with its own service container, for consoles and tests that are
     /// not already hosting one. Applications with a container should prefer
-    /// <see cref="ServiceCollectionExtensions.AddEtlPipeline"/> and inject <see cref="IPipelineFactory"/>.
+    /// <see cref="ServiceCollectionExtensions.AddEtlPipeline"/>.
     /// </summary>
     public static IPipelineBuilder CreateBuilder(string name = "default") =>
         new EtlPipelineBuilder(name, new ServiceCollection());
@@ -40,18 +33,19 @@ public sealed class EtlPipeline : IPipeline
 
         using var activity = EtlDiagnostics.ActivitySource.StartActivity($"etl.pipeline {Name}");
 
-        // Each run gets its own scope so stateful ports — an aggregate's accumulator, a sink's open
-        // transaction — start clean and are disposed together when the run ends.
+        // One scope per run, and every component is registered scoped, so each run resolves its own
+        // stages and ports and the scope disposes all of them together when the run ends. Two runs of
+        // the same pipeline — sequential or concurrent — therefore share nothing.
         await using var scope = _services.CreateAsyncScope();
-        var context = new PipelineContext(Name, scope.ServiceProvider, _options);
+        var context = new PipelineContext(Name, scope.ServiceProvider, _blueprint.Options);
 
         activity?.SetTag("etl.run_id", context.RunId);
 
-        var results = new List<StageResult>(_stages.Count);
+        var results = new List<StageResult>(_blueprint.Stages.Count);
 
-        foreach (var factory in _stages)
+        foreach (var resolve in _blueprint.Stages)
         {
-            var stage = factory(scope.ServiceProvider);
+            var stage = resolve(scope.ServiceProvider);
             var result = await stage.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
 
             if (result.IsError)

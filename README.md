@@ -21,6 +21,20 @@ That is the whole registration. Naming the port types in the pipeline declaratio
 registered — there is no separate pass adding `IDataSource<OrderRow>` and friends to the container
 and then a second one referring back to them. Constructor dependencies are still injected normally.
 
+Every component goes into the container as **scoped** and **keyed to the pipeline name**, and
+`RunAsync` creates one scope per run:
+
+- **Scoped** means each run resolves its own instances and the scope disposes them all when the run
+  ends. That is what stateful components need — a source tracks read position, an aggregate
+  accumulates — and it is why two runs, sequential or concurrent, share nothing.
+- **Keyed** means two pipelines can use the same component type without collision. An `orders` and an
+  `invoices` pipeline can each have their own `SqlSink` registered against `IDataSink<T>`, configured
+  differently, and neither overwrites the other.
+
+The run scope is the single owner: nothing else disposes a component, so there is no double disposal
+and no leak. One consequence worth knowing — above `WithParallelism(1)` all workers share the one
+instance the run resolved, so a parallel transform must be thread-safe.
+
 Each step re-types the builder, so a step whose input does not match the previous step's output is a
 compile error rather than a run-time surprise. `To<SqlSink>()` needs only one type argument because
 the row type is already known by then; `From` and `Through` need two, since C# cannot infer a row

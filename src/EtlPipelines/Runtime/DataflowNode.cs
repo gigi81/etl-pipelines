@@ -77,20 +77,6 @@ internal abstract class DataflowNode
         return Result.Success;
     }
 
-    /// <summary>Disposes a port, tolerating either disposal interface or neither.</summary>
-    protected static async ValueTask DisposeAsync(object? port)
-    {
-        switch (port)
-        {
-            case IAsyncDisposable asyncDisposable:
-                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
-                break;
-            case IDisposable disposable:
-                disposable.Dispose();
-                break;
-        }
-    }
-
     /// <summary>Converts an unexpected exception into the error that will fail the run.</summary>
     protected static Error ToError(string node, Exception exception) =>
         Error.Failure($"stage.{node}.faulted", $"{exception.GetType().Name}: {exception.Message}");

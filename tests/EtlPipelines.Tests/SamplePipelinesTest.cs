@@ -152,6 +152,99 @@ public class SamplePipelinesTest
     }
 
     [Fact]
+    public void Registers_every_named_component_as_scoped_and_keyed()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
+        services.AddEtlPipeline("orders", builder => builder
+            .From<DownloadStage, OrderRow>()
+            .Through<TransformStage, OrderDto>()
+            .To<UploadStage>());
+
+        var ports = services
+            .Where(d => d.ServiceType == typeof(IDataSource<OrderRow>)
+                     || d.ServiceType == typeof(IDataTransform<OrderRow, OrderDto>)
+                     || d.ServiceType == typeof(IDataSink<OrderDto>))
+            .ToArray();
+
+        ports.Should().HaveCount(3, "composing the pipeline is what registers its components");
+        ports.Should().OnlyContain(d => d.Lifetime == ServiceLifetime.Scoped,
+            "scoped is what gives each run its own instances from the scope the run creates");
+        ports.Should().OnlyContain(d => d.IsKeyedService,
+            "keying by pipeline stops two pipelines sharing a component type from colliding");
+        ports.Should().OnlyContain(d => d.ServiceKey!.ToString()!.StartsWith("orders["),
+            "the key carries the pipeline name it belongs to");
+    }
+
+    [Fact]
+    public async Task Keeps_two_pipelines_that_share_a_component_type_apart()
+    {
+        // Both register IDataSource<OrderRow> against the same type. Unkeyed, the second registration
+        // would win for both and the first pipeline would silently read the wrong data.
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
+
+        services.AddEtlPipeline("all-orders", builder => builder
+            .From<DownloadStage, OrderRow>()
+            .Through<TransformStage, OrderDto>()
+            .To<UploadStage>());
+
+        services.AddEtlPipeline("first-order-only", builder => builder
+            .From<OrderRow>(_ => new DownloadStage(NullLogger<DownloadStage>.Instance)
+            {
+                Rows = Orders.Take(1).ToArray(),
+            })
+            .Through<TransformStage, OrderDto>()
+            .To<UploadStage>());
+
+        var provider = services.BuildServiceProvider();
+
+        var all = await provider.GetRequiredEtlPipeline("all-orders").RunAsync(CancellationToken.None);
+        var one = await provider.GetRequiredEtlPipeline("first-order-only").RunAsync(CancellationToken.None);
+
+        all.Value.RowsWritten.Should().Be(3);
+        one.Value.RowsWritten.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Resolves_stages_from_the_scope_the_run_creates()
+    {
+        // A scoped dependency shared by two components must be the same object within one run and a
+        // different one on the next — which is only true if the run resolves from its own scope.
+        var services = new ServiceCollection();
+        services.AddScoped<RunMarker>();
+        services.AddEtlPipeline("markers", builder => builder
+            .AddStage("first", (ctx, _) =>
+            {
+                Observed.Add(ctx.Services.GetRequiredService<RunMarker>().Id);
+                return ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+            })
+            .AddStage("second", (ctx, _) =>
+            {
+                Observed.Add(ctx.Services.GetRequiredService<RunMarker>().Id);
+                return ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+            }));
+
+        var pipeline = services.BuildServiceProvider().GetRequiredEtlPipeline("markers");
+
+        (await pipeline.RunAsync(CancellationToken.None)).IsError.Should().BeFalse();
+        (await pipeline.RunAsync(CancellationToken.None)).IsError.Should().BeFalse();
+
+        Observed.Should().HaveCount(4);
+        Observed[0].Should().Be(Observed[1], "both stages of a run resolve from that run's one scope");
+        Observed[2].Should().Be(Observed[3]);
+        Observed[0].Should().NotBe(Observed[2], "and each run gets a fresh scope");
+    }
+
+    private static readonly List<Guid> Observed = [];
+
+    /// <summary>A scoped dependency whose identity reveals which scope resolved it.</summary>
+    private sealed class RunMarker
+    {
+        public Guid Id { get; } = Guid.NewGuid();
+    }
+
+    [Fact]
     public void Says_so_plainly_when_no_pipelines_are_registered_at_all()
     {
         var provider = new ServiceCollection().BuildServiceProvider();

@@ -20,21 +20,21 @@ internal sealed class TransformNode<TIn, TOut>(
         var reader = (ChannelReader<PooledBatch<TIn>>)input!;
         var degreeOfParallelism = DegreeOfParallelism;
         var channel = CreateChannel<TOut>(context, singleWriter: degreeOfParallelism == 1);
+        var transform = Create(context);
 
         if (degreeOfParallelism == 1)
         {
-            var transform = Create(context);
             Completion = Task.Run(() => RunAsync(transform, reader, channel.Writer, context), CancellationToken.None);
         }
         else
         {
-            // Each worker gets its own transform instance so a stateful implementation is not shared
-            // across threads by accident. Drainable transforms never reach here — the builder rejects
-            // that combination, because parallel workers would each drain a partial aggregate.
+            // The transform is a scoped service, so all workers share the one instance this run
+            // resolved — above a parallelism of one it must therefore be thread-safe. Stateful
+            // transforms never reach here: the builder rejects that combination outright, because
+            // each worker would otherwise emit its own partial result.
             var workers = new Task[degreeOfParallelism];
             for (var i = 0; i < workers.Length; i++)
             {
-                var transform = Create(context);
                 workers[i] = Task.Run(
                     () => RunAsync(transform, reader, channel.Writer, context, completeWriter: false),
                     CancellationToken.None);
@@ -146,7 +146,7 @@ internal sealed class TransformNode<TIn, TOut>(
                 output.TryComplete();
             }
 
-            await DisposeAsync(transform).ConfigureAwait(false);
+            // The transform is a scoped service; the run's scope disposes it.
         }
     }
 

@@ -1,26 +1,35 @@
 using EtlPipelines.Runtime;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace EtlPipelines;
 
 /// <summary>
-/// Builds a pipeline from an ordered list of stage descriptors.
+/// Builds a pipeline from an ordered list of stages, registering each component into the container
+/// as it goes.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Order is tracked here rather than inferred from container registration, because registering a
-/// type records no position — which is why composition and dependency registration are separate
-/// concerns in this design.
+/// type records no position. Everything else about a component's lifetime, though, is the
+/// container's job: each one is registered <b>scoped</b> and <b>keyed to this pipeline</b>, then
+/// resolved from the scope a run creates. Scoped gives per-run instances, which is what a stateful
+/// component needs — a source tracks read position, an aggregate accumulates. Keyed keeps two
+/// pipelines that use the same component type from overwriting each other's registration.
+/// </para>
+/// <para>
+/// Because registration happens during composition, the builder needs the
+/// <see cref="IServiceCollection"/> rather than a built provider.
+/// </para>
 /// </remarks>
 public sealed class EtlPipelineBuilder : IPipelineBuilder
 {
     private readonly List<Func<IServiceProvider, IPipelineStage>> _stages = [];
     private readonly IServiceCollection _services;
-    private readonly IServiceProvider? _provider;
     private readonly PipelineOptions _options = new();
     private readonly string _name;
+    private int _ordinal;
 
-    /// <summary>Creates a builder that owns its own container.</summary>
+    /// <summary>Creates a builder that registers its components into <paramref name="services"/>.</summary>
     public EtlPipelineBuilder(string name, IServiceCollection services)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -30,16 +39,11 @@ public sealed class EtlPipelineBuilder : IPipelineBuilder
         _services = services;
     }
 
-    /// <summary>Creates a builder that resolves ports from an existing container.</summary>
-    public EtlPipelineBuilder(string name, IServiceProvider provider)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentNullException.ThrowIfNull(provider);
+    /// <summary>The collection components are registered into.</summary>
+    internal IServiceCollection Services => _services;
 
-        _name = name;
-        _services = new ServiceCollection();
-        _provider = provider;
-    }
+    /// <summary>Issues the next unique key for a component of this pipeline.</summary>
+    internal EtlComponentKey NextKey(string role) => new(_name, _ordinal++, role);
 
     /// <inheritdoc />
     public IPipelineBuilder WithOptions(Action<PipelineOptions> configure)
@@ -53,15 +57,12 @@ public sealed class EtlPipelineBuilder : IPipelineBuilder
     /// <inheritdoc />
     public IPipelineBuilder AddStage<TStage>(string? name = null) where TStage : class, IPipelineStage
     {
-        _services.TryAddTransient<TStage>();
+        var key = NextKey("stage");
+        _services.AddKeyedScoped<TStage>(key);
 
         _stages.Add(services =>
         {
-            // Resolve when registered so constructor injection and scoping apply; otherwise build it
-            // directly, which keeps a stage usable without having to register it first.
-            var stage = services.GetService(typeof(TStage)) as IPipelineStage
-                ?? ActivatorUtilities.CreateInstance<TStage>(services);
-
+            var stage = services.GetRequiredKeyedService<TStage>(key);
             return name is null ? stage : new RenamedStage(name, stage);
         });
 
@@ -72,7 +73,11 @@ public sealed class EtlPipelineBuilder : IPipelineBuilder
     public IPipelineBuilder AddStage(IPipelineStage stage)
     {
         ArgumentNullException.ThrowIfNull(stage);
-        _stages.Add(_ => stage);
+
+        var key = NextKey("stage");
+        _services.AddKeyedScoped<IPipelineStage>(key, (_, _) => stage);
+        _stages.Add(services => services.GetRequiredKeyedService<IPipelineStage>(key));
+
         return this;
     }
 
@@ -84,43 +89,57 @@ public sealed class EtlPipelineBuilder : IPipelineBuilder
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(execute);
 
-        _stages.Add(_ => new DelegateStage(name, execute));
+        var key = NextKey("stage");
+        _services.AddKeyedScoped<IPipelineStage>(key, (_, _) => new DelegateStage(name, execute));
+        _stages.Add(services => services.GetRequiredKeyedService<IPipelineStage>(key));
+
         return this;
     }
 
     /// <inheritdoc />
-    public IDataflowBuilder<TRow> From<TSource, TRow>() where TSource : class, IDataSource<TRow> =>
-        // Constructed per run rather than registered as a service: a source carries read position,
-        // so one shared instance would resume mid-stream on the second run.
-        From(services => ActivatorUtilities.CreateInstance<TSource>(services));
+    public IDataflowBuilder<TRow> From<TSource, TRow>() where TSource : class, IDataSource<TRow>
+    {
+        var key = NextKey("source");
+        _services.AddKeyedScoped<IDataSource<TRow>, TSource>(key);
+        return StartDataflow(typeof(TSource).Name, Keyed<IDataSource<TRow>>(key));
+    }
 
     /// <inheritdoc />
     public IDataflowBuilder<TRow> From<TRow>() =>
-        From(Required<IDataSource<TRow>>);
+        StartDataflow(typeof(TRow).Name, Required<IDataSource<TRow>>);
 
     /// <inheritdoc />
     public IDataflowBuilder<TRow> From<TRow>(object serviceKey)
     {
         ArgumentNullException.ThrowIfNull(serviceKey);
-        return From<TRow>(services => RequiredKeyed<IDataSource<TRow>>(services, serviceKey));
+        return StartDataflow(typeof(TRow).Name, Keyed<IDataSource<TRow>>(serviceKey));
     }
 
     /// <inheritdoc />
     public IDataflowBuilder<TRow> From<TRow>(IDataSource<TRow> source)
     {
         ArgumentNullException.ThrowIfNull(source);
-        return From<TRow>(_ => source);
+
+        var key = NextKey("source");
+        _services.AddKeyedScoped<IDataSource<TRow>>(key, (_, _) => source);
+        return StartDataflow(source.GetType().Name, Keyed<IDataSource<TRow>>(key));
     }
 
     /// <inheritdoc />
     public IDataflowBuilder<TRow> From<TRow>(Func<IServiceProvider, IDataSource<TRow>> factory)
     {
         ArgumentNullException.ThrowIfNull(factory);
-        return new DataflowBuilder<TRow>(this, [new SourceNode<TRow>(typeof(TRow).Name, factory)]);
+
+        var key = NextKey("source");
+        _services.AddKeyedScoped<IDataSource<TRow>>(key, (services, _) => factory(services));
+        return StartDataflow(typeof(TRow).Name, Keyed<IDataSource<TRow>>(key));
     }
 
     /// <inheritdoc />
-    public IPipeline Build()
+    public IPipeline Build() => new EtlPipeline(CreateBlueprint(), _services.BuildServiceProvider());
+
+    /// <summary>Captures the composed pipeline so a provider built later can run it.</summary>
+    internal PipelineBlueprint CreateBlueprint()
     {
         _options.Validate();
 
@@ -130,8 +149,7 @@ public sealed class EtlPipelineBuilder : IPipelineBuilder
                 $"Pipeline '{_name}' has no stages. Add one with AddStage, or a dataflow with From(...).To(...).");
         }
 
-        var provider = _provider ?? _services.BuildServiceProvider();
-        return new EtlPipeline(_name, _stages, provider, _options);
+        return new PipelineBlueprint(_name, _stages.ToArray(), _options);
     }
 
     internal void AddDataflow(IReadOnlyList<DataflowNode> nodes)
@@ -140,17 +158,26 @@ public sealed class EtlPipelineBuilder : IPipelineBuilder
         _stages.Add(_ => new DataflowStage(name, nodes));
     }
 
+    /// <summary>Resolves a component the container owns under a key.</summary>
+    internal static Func<IServiceProvider, T> Keyed<T>(object key) where T : class =>
+        services => services.GetRequiredKeyedService<T>(key);
+
+    /// <summary>Resolves a component the caller registered themselves, unkeyed.</summary>
     internal static T Required<T>(IServiceProvider services) where T : class =>
         services.GetService(typeof(T)) as T
         ?? throw new InvalidOperationException(
-            $"No {typeof(T).Name} is registered. Register one, or pass the instance directly to From/Through/To.");
+            $"No {typeof(T).Name} is registered. Register one, or name the concrete type in the " +
+            "pipeline definition so it is registered for you.");
 
-    private static T RequiredKeyed<T>(IServiceProvider services, object key) where T : class =>
-        services is IKeyedServiceProvider keyed && keyed.GetKeyedService(typeof(T), key) is T resolved
-            ? resolved
-            : throw new InvalidOperationException(
-                $"No {typeof(T).Name} is registered with key '{key}'.");
+    private DataflowBuilder<TRow> StartDataflow<TRow>(string name, Func<IServiceProvider, IDataSource<TRow>> factory) =>
+        new(this, [new SourceNode<TRow>(name, factory)]);
 }
+
+/// <summary>A composed pipeline, awaiting a service provider to run against.</summary>
+internal sealed record PipelineBlueprint(
+    string Name,
+    IReadOnlyList<Func<IServiceProvider, IPipelineStage>> Stages,
+    PipelineOptions Options);
 
 /// <summary>Gives a stage a caller-supplied name without the stage having to know about it.</summary>
 internal sealed class RenamedStage(string name, IPipelineStage inner) : IPipelineStage

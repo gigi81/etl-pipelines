@@ -18,12 +18,19 @@ public interface IPipelineFactory
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers a named pipeline. Resolve it later through <see cref="IPipelineFactory"/>.
+    /// Registers a named pipeline and every component it names. Resolve it later through
+    /// <see cref="IPipelineFactory"/> or <see cref="ServiceProviderExtensions.GetRequiredEtlPipeline"/>.
     /// </summary>
     /// <remarks>
-    /// The pipeline is composed lazily, on first resolution, so ports registered after this call are
-    /// still visible to it — registration order in the container stays irrelevant, which is the whole
-    /// reason stage order is tracked by the builder instead.
+    /// <para>
+    /// The builder action runs immediately, because composing the pipeline is what registers its
+    /// components. Each one goes in as <b>scoped</b> and <b>keyed to this pipeline's name</b>: scoped
+    /// so every run gets its own instances from the scope the run creates, keyed so two pipelines can
+    /// use the same component type without one overwriting the other's registration.
+    /// </para>
+    /// <para>
+    /// The pipeline object itself is assembled on first resolution, once a provider exists.
+    /// </para>
     /// </remarks>
     public static IServiceCollection AddEtlPipeline(
         this IServiceCollection services,
@@ -34,32 +41,29 @@ public static class ServiceCollectionExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(configure);
 
+        var builder = new EtlPipelineBuilder(name, services);
+        configure(builder);
+
         services.TryAddSingleton<IPipelineFactory, PipelineFactory>();
-        services.AddSingleton(new PipelineRegistration(name, configure));
+        services.AddSingleton(builder.CreateBlueprint());
 
         return services;
     }
 }
 
-/// <summary>A pipeline definition awaiting a service provider to be built against.</summary>
-internal sealed record PipelineRegistration(string Name, Action<IPipelineBuilder> Configure);
-
 internal sealed class PipelineFactory : IPipelineFactory
 {
-    private readonly Dictionary<string, Lazy<IPipeline>> _pipelines;
+    private readonly Dictionary<string, IPipeline> _pipelines;
 
-    public PipelineFactory(IEnumerable<PipelineRegistration> registrations, IServiceProvider services)
+    public PipelineFactory(IEnumerable<PipelineBlueprint> blueprints, IServiceProvider services)
     {
-        _pipelines = new Dictionary<string, Lazy<IPipeline>>(StringComparer.Ordinal);
+        _pipelines = new Dictionary<string, IPipeline>(StringComparer.Ordinal);
 
-        foreach (var registration in registrations)
+        foreach (var blueprint in blueprints)
         {
-            _pipelines[registration.Name] = new Lazy<IPipeline>(() =>
-            {
-                var builder = new EtlPipelineBuilder(registration.Name, services);
-                registration.Configure(builder);
-                return builder.Build();
-            });
+            // The pipeline is stateless — every run builds its own scope, its own nodes and its own
+            // components — so one instance per name is safe to share, including across concurrent runs.
+            _pipelines[blueprint.Name] = new EtlPipeline(blueprint, services);
         }
     }
 
@@ -70,7 +74,7 @@ internal sealed class PipelineFactory : IPipelineFactory
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
         return _pipelines.TryGetValue(name, out var pipeline)
-            ? pipeline.Value
+            ? pipeline
             : throw new InvalidOperationException(
                 $"No pipeline named '{name}' is registered. Known pipelines: " +
                 (_pipelines.Count == 0 ? "(none)" : string.Join(", ", _pipelines.Keys)));

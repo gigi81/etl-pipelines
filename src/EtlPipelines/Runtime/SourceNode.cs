@@ -68,8 +68,10 @@ internal sealed class SourceNode<TRow>(string name, Func<IServiceProvider, IData
         }
         finally
         {
+            // Not disposed here: the port is a scoped service, so the run's scope owns it and
+            // disposes it once the whole pipeline finishes. Disposing here too would be a second
+            // disposal of someone else's object.
             output.TryComplete();
-            await DisposeAsync(source).ConfigureAwait(false);
         }
     }
 }

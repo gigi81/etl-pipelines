@@ -86,7 +86,7 @@ internal sealed class SinkNode<TRow>(string name, Func<IServiceProvider, IDataSi
                 }
             }
 
-            await DisposeAsync(sink).ConfigureAwait(false);
+            // The sink is a scoped service; the run's scope disposes it.
         }
     }
 }

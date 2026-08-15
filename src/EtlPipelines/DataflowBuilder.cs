@@ -5,12 +5,13 @@ using Microsoft.Extensions.DependencyInjection;
 namespace EtlPipelines;
 
 /// <summary>
-/// Accumulates the steps of a typed dataflow.
+/// Accumulates the steps of a typed dataflow, registering each port into the container as it goes.
 /// </summary>
 /// <remarks>
 /// Every chaining method returns a builder re-typed to the row type now flowing, so a step whose
-/// input does not match the previous step's output simply will not compile. The node list is shared
-/// and appended to as the chain grows; the terminating <c>To</c> hands it to the pipeline builder.
+/// input does not match the previous step's output simply will not compile. Ports are registered
+/// scoped and keyed to the pipeline, exactly as coarse stages are, so a run's scope owns and disposes
+/// every one of them.
 /// </remarks>
 internal sealed class DataflowBuilder<TRow>(EtlPipelineBuilder owner, List<DataflowNode> nodes)
     : IDataflowBuilder<TRow>
@@ -28,30 +29,38 @@ internal sealed class DataflowBuilder<TRow>(EtlPipelineBuilder owner, List<Dataf
     }
 
     public IDataflowBuilder<TOut> Through<TTransform, TOut>()
-        where TTransform : class, IDataTransform<TRow, TOut> =>
-        Append<TOut>(
+        where TTransform : class, IDataTransform<TRow, TOut>
+    {
+        var key = owner.NextKey("transform");
+        owner.Services.AddKeyedScoped<IDataTransform<TRow, TOut>, TTransform>(key);
+
+        return Append<TOut>(
             typeof(TTransform).Name,
-            services => ActivatorUtilities.CreateInstance<TTransform>(services),
+            EtlPipelineBuilder.Keyed<IDataTransform<TRow, TOut>>(key),
             // Known statically here, unlike the container-resolved overload, so a stateful transform
             // is caught by WithParallelism at build time instead of at the run.
             stateful: typeof(TTransform).IsAssignableTo(typeof(IDrainable<TOut>)));
+    }
 
     public IDataflowBuilder<TOut> Through<TOut>() =>
-        Through(EtlPipelineBuilder.Required<IDataTransform<TRow, TOut>>);
+        Append<TOut>(
+            $"{typeof(TRow).Name}->{typeof(TOut).Name}",
+            EtlPipelineBuilder.Required<IDataTransform<TRow, TOut>>,
+            stateful: false);
 
     public IDataflowBuilder<TOut> Through<TOut>(IDataTransform<TRow, TOut> transform)
     {
         ArgumentNullException.ThrowIfNull(transform);
-        return Append<TOut>(transform.GetType().Name, _ => transform, transform is IDrainable<TOut>);
+        return Register<TOut>(transform.GetType().Name, (_, _) => transform, transform is IDrainable<TOut>);
     }
 
     public IDataflowBuilder<TOut> Through<TOut>(Func<IServiceProvider, IDataTransform<TRow, TOut>> factory)
     {
         ArgumentNullException.ThrowIfNull(factory);
 
-        // The concrete type is unknown until the container resolves it, so a drainable transform
-        // here is caught at run time by TransformNode rather than now.
-        return Append<TOut>($"{typeof(TRow).Name}->{typeof(TOut).Name}", factory, stateful: false);
+        // The concrete type is unknown until the factory runs, so a drainable transform here is
+        // caught at run time by TransformNode rather than now.
+        return Register<TOut>($"{typeof(TRow).Name}->{typeof(TOut).Name}", (services, _) => factory(services), stateful: false);
     }
 
     public IDataflowBuilder<TOut> Select<TOut>(Func<TRow, TOut> map)
@@ -65,19 +74,19 @@ internal sealed class DataflowBuilder<TRow>(EtlPipelineBuilder owner, List<Dataf
     public IDataflowBuilder<TOut> TrySelect<TOut>(Func<TRow, ErrorOr<TOut>> map)
     {
         ArgumentNullException.ThrowIfNull(map);
-        return Append<TOut>("Select", _ => new SelectTransform<TRow, TOut>(map), stateful: false);
+        return Register<TOut>("Select", (_, _) => new SelectTransform<TRow, TOut>(map), stateful: false);
     }
 
     public IDataflowBuilder<TOut> SelectAsync<TOut>(Func<TRow, CancellationToken, ValueTask<ErrorOr<TOut>>> map)
     {
         ArgumentNullException.ThrowIfNull(map);
-        return Append<TOut>("SelectAsync", _ => new SelectAsyncTransform<TRow, TOut>(map), stateful: false);
+        return Register<TOut>("SelectAsync", (_, _) => new SelectAsyncTransform<TRow, TOut>(map), stateful: false);
     }
 
     public IDataflowBuilder<TRow> Where(Func<TRow, bool> predicate)
     {
         ArgumentNullException.ThrowIfNull(predicate);
-        return Append<TRow>("Where", _ => new WhereTransform<TRow>(predicate), stateful: false);
+        return Register<TRow>("Where", (_, _) => new WhereTransform<TRow>(predicate), stateful: false);
     }
 
     public IDataflowBuilder<TOut> SelectMany<TOut>(Func<TRow, IEnumerable<TOut>> expand)
@@ -86,7 +95,7 @@ internal sealed class DataflowBuilder<TRow>(EtlPipelineBuilder owner, List<Dataf
 
         // Expansion holds a half-drained enumerator between calls, so it is per-worker state even
         // though it is not an aggregate.
-        return Append<TOut>("SelectMany", _ => new ExpandTransform<TRow, TOut>(expand), stateful: true);
+        return Register<TOut>("SelectMany", (_, _) => new ExpandTransform<TRow, TOut>(expand), stateful: true);
     }
 
     public IDataflowBuilder<TOut> GroupBy<TKey, TState, TOut>(
@@ -102,9 +111,9 @@ internal sealed class DataflowBuilder<TRow>(EtlPipelineBuilder owner, List<Dataf
         ArgumentNullException.ThrowIfNull(accumulate);
         ArgumentNullException.ThrowIfNull(resultSelector);
 
-        return Append<TOut>(
+        return Register<TOut>(
             inputIsSortedByKey ? "GroupBy(sorted)" : "GroupBy",
-            _ => inputIsSortedByKey
+            (_, _) => inputIsSortedByKey
                 ? new DelegateSortedAggregate<TRow, TKey, TState, TOut>(keySelector, seed, accumulate, resultSelector)
                 : new DelegateHashAggregate<TRow, TKey, TState, TOut>(keySelector, seed, accumulate, resultSelector),
             stateful: true);
@@ -132,35 +141,49 @@ internal sealed class DataflowBuilder<TRow>(EtlPipelineBuilder owner, List<Dataf
         return this;
     }
 
-    public IPipelineBuilder To<TSink>() where TSink : class, IDataSink<TRow> =>
-        To(services => (IDataSink<TRow>)ActivatorUtilities.CreateInstance<TSink>(services));
+    public IPipelineBuilder To<TSink>() where TSink : class, IDataSink<TRow>
+    {
+        var key = owner.NextKey("sink");
+        owner.Services.AddKeyedScoped<IDataSink<TRow>, TSink>(key);
+        return Terminate(typeof(TSink).Name, EtlPipelineBuilder.Keyed<IDataSink<TRow>>(key));
+    }
 
-    public IPipelineBuilder To() => To(EtlPipelineBuilder.Required<IDataSink<TRow>>);
+    public IPipelineBuilder To() =>
+        Terminate(typeof(TRow).Name, EtlPipelineBuilder.Required<IDataSink<TRow>>);
 
     public IPipelineBuilder To(object serviceKey)
     {
         ArgumentNullException.ThrowIfNull(serviceKey);
-
-        return To(services => services is IKeyedServiceProvider keyed
-            && keyed.GetKeyedService(typeof(IDataSink<TRow>), serviceKey) is IDataSink<TRow> sink
-            ? sink
-            : throw new InvalidOperationException(
-                $"No IDataSink<{typeof(TRow).Name}> is registered with key '{serviceKey}'."));
+        return Terminate(typeof(TRow).Name, EtlPipelineBuilder.Keyed<IDataSink<TRow>>(serviceKey));
     }
 
     public IPipelineBuilder To(IDataSink<TRow> sink)
     {
         ArgumentNullException.ThrowIfNull(sink);
-        return To(_ => sink);
+
+        var key = owner.NextKey("sink");
+        owner.Services.AddKeyedScoped<IDataSink<TRow>>(key, (_, _) => sink);
+        return Terminate(sink.GetType().Name, EtlPipelineBuilder.Keyed<IDataSink<TRow>>(key));
     }
 
     public IPipelineBuilder To(Func<IServiceProvider, IDataSink<TRow>> factory)
     {
         ArgumentNullException.ThrowIfNull(factory);
 
-        nodes.Add(new SinkNode<TRow>(typeof(TRow).Name, factory));
-        owner.AddDataflow(nodes);
-        return owner;
+        var key = owner.NextKey("sink");
+        owner.Services.AddKeyedScoped<IDataSink<TRow>>(key, (services, _) => factory(services));
+        return Terminate(typeof(TRow).Name, EtlPipelineBuilder.Keyed<IDataSink<TRow>>(key));
+    }
+
+    /// <summary>Registers a transform built from a delegate, then appends it.</summary>
+    private DataflowBuilder<TOut> Register<TOut>(
+        string name,
+        Func<IServiceProvider, object?, IDataTransform<TRow, TOut>> implementation,
+        bool stateful)
+    {
+        var key = owner.NextKey("transform");
+        owner.Services.AddKeyedScoped(key, implementation);
+        return Append<TOut>(name, EtlPipelineBuilder.Keyed<IDataTransform<TRow, TOut>>(key), stateful);
     }
 
     private DataflowBuilder<TOut> Append<TOut>(
@@ -170,5 +193,12 @@ internal sealed class DataflowBuilder<TRow>(EtlPipelineBuilder owner, List<Dataf
     {
         nodes.Add(new TransformNode<TRow, TOut>(name, factory));
         return new DataflowBuilder<TOut>(owner, nodes) { _lastStepIsStateful = stateful };
+    }
+
+    private IPipelineBuilder Terminate(string name, Func<IServiceProvider, IDataSink<TRow>> factory)
+    {
+        nodes.Add(new SinkNode<TRow>(name, factory));
+        owner.AddDataflow(nodes);
+        return owner;
     }
 }
