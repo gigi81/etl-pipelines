@@ -3,14 +3,22 @@
     <AssemblyVersion>1.0.0</AssemblyVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
-  
+
   <PropertyGroup>
-    <Authors></Authors>
-    <Product></Product>
-	<PackageProjectUrl></PackageProjectUrl>
-    <RepositoryUrl></RepositoryUrl>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Authors>Luigi Grilli</Authors>
+    <Product>ETL Pipelines C# .NET</Product>
+    <PackageProjectUrl>https://github.com/gigi81/etl-pipelines</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/gigi81/etl-pipelines</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <RepositoryRoot>$(MSBuildThisFileDirectory)</RepositoryRoot>
-    <PackageLicenseExpression></PackageLicenseExpression>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Copyright>Copyright (c) 2025 Luigi Grilli</Copyright>
   </PropertyGroup>
 </Project>

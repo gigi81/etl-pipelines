@@ -1,0 +1,70 @@
+using System.Diagnostics;
+using EtlPipelines.Abstractions;
+
+namespace EtlPipelines.Runtime;
+
+/// <summary>
+/// A whole source → transforms → sink dataflow, presented to the executor as one stage.
+/// </summary>
+/// <remarks>
+/// This is where the typed builder's generics are erased. Inside, every node runs concurrently and
+/// exchanges batches over bounded channels, so extract, transform and load overlap: batch N+1 is
+/// being read while batch N is still being written. Sequencing them instead would leave every port
+/// idle waiting for the others, which is the single largest throughput cost an ETL engine can pay.
+/// </remarks>
+internal sealed class DataflowStage(string name, IReadOnlyList<DataflowNode> nodes) : IPipelineStage
+{
+    public string Name { get; } = name;
+
+    public async ValueTask<ErrorOr<StageResult>> ExecuteAsync(
+        PipelineContext context,
+        CancellationToken cancellationToken)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var tracker = new RowErrorTracker(context.Options);
+
+        using var run = new DataflowRunContext(context, tracker, cancellationToken);
+        using var activity = EtlDiagnostics.ActivitySource.StartActivity($"etl.stage {Name}");
+        activity?.SetTag("etl.pipeline", context.PipelineName);
+        activity?.SetTag("etl.run_id", context.RunId);
+
+        try
+        {
+            object? channel = null;
+            foreach (var node in nodes)
+            {
+                channel = node.Start(channel, run);
+            }
+
+            await Task.WhenAll(nodes.Select(n => n.Completion)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            run.Fail(Error.Failure($"stage.{Name}.faulted", $"{ex.GetType().Name}: {ex.Message}"));
+        }
+
+        var elapsed = Stopwatch.GetElapsedTime(started);
+
+        if (run.FirstError is { } error)
+        {
+            return error;
+        }
+
+        // Distinguish a caller cancellation from a clean finish: nodes swallow cancellation so the
+        // stage can report it once, coherently, instead of as a torn set of partial failures.
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Error.Failure($"stage.{Name}.cancelled", $"Stage '{Name}' was cancelled.");
+        }
+
+        var first = nodes[0];
+        var last = nodes[^1];
+        var result = new StageResult(Name, first.RowsIn, last.RowsOut, tracker.Failed, elapsed);
+
+        EtlDiagnostics.RecordStage(context.PipelineName, result);
+        activity?.SetTag("etl.rows_in", result.RowsIn);
+        activity?.SetTag("etl.rows_out", result.RowsOut);
+
+        return result;
+    }
+}
