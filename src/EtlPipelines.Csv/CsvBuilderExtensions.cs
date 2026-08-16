@@ -4,26 +4,17 @@ namespace EtlPipelines.Csv;
 
 /// <summary>Shorthand for putting a CSV file at either end of a dataflow.</summary>
 /// <remarks>
-/// Both helpers take the <see cref="IFileSystem"/> from the container when one is registered, so a
-/// test can register a <c>MockFileSystem</c> once and have every CSV port in the pipeline pick it up.
-/// With nothing registered they fall back to the real filesystem.
+/// Files are named as <see cref="IFileInfo"/> rather than as paths, because an
+/// <see cref="IFileInfo"/> already carries the filesystem it belongs to. That keeps the connector from
+/// ever having to construct one — it has no dependency on a concrete filesystem at all — and it means
+/// a test passes <c>mockFileSystem.FileInfo.New("orders.csv")</c> and everything downstream follows.
 /// </remarks>
 public static class CsvBuilderExtensions
 {
-    /// <summary>
-    /// Picks the filesystem: the one passed in, else one registered in the container, else the real
-    /// one. The explicit argument matters for pipelines built without a container.
-    /// </summary>
-    private static IFileSystem FileSystemFor(IServiceProvider services, IFileSystem? supplied) =>
-        supplied ?? services.GetService(typeof(IFileSystem)) as IFileSystem ?? new FileSystem();
-
     /// <summary>Begins a dataflow reading from a CSV file.</summary>
     /// <param name="builder">The pipeline being composed.</param>
-    /// <param name="path">Path to the file to read.</param>
+    /// <param name="file">The file to read.</param>
     /// <param name="options">Format settings.</param>
-    /// <param name="fileSystem">
-    /// Filesystem to read through. Omit to take one from the container, or the real one.
-    /// </param>
     /// <remarks>
     /// Registered through the factory overload rather than as an instance, so each run builds its own
     /// source. A shared instance would carry an open file handle and its read position from one run
@@ -31,38 +22,32 @@ public static class CsvBuilderExtensions
     /// </remarks>
     public static IDataflowBuilder<TRow> FromCsv<TRow>(
         this IPipelineBuilder builder,
-        string path,
-        CsvSourceOptions? options = null,
-        IFileSystem? fileSystem = null)
+        IFileInfo file,
+        CsvSourceOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(file);
 
         return builder.From(services => new CsvSource<TRow>(
-            path,
+            file,
             options,
             // Optional: rows that cannot be parsed are recoverable when a dead-letter sink is
             // registered, and merely counted when one is not.
-            services.GetService(typeof(IDeadLetterSink<string>)) as IDeadLetterSink<string>,
-            FileSystemFor(services, fileSystem)));
+            services.GetService(typeof(IDeadLetterSink<string>)) as IDeadLetterSink<string>));
     }
 
     /// <summary>Terminates a dataflow by writing to a CSV file.</summary>
     /// <param name="builder">The dataflow being composed.</param>
-    /// <param name="path">Destination path.</param>
+    /// <param name="file">The destination file.</param>
     /// <param name="options">Format settings, including whether to write atomically.</param>
-    /// <param name="fileSystem">
-    /// Filesystem to write through. Omit to take one from the container, or the real one.
-    /// </param>
     public static IPipelineBuilder ToCsv<TRow>(
         this IDataflowBuilder<TRow> builder,
-        string path,
-        CsvSinkOptions? options = null,
-        IFileSystem? fileSystem = null)
+        IFileInfo file,
+        CsvSinkOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(file);
 
-        return builder.To(services => new CsvSink<TRow>(path, options, FileSystemFor(services, fileSystem)));
+        return builder.To(_ => new CsvSink<TRow>(file, options));
     }
 }

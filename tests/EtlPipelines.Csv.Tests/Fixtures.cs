@@ -27,11 +27,7 @@ public sealed class TestFileSystem
     public IDirectoryInfo Root { get; }
 
     /// <summary>A file inside <see cref="Root"/>, which need not exist yet.</summary>
-    public IFileInfo File(string name) =>
-        FileSystem.FileInfo.New(FileSystem.Path.Combine(Root.FullName, name));
-
-    /// <summary>The full path of a file inside <see cref="Root"/>.</summary>
-    public string Path(string name) => FileSystem.Path.Combine(Root.FullName, name);
+    public IFileInfo File(string name) => Root.File(name);
 
     /// <summary>Every temporary file the sink has left behind, anywhere under the root.</summary>
     public IFileInfo[] TempFiles() =>

@@ -18,32 +18,30 @@ namespace EtlPipelines.Csv;
 /// <see cref="IAsyncDisposable"/>: disposal also runs on the failure path, where promoting a
 /// half-written file is precisely the wrong thing to do.
 /// </para>
+/// <para>
+/// The destination is an <see cref="IFileInfo"/> rather than a path, so the sink never has to be told
+/// which filesystem to use — the file already knows, through <see cref="IFileSystemInfo.FileSystem"/>.
+/// That is also what lets the whole sink run against an in-memory filesystem in a test.
+/// </para>
 /// </remarks>
 /// <typeparam name="TRow">The row type to write.</typeparam>
 public sealed class CsvSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsyncCompletable
 {
-    private readonly IFileSystem _fileSystem;
-    private readonly string? _targetPath;
+    private readonly IFileInfo? _target;
     private readonly CsvSinkOptions _options;
     private readonly bool _ownsWriter;
 
     private TextWriter? _writer;
     private CsvWriter? _csv;
-    private string? _writingTo;
 
-    /// <summary>Writes to the file at <paramref name="path"/>.</summary>
-    /// <param name="path">Destination path. Overwritten if it already exists.</param>
+    /// <summary>Writes to <paramref name="file"/>, overwriting it if it already exists.</summary>
+    /// <param name="file">Destination file. Its filesystem is the one the sink writes through.</param>
     /// <param name="options">Format settings, including whether to write atomically.</param>
-    /// <param name="fileSystem">
-    /// The filesystem to write through. Defaults to the real one; pass a <c>MockFileSystem</c> to
-    /// test against an in-memory filesystem instead.
-    /// </param>
-    public CsvSink(string path, CsvSinkOptions? options = null, IFileSystem? fileSystem = null)
+    public CsvSink(IFileInfo file, CsvSinkOptions? options = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(file);
 
-        _fileSystem = fileSystem ?? new FileSystem();
-        _targetPath = _fileSystem.Path.GetFullPath(path);
+        _target = file;
         _options = options ?? new CsvSinkOptions();
         _ownsWriter = true;
     }
@@ -55,23 +53,24 @@ public sealed class CsvSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsync
     /// <param name="options">Format settings.</param>
     /// <param name="leaveOpen">Set when the caller keeps ownership of the writer.</param>
     /// <remarks>
-    /// There is no path to rename here, so the atomic behaviour does not apply: rows reach the writer
+    /// There is no file to rename here, so the atomic behaviour does not apply: rows reach the writer
     /// as they are produced, and completion only flushes. A caller who needs all-or-nothing must
-    /// arrange it themselves, or use the path-based constructor.
+    /// arrange it themselves, or use the file-based constructor.
     /// </remarks>
     public CsvSink(TextWriter writer, CsvSinkOptions? options = null, bool leaveOpen = false)
     {
         ArgumentNullException.ThrowIfNull(writer);
 
-        // Nothing here touches the filesystem, but the field is non-nullable for the path-based flow.
-        _fileSystem = new FileSystem();
         _writer = writer;
         _options = options ?? new CsvSinkOptions();
         _ownsWriter = !leaveOpen;
     }
 
-    /// <summary>The path currently being written to — the temporary file while a run is in flight.</summary>
-    public string? WritingTo => _writingTo;
+    /// <summary>
+    /// The file currently being written — the temporary one while a run is in flight, and the target
+    /// once it has been promoted.
+    /// </summary>
+    public IFileInfo? WritingTo { get; private set; }
 
     /// <inheritdoc />
     public ValueTask InitializeAsync(CancellationToken cancellationToken)
@@ -81,21 +80,19 @@ public sealed class CsvSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsync
             return ValueTask.CompletedTask;
         }
 
-        if (_targetPath is not null)
+        if (_target is not null)
         {
-            // The temporary file must sit in the target's own directory: a rename is only atomic
-            // within a volume, and the system temp folder is often on a different one.
-            _writingTo = _options.WriteAtomically
-                ? $"{_targetPath}.{Guid.NewGuid():N}.tmp"
-                : _targetPath;
+            // The temporary file is a sibling of the target on purpose: a rename is only atomic within
+            // a volume, and the system temp directory is often on a different one.
+            WritingTo = _options.WriteAtomically
+                ? _target.Directory.File($"{Guid.NewGuid():N}.tmp")
+                : _target;
 
-            var file = _fileSystem.FileInfo.New(_writingTo);
+            // Reads better than pulling the directory name out of the path by hand, and Create is a
+            // no-op when the directory is already there.
+            WritingTo.Directory?.Create();
 
-            // Reads better than combining Path.GetDirectoryName with Directory.CreateDirectory, and
-            // Create is a no-op when the directory already exists.
-            file.Directory?.Create();
-
-            _writer = new StreamWriter(file.Create(), _options.Encoding);
+            _writer = new StreamWriter(WritingTo.Create(), _options.Encoding);
         }
 
         _csv = new CsvWriter(_writer!, _options.CreateConfiguration());
@@ -143,14 +140,14 @@ public sealed class CsvSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsync
 
         await _csv.FlushAsync().ConfigureAwait(false);
 
-        // Closed before the rename, not after: an open handle makes File.Move fail on Windows, and
+        // Closed before the rename, not after: an open handle makes the move fail on Windows, and
         // renaming a file that has not finished flushing would promote a partial one anywhere.
         await CloseAsync().ConfigureAwait(false);
 
-        if (_targetPath is not null && _options.WriteAtomically && _writingTo is not null)
+        if (_target is not null && _options.WriteAtomically && WritingTo is not null)
         {
-            _fileSystem.File.Move(_writingTo, _targetPath, overwrite: true);
-            _writingTo = _targetPath;
+            WritingTo.MoveTo(_target.FullName, overwrite: true);
+            WritingTo = _target;
         }
 
         return Result.Success;

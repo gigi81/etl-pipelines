@@ -124,9 +124,19 @@ core runtime takes no CsvHelper dependency, and it references only `EtlPipelines
 connector never depends on the execution engine.
 
 ```csharp
-builder.FromCsv<Order>("orders.csv")
+builder.FromCsv<Order>(fileSystem.FileInfo.New("orders.csv"))
        .Select(o => new OrderDto(o.Id, o.Customer, o.Amount * 100))
-       .ToCsv("out.csv");
+       .ToCsv(fileSystem.FileInfo.New("out.csv"));
+```
+
+Files are named as `IFileInfo` (`System.IO.Abstractions`), not as paths. An `IFileInfo` already
+carries the filesystem it belongs to, so the ports never have to be told which one to use and the
+package never constructs one — it depends on the abstraction package alone, not the wrappers. A test
+hands it `new MockFileSystem().FileInfo.New("orders.csv")` and the entire connector runs in memory:
+
+```csharp
+var fs = new MockFileSystem();
+builder.FromCsv<Order>(fs.FileInfo.New("in.csv")).ToCsv(fs.FileInfo.New("out.csv"));
 ```
 
 **The sink writes atomically.** Rows stream into a temporary file beside the target, which is renamed
@@ -155,23 +165,9 @@ mean the same thing wherever it is processed.
 Both option types also expose `HasHeaderRecord`, `Delimiter`, `Encoding`, a `Configure` escape hatch
 for the full `CsvConfiguration`, and `ConfigureContext` for registering class maps.
 
-**Every filesystem call goes through `IFileSystem`** (`System.IO.Abstractions`), so a pipeline that
-reads and writes files can be tested without touching a disk:
-
-```csharp
-var fs = new MockFileSystem();
-
-// per call site...
-builder.FromCsv<Order>("in.csv", fileSystem: fs).ToCsv("out.csv", fileSystem: fs);
-
-// ...or once, for every CSV port in the pipeline
-services.AddSingleton<IFileSystem>(fs);
-```
-
-The ports take the filesystem passed to them, else one registered in the container, else the real
-one — so production code needs no ceremony. Note that `MockFileSystem` is a reimplementation and can
-differ from a real disk at the edges (overwriting renames, nested directory creation), so a handful
-of tests deliberately run against the real filesystem to catch that.
+Note that `MockFileSystem` is a reimplementation and can differ from a real disk at the edges this
+connector leans on hardest — overwriting renames and nested directory creation — so a few tests
+deliberately run against the real filesystem so a divergence fails rather than surprises.
 
 ## Reading from a database
 

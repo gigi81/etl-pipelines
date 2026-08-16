@@ -1,3 +1,4 @@
+using System.IO.Abstractions;
 using EtlPipelines.Csv;
 using FluentAssertions;
 
@@ -8,25 +9,28 @@ namespace EtlPipelines.Csv.Tests;
 /// </summary>
 /// <remarks>
 /// Everything else in this suite runs on <c>MockFileSystem</c>, which is faster and needs no cleanup —
-/// but it is a reimplementation, and it can and does differ from the real thing at the edges that
-/// matter here: overwriting renames, and creating nested directories. These few tests exist so a
-/// divergence shows up as a failure rather than as a production surprise.
+/// but it is a reimplementation, and it can differ from the real thing at the edges that matter here:
+/// overwriting renames, and creating nested directories. These few tests exist so a divergence shows
+/// up as a failure rather than as a production surprise.
 /// </remarks>
 public sealed class CsvRealFileSystemTests : IDisposable
 {
-    private readonly string _directory = Directory.CreateTempSubdirectory("etl-csv-real-").FullName;
+    private readonly IFileSystem _fileSystem = new FileSystem();
+    private readonly IDirectoryInfo _root;
 
-    public void Dispose() => Directory.Delete(_directory, recursive: true);
+    public CsvRealFileSystemTests() =>
+        _root = _fileSystem.Directory.CreateTempSubdirectory("etl-csv-real-");
 
-    private string Path(string name) => System.IO.Path.Combine(_directory, name);
+    public void Dispose() => _root.Delete(recursive: true);
+
+    private IFileInfo File(string name) => _root.File(name);
 
     private sealed record Order(int Id, string Customer, decimal Amount);
 
     [Fact]
-    public async Task Round_trips_through_the_default_file_system()
+    public async Task Round_trips_through_the_real_file_system()
     {
-        // No IFileSystem passed anywhere: this exercises the production default.
-        var target = Path("orders.csv");
+        var target = File("orders.csv");
         Order[] orders = [new(1, "acme", 10.50m), new(2, "Globex, Inc. \"HQ\"", 25.75m)];
 
         var write = await EtlPipeline.CreateBuilder("write")
@@ -51,9 +55,9 @@ public sealed class CsvRealFileSystemTests : IDisposable
     [Fact]
     public async Task Renames_over_an_existing_file_on_the_real_disk()
     {
-        // The atomic promotion depends on File.Move(overwrite: true) actually replacing a file that
-        // is already there. Worth proving against the real filesystem, not only a simulated one.
-        var target = Path("twice.csv");
+        // The atomic promotion depends on a move actually replacing a file that is already there.
+        // Worth proving against a real filesystem, not only a simulated one.
+        var target = File("twice.csv");
 
         for (var run = 1; run <= 2; run++)
         {
@@ -68,15 +72,15 @@ public sealed class CsvRealFileSystemTests : IDisposable
             result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
         }
 
-        var lines = await File.ReadAllLinesAsync(target, CancellationToken.None);
+        var lines = await target.ReadAllLinesAsync(CancellationToken.None);
         lines.Should().HaveCount(11, "the second run replaced the first file wholesale");
-        Directory.GetFiles(_directory, "*.tmp").Should().BeEmpty();
+        _root.EnumerateFiles("*.tmp").Should().BeEmpty();
     }
 
     [Fact]
     public async Task Creates_nested_directories_on_the_real_disk()
     {
-        var target = Path(System.IO.Path.Combine("nested", "deeper", "out.csv"));
+        var target = _root.SubDirectory("nested", "deeper").File("out.csv");
 
         var result = await EtlPipeline.CreateBuilder("nested")
             .From(new ArraySource<Order>([new(1, "acme", 1m)]))
@@ -85,6 +89,8 @@ public sealed class CsvRealFileSystemTests : IDisposable
             .RunAsync(CancellationToken.None);
 
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-        File.Exists(target).Should().BeTrue();
+
+        target.Refresh();
+        target.Exists.Should().BeTrue();
     }
 }

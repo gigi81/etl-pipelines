@@ -20,7 +20,7 @@
       in-memory filesystem. Wrappers supplies the concrete FileSystem used by default; Extensions
       supplies the IFileInfo/IDirectoryInfo conveniences that keep the call sites readable.
     -->
-    <PackageReference Include="TestableIO.System.IO.Abstractions.Wrappers" />
+    <PackageReference Include="TestableIO.System.IO.Abstractions" />
     <PackageReference Include="TestableIO.System.IO.Abstractions.Extensions" />
   </ItemGroup>
 

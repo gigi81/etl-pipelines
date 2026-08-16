@@ -26,7 +26,7 @@ public sealed class CsvSinkAtomicityTests
         var result = await EtlPipeline.CreateBuilder("atomic")
             .WithOptions(o => o.BatchSize = 8)
             .From(new ArraySource<Row>(Rows(100)))
-            .ToCsv(_fs.Path("ok.csv"), fileSystem: _fs.FileSystem)
+            .ToCsv(_fs.File("ok.csv"))
             .Build()
             .RunAsync(CancellationToken.None);
 
@@ -47,7 +47,7 @@ public sealed class CsvSinkAtomicityTests
             .WithOptions(o => o.BatchSize = 8)
             .From(new ArraySource<Row>(Rows(400)))
             .Branch(
-                b1 => b1.ToCsv(_fs.Path("failed.csv"), fileSystem: _fs.FileSystem),
+                b1 => b1.ToCsv(_fs.File("failed.csv")),
                 b2 => b2.To(new FailingSink<Row>(failAfter: 40, delayPerBatch: TimeSpan.FromMilliseconds(10))))
             .Build()
             .RunAsync(CancellationToken.None);
@@ -76,7 +76,7 @@ public sealed class CsvSinkAtomicityTests
             .WithOptions(o => o.BatchSize = 8)
             .From(new ArraySource<Row>(Rows(400)))
             .Branch(
-                b1 => b1.ToCsv(_fs.Path("existing.csv"), fileSystem: _fs.FileSystem),
+                b1 => b1.ToCsv(_fs.File("existing.csv")),
                 b2 => b2.To(new FailingSink<Row>(failAfter: 40, delayPerBatch: TimeSpan.FromMilliseconds(10))))
             .Build()
             .RunAsync(CancellationToken.None);
@@ -92,10 +92,7 @@ public sealed class CsvSinkAtomicityTests
     {
         var result = await EtlPipeline.CreateBuilder("direct")
             .From(new ArraySource<Row>(Rows(10)))
-            .ToCsv(
-                _fs.Path("direct.csv"),
-                new CsvSinkOptions { WriteAtomically = false },
-                _fs.FileSystem)
+            .ToCsv(_fs.File("direct.csv"), new CsvSinkOptions { WriteAtomically = false })
             .Build()
             .RunAsync(CancellationToken.None);
 
@@ -107,16 +104,20 @@ public sealed class CsvSinkAtomicityTests
     [Fact]
     public async Task Creates_the_destination_directory()
     {
-        var target = _fs.FileSystem.Path.Combine(_fs.Root.FullName, "nested", "deeper", "out.csv");
+        // Reads as a path walk rather than string concatenation, and neither directory exists yet.
+        var target = _fs.Root.SubDirectory("nested", "deeper").File("out.csv");
 
         var result = await EtlPipeline.CreateBuilder("nested")
             .From(new ArraySource<Row>(Rows(3)))
-            .ToCsv(target, fileSystem: _fs.FileSystem)
+            .ToCsv(target)
             .Build()
             .RunAsync(CancellationToken.None);
 
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-        _fs.FileSystem.File.Exists(target).Should().BeTrue();
+
+        // IFileInfo caches Exists from when it was created, which was before the sink ran.
+        target.Refresh();
+        target.Exists.Should().BeTrue();
     }
 
     [Fact]

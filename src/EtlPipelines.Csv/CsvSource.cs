@@ -18,6 +18,11 @@ namespace EtlPipelines.Csv;
 /// here, because a batch built from it would hold N references to one object showing the last row
 /// read.
 /// </para>
+/// <para>
+/// The file is an <see cref="IFileInfo"/> rather than a path, so the source never has to be told which
+/// filesystem to use — the file already knows, through <see cref="IFileSystemInfo.FileSystem"/>. That
+/// is also what lets the whole source run against an in-memory filesystem in a test.
+/// </para>
 /// </remarks>
 /// <typeparam name="TRow">The row type to read into.</typeparam>
 public sealed class CsvSource<TRow> : IDataSource<TRow>, IAsyncInitializable
@@ -31,29 +36,21 @@ public sealed class CsvSource<TRow> : IDataSource<TRow>, IAsyncInitializable
     private CsvReader? _csv;
     private bool _exhausted;
 
-    /// <summary>Reads the CSV file at <paramref name="path"/>.</summary>
-    /// <param name="path">Path to the file to read.</param>
+    /// <summary>Reads <paramref name="file"/>.</summary>
+    /// <param name="file">The file to read. Its filesystem is the one the source reads through.</param>
     /// <param name="options">Format settings. Defaults are UTF-8, comma-delimited, invariant culture.</param>
     /// <param name="deadLetters">Receives the raw text of any row that could not be parsed.</param>
-    /// <param name="fileSystem">
-    /// The filesystem to read through. Defaults to the real one; pass a <c>MockFileSystem</c> to test
-    /// against an in-memory filesystem instead.
-    /// </param>
     public CsvSource(
-        string path,
+        IFileInfo file,
         CsvSourceOptions? options = null,
-        IDeadLetterSink<string>? deadLetters = null,
-        IFileSystem? fileSystem = null)
+        IDeadLetterSink<string>? deadLetters = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-
-        var files = fileSystem ?? new FileSystem();
+        ArgumentNullException.ThrowIfNull(file);
 
         _options = options ?? new CsvSourceOptions();
         _deadLetters = deadLetters;
         _ownsReader = true;
-        _open = _ => new ValueTask<TextReader>(
-            new StreamReader(files.FileInfo.New(path).OpenRead(), _options.Encoding));
+        _open = _ => new ValueTask<TextReader>(new StreamReader(file.OpenRead(), _options.Encoding));
     }
 
     /// <summary>Reads CSV from a reader opened when the run starts.</summary>
