@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
-using EtlPipelines.Csv;
+using EtlPipelines.Abstractions.Configuration;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Csv.Tests;
 
@@ -15,7 +16,7 @@ namespace EtlPipelines.Csv.Tests;
 /// </remarks>
 public sealed class CsvMalformedRowTests
 {
-    private readonly TestFileSystem _fs = new();
+    private readonly CsvTestHost _host = new();
 
     public sealed record Order(int Id, string Customer, decimal Amount);
 
@@ -31,7 +32,7 @@ public sealed class CsvMalformedRowTests
                 : $"{i},customer-{i},{i}.50");
         }
 
-        var file = _fs.File("bad.csv");
+        var file = _host.File("bad.csv");
         await file.WriteAllLinesAsync(lines, CancellationToken.None);
         return file;
     }
@@ -39,15 +40,15 @@ public sealed class CsvMalformedRowTests
     [Fact]
     public async Task Skips_bad_rows_and_keeps_the_good_ones()
     {
-        var path = await FileWithBadRows();
+        var file = await FileWithBadRows();
         var sink = new CollectingSink<Order>();
 
-        var result = await EtlPipeline.CreateBuilder("bad")
+        _host.AddPipeline("bad", b => b
             .WithOptions(o => o.BatchSize = 4)
-            .FromCsv<Order>(path)
-            .To(sink)
-            .Build()
-            .RunAsync(CancellationToken.None);
+            .FromCsv<Order>(file)
+            .To(sink));
+
+        var result = await _host.RunAsync("bad");
 
         result.IsError.Should().BeFalse("three bad rows must not cost the other seven");
         sink.Rows.Should().HaveCount(7);
@@ -55,20 +56,18 @@ public sealed class CsvMalformedRowTests
     }
 
     [Fact]
-    public async Task Hands_the_raw_text_of_a_bad_row_to_the_dead_letter_sink()
+    public async Task Takes_the_dead_letter_sink_from_the_container()
     {
-        var path = await FileWithBadRows();
+        // Nothing wires the dead-letter sink to the source explicitly: FromCsv looks for one in the
+        // container. Registering it is the whole of the configuration.
+        var file = await FileWithBadRows();
         var deadLetters = new RecordingDeadLetterSink<string>();
-        var source = new CsvSource<Order>(path, deadLetters: deadLetters);
-
         var sink = new CollectingSink<Order>();
-        await EtlPipeline.CreateBuilder("bad")
-            .From<Order>(_ => source)
-            .To(sink)
-            .Build()
-            .RunAsync(CancellationToken.None);
 
-        source.MalformedRows.Should().Be(3);
+        _host.Configure(s => s.AddSingleton<IDeadLetterSink<string>>(deadLetters))
+             .AddPipeline("bad", b => b.FromCsv<Order>(file).To(sink));
+
+        await _host.RunAsync("bad");
 
         // Raw text is what makes the row recoverable — the parsed shape is exactly what is missing.
         deadLetters.Entries.Should().HaveCount(3);
@@ -78,20 +77,31 @@ public sealed class CsvMalformedRowTests
     }
 
     [Fact]
+    public async Task Counts_skipped_rows_without_a_dead_letter_sink_registered()
+    {
+        var file = await FileWithBadRows();
+        var source = new CsvSource<Order>(file);
+
+        _host.AddPipeline("bad", b => b.From<Order>(_ => source).To(new CollectingSink<Order>()));
+
+        await _host.RunAsync("bad");
+
+        source.MalformedRows.Should().Be(3, "skipping is not the same as ignoring");
+    }
+
+    [Fact]
     public async Task Skipped_rows_do_not_reach_the_runs_failure_count()
     {
         // Pinning a known limitation rather than asserting desired behaviour. A transform rejecting a
         // row flows into RowsFailed and MaxRowErrors; IDataSource.ReadAsync returns only a count, so
         // a source has nowhere to report one. Closing the gap means giving the source port a
         // rejection channel — when that lands, this test should change.
-        var path = await FileWithBadRows();
-        var source = new CsvSource<Order>(path);
+        var file = await FileWithBadRows();
+        var source = new CsvSource<Order>(file);
 
-        var result = await EtlPipeline.CreateBuilder("bad")
-            .From<Order>(_ => source)
-            .To(new CollectingSink<Order>())
-            .Build()
-            .RunAsync(CancellationToken.None);
+        _host.AddPipeline("bad", b => b.From<Order>(_ => source).To(new CollectingSink<Order>()));
+
+        var result = await _host.RunAsync("bad");
 
         source.MalformedRows.Should().Be(3, "the source counts them itself");
         result.Value.RowsFailed.Should().Be(0, "but the source port cannot report them to the run");
@@ -100,13 +110,13 @@ public sealed class CsvMalformedRowTests
     [Fact]
     public async Task Fails_the_run_when_told_not_to_skip()
     {
-        var path = await FileWithBadRows();
+        var file = await FileWithBadRows();
 
-        var result = await EtlPipeline.CreateBuilder("strict")
-            .FromCsv<Order>(path, new CsvSourceOptions { SkipMalformedRows = false })
-            .To(new CollectingSink<Order>())
-            .Build()
-            .RunAsync(CancellationToken.None);
+        _host.AddPipeline("strict", b => b
+            .FromCsv<Order>(file, new CsvSourceOptions { SkipMalformedRows = false })
+            .To(new CollectingSink<Order>()));
+
+        var result = await _host.RunAsync("strict");
 
         result.IsError.Should().BeTrue("a file meant to be perfect should stop the run when it is not");
     }
@@ -114,8 +124,8 @@ public sealed class CsvMalformedRowTests
     [Fact]
     public async Task Reports_a_clear_error_when_read_before_initialization()
     {
-        var path = await FileWithBadRows();
-        var source = new CsvSource<Order>(path);
+        var file = await FileWithBadRows();
+        var source = new CsvSource<Order>(file);
 
         var read = await source.ReadAsync(new Order[1], CancellationToken.None);
 

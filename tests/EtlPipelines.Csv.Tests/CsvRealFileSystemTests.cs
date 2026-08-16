@@ -1,54 +1,42 @@
 using System.IO.Abstractions;
-using EtlPipelines.Csv;
 using FluentAssertions;
 
 namespace EtlPipelines.Csv.Tests;
 
 /// <summary>
-/// The same ports against the real disk.
+/// The same pipelines against the real disk.
 /// </summary>
 /// <remarks>
 /// Everything else in this suite runs on <c>MockFileSystem</c>, which is faster and needs no cleanup —
 /// but it is a reimplementation, and it can differ from the real thing at the edges that matter here:
 /// overwriting renames, and creating nested directories. These few tests exist so a divergence shows
-/// up as a failure rather than as a production surprise.
+/// up as a failure rather than as a production surprise. The only thing that changes is which
+/// <see cref="IFileSystem"/> the container is given.
 /// </remarks>
 public sealed class CsvRealFileSystemTests : IDisposable
 {
-    private readonly IFileSystem _fileSystem = new FileSystem();
-    private readonly IDirectoryInfo _root;
+    private readonly CsvTestHost _host = new(new FileSystem());
 
-    public CsvRealFileSystemTests() =>
-        _root = _fileSystem.Directory.CreateTempSubdirectory("etl-csv-real-");
-
-    public void Dispose() => _root.Delete(recursive: true);
-
-    private IFileInfo File(string name) => _root.File(name);
+    public void Dispose() => _host.Root.Delete(recursive: true);
 
     private sealed record Order(int Id, string Customer, decimal Amount);
 
     [Fact]
     public async Task Round_trips_through_the_real_file_system()
     {
-        var target = File("orders.csv");
+        var target = _host.File("orders.csv");
         Order[] orders = [new(1, "acme", 10.50m), new(2, "Globex, Inc. \"HQ\"", 25.75m)];
+        var readBack = new CollectingSink<Order>();
 
-        var write = await EtlPipeline.CreateBuilder("write")
-            .From(new ArraySource<Order>(orders))
-            .ToCsv(target)
-            .Build()
-            .RunAsync(CancellationToken.None);
+        _host.AddPipeline("write", b => b.From(new ArraySource<Order>(orders)).ToCsv(target))
+             .AddPipeline("read", b => b.FromCsv<Order>(target).To(readBack));
 
+        var write = await _host.RunAsync("write");
         write.IsError.Should().BeFalse(write.IsError ? write.FirstError.Description : null);
 
-        var readBack = new CollectingSink<Order>();
-        var read = await EtlPipeline.CreateBuilder("read")
-            .FromCsv<Order>(target)
-            .To(readBack)
-            .Build()
-            .RunAsync(CancellationToken.None);
-
+        var read = await _host.RunAsync("read");
         read.IsError.Should().BeFalse(read.IsError ? read.FirstError.Description : null);
+
         readBack.Rows.Should().Equal(orders);
     }
 
@@ -57,36 +45,36 @@ public sealed class CsvRealFileSystemTests : IDisposable
     {
         // The atomic promotion depends on a move actually replacing a file that is already there.
         // Worth proving against a real filesystem, not only a simulated one.
-        var target = File("twice.csv");
+        var target = _host.File("twice.csv");
 
-        for (var run = 1; run <= 2; run++)
-        {
-            var rows = Enumerable.Range(0, run * 5).Select(i => new Order(i, $"c{i}", i)).ToArray();
+        _host.AddPipeline("first", b => b
+                 .From(new ArraySource<Order>(Orders(5)))
+                 .ToCsv(target))
+             .AddPipeline("second", b => b
+                 .From(new ArraySource<Order>(Orders(10)))
+                 .ToCsv(target));
 
-            var result = await EtlPipeline.CreateBuilder($"run{run}")
-                .From(new ArraySource<Order>(rows))
-                .ToCsv(target)
-                .Build()
-                .RunAsync(CancellationToken.None);
-
-            result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-        }
+        (await _host.RunAsync("first")).IsError.Should().BeFalse();
+        (await _host.RunAsync("second")).IsError.Should().BeFalse();
 
         var lines = await target.ReadAllLinesAsync(CancellationToken.None);
         lines.Should().HaveCount(11, "the second run replaced the first file wholesale");
-        _root.EnumerateFiles("*.tmp").Should().BeEmpty();
+        _host.TempFiles().Should().BeEmpty();
+
+        static Order[] Orders(int count) =>
+            [.. Enumerable.Range(0, count).Select(i => new Order(i, $"c{i}", i))];
     }
 
     [Fact]
     public async Task Creates_nested_directories_on_the_real_disk()
     {
-        var target = _root.SubDirectory("nested", "deeper").File("out.csv");
+        var target = _host.Root.SubDirectory("nested", "deeper").File("out.csv");
 
-        var result = await EtlPipeline.CreateBuilder("nested")
+        _host.AddPipeline("nested", b => b
             .From(new ArraySource<Order>([new(1, "acme", 1m)]))
-            .ToCsv(target)
-            .Build()
-            .RunAsync(CancellationToken.None);
+            .ToCsv(target));
+
+        var result = await _host.RunAsync("nested");
 
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
 

@@ -1,38 +1,7 @@
-using System.IO.Abstractions;
-using System.IO.Abstractions.TestingHelpers;
 using EtlPipelines.Abstractions.Configuration;
-using EtlPipelines.Abstractions.Lifecycle;
 using EtlPipelines.Abstractions.Ports;
 
 namespace EtlPipelines.Csv.Tests;
-
-/// <summary>
-/// An in-memory filesystem with a working directory, so tests neither touch the disk nor clean up
-/// after themselves.
-/// </summary>
-public sealed class TestFileSystem
-{
-    public TestFileSystem()
-    {
-        FileSystem = new MockFileSystem();
-        Root = FileSystem.DirectoryInfo.New(
-            FileSystem.Path.Combine(FileSystem.Directory.GetCurrentDirectory(), "data"));
-        Root.Create();
-    }
-
-    /// <summary>The filesystem to hand to the CSV ports.</summary>
-    public MockFileSystem FileSystem { get; }
-
-    /// <summary>The directory test files live in.</summary>
-    public IDirectoryInfo Root { get; }
-
-    /// <summary>A file inside <see cref="Root"/>, which need not exist yet.</summary>
-    public IFileInfo File(string name) => Root.File(name);
-
-    /// <summary>Every temporary file the sink has left behind, anywhere under the root.</summary>
-    public IFileInfo[] TempFiles() =>
-        [.. Root.EnumerateFiles("*.tmp", SearchOption.AllDirectories)];
-}
 
 /// <summary>Feeds a fixed array of rows into a pipeline.</summary>
 public sealed class ArraySource<TRow>(IReadOnlyList<TRow> rows) : IDataSource<TRow>
