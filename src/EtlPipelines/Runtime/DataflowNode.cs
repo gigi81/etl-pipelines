@@ -45,7 +45,7 @@ internal abstract class DataflowNode
     /// <summary>Completes when this node has finished pumping.</summary>
     public Task Completion { get; protected set; } = Task.CompletedTask;
 
-        /// <summary>Creates the bounded channel that carries batches to the next node.</summary>
+    /// <summary>Creates the bounded channel that carries batches to the next node.</summary>
     protected static Channel<PooledBatch<T>> CreateChannel<T>(DataflowRunContext context, bool singleWriter) =>
         Channel.CreateBounded<PooledBatch<T>>(
             new BoundedChannelOptions(context.Options.ChannelCapacity)

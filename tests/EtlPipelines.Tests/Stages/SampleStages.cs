@@ -1,8 +1,8 @@
+using System.ComponentModel;
 using EtlPipelines.Abstractions.Lifecycle;
 using EtlPipelines.Abstractions.Ports;
 using EtlPipelines.Transforms;
 using Microsoft.Extensions.Logging;
-using System.ComponentModel;
 
 namespace EtlPipelines.Tests.Stages;
 

@@ -18,12 +18,11 @@ internal sealed class SinkNode<TRow>(string name, Func<IServiceProvider, IDataSi
 
     private async Task PumpAsync(ChannelReader<PooledBatch<TRow>> input, DataflowRunContext context)
     {
-        IDataSink<TRow>? sink = null;
         var faulted = false;
 
         try
         {
-            sink = factory(context.Pipeline.Services);
+            var sink = factory(context.Pipeline.Services);
             await InitializeAsync(sink, context.Token).ConfigureAwait(false);
 
             await foreach (var batch in input.ReadAllAsync(context.Token).ConfigureAwait(false))

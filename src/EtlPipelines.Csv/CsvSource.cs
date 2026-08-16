@@ -167,7 +167,7 @@ public sealed class CsvSource<TRow> : IDataSource<TRow>, IAsyncInitializable
         }
 
         // The raw text is what makes the row recoverable — a parsed shape is exactly what is missing.
-        var raw = _csv!.Parser.RawRecord.ToString();
+        var raw = _csv!.Parser.RawRecord;
         var error = Error.Validation(
             "csv.malformed_row",
             $"Row {_csv.Parser.Row} could not be parsed: {exception.Message}");

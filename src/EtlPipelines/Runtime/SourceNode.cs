@@ -18,12 +18,11 @@ internal sealed class SourceNode<TRow>(string name, Func<IServiceProvider, IData
 
     private async Task PumpAsync(ChannelWriter<PooledBatch<TRow>> output, DataflowRunContext context)
     {
-        IDataSource<TRow>? source = null;
         var batchSize = context.Options.BatchSize;
 
         try
         {
-            source = factory(context.Pipeline.Services);
+            var source = factory(context.Pipeline.Services);
             await InitializeAsync(source, context.Token).ConfigureAwait(false);
 
             while (!context.Token.IsCancellationRequested)

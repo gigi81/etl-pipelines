@@ -1,7 +1,7 @@
+using System.Diagnostics;
 using EtlPipelines.Abstractions.Ports;
 using EtlPipelines.Tests.Fixtures;
 using FluentAssertions;
-using System.Diagnostics;
 
 namespace EtlPipelines.Tests;
 
