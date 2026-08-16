@@ -93,6 +93,37 @@ public interface IDataflowBuilder<TRow>
     IDataflowBuilder<TRow> WithParallelism(int degreeOfParallelism);
 
     /// <summary>
+    /// Fans the stream out to several independent branches, each with its own transforms and sink,
+    /// and ends the dataflow.
+    /// </summary>
+    /// <param name="branches">
+    /// Two or more branch definitions. Every one must terminate in <c>To(...)</c> or a nested
+    /// <c>Branch(...)</c>, since a branch has nowhere else to hand its rows on to.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// Every branch sees every row, so the source is read once no matter how many destinations there
+    /// are — which is the point, compared with running two pipelines over the same query.
+    /// </para>
+    /// <para>
+    /// <b>Rows are shared, not copied.</b> Each branch gets its own batch buffer, but the row objects
+    /// inside are the same instances. A branch that mutates a row changes what its siblings see, so
+    /// treat rows as read-only once they enter a branch. Immutable row types — records — make this a
+    /// non-issue, and are the natural shape here anyway.
+    /// </para>
+    /// <para>
+    /// <b>The slowest branch governs.</b> Rows are handed to every branch before the next batch is
+    /// taken, so a branch writing to a slow destination throttles the others. That is deliberate: the
+    /// alternative is unbounded buffering for whichever branch runs ahead.
+    /// </para>
+    /// <para>
+    /// The fan-out stays a single entry in the run's stage list, with rows out summed across all the
+    /// destinations — two branches over a thousand rows report a thousand in and two thousand out.
+    /// </para>
+    /// </remarks>
+    IPipelineBuilder Branch(params Action<IDataflowBuilder<TRow>>[] branches);
+
+    /// <summary>
     /// Terminates the dataflow with a sink the pipeline constructs and owns, built fresh per run.
     /// </summary>
     /// <remarks>

@@ -13,7 +13,10 @@ namespace EtlPipelines;
 /// scoped and keyed to the pipeline, exactly as coarse stages are, so a run's scope owns and disposes
 /// every one of them.
 /// </remarks>
-internal sealed class DataflowBuilder<TRow>(EtlPipelineBuilder owner, List<DataflowNode> nodes)
+internal sealed class DataflowBuilder<TRow>(
+    EtlPipelineBuilder owner,
+    List<DataflowNode> nodes,
+    Action<IReadOnlyList<DataflowNode>>? onTerminate = null)
     : IDataflowBuilder<TRow>
 {
     /// <summary>
@@ -141,6 +144,42 @@ internal sealed class DataflowBuilder<TRow>(EtlPipelineBuilder owner, List<Dataf
         return this;
     }
 
+    public IPipelineBuilder Branch(params Action<IDataflowBuilder<TRow>>[] branches)
+    {
+        ArgumentNullException.ThrowIfNull(branches);
+
+        if (branches.Length < 2)
+        {
+            throw new InvalidOperationException(
+                $"Branch needs at least two branches but got {branches.Length}. A one-way branch is " +
+                "either a mistake or should be a Through(...)/To(...) on the main chain.");
+        }
+
+        var built = new List<IReadOnlyList<DataflowNode>>(branches.Length);
+
+        for (var i = 0; i < branches.Length; i++)
+        {
+            ArgumentNullException.ThrowIfNull(branches[i]);
+
+            IReadOnlyList<DataflowNode>? captured = null;
+            var branch = new DataflowBuilder<TRow>(owner, [], captured2 => captured = captured2);
+
+            branches[i](branch);
+
+            if (captured is null)
+            {
+                throw new InvalidOperationException(
+                    $"Branch {i} never terminated. Every branch must end in To(...) or a nested " +
+                    "Branch(...), because a branch has nowhere to hand its rows on to.");
+            }
+
+            built.Add(captured);
+        }
+
+        nodes.Add(new BranchNode<TRow>($"Branch({branches.Length})", built));
+        return Terminate();
+    }
+
     public IPipelineBuilder To<TSink>() where TSink : class, IDataSink<TRow>
     {
         var key = owner.NextKey("sink");
@@ -192,13 +231,33 @@ internal sealed class DataflowBuilder<TRow>(EtlPipelineBuilder owner, List<Dataf
         bool stateful)
     {
         nodes.Add(new TransformNode<TRow, TOut>(name, factory));
-        return new DataflowBuilder<TOut>(owner, nodes) { _lastStepIsStateful = stateful };
+
+        // onTerminate has to travel with the re-typed builder. Without it, a branch that transformed
+        // before its To(...) would fall back to the root behaviour and register a stray stage.
+        return new DataflowBuilder<TOut>(owner, nodes, onTerminate) { _lastStepIsStateful = stateful };
     }
 
     private IPipelineBuilder Terminate(string name, Func<IServiceProvider, IDataSink<TRow>> factory)
     {
         nodes.Add(new SinkNode<TRow>(name, factory));
-        owner.AddDataflow(nodes);
+        return Terminate();
+    }
+
+    /// <summary>
+    /// Closes the chain: a root dataflow becomes a stage, a branch hands its nodes to the branch
+    /// point that owns it. Routing <see cref="Branch"/> through here too is what makes nesting work.
+    /// </summary>
+    private IPipelineBuilder Terminate()
+    {
+        if (onTerminate is null)
+        {
+            owner.AddDataflow(nodes);
+        }
+        else
+        {
+            onTerminate(nodes);
+        }
+
         return owner;
     }
 }

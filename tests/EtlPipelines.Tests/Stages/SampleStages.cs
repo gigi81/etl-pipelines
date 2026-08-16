@@ -73,6 +73,38 @@ public sealed class TransformStage : RowTransform<OrderRow, OrderDto>
 }
 
 /// <summary>
+/// A second load port, taking the <i>untransformed</i> row.
+/// </summary>
+/// <remarks>
+/// This is what makes a branch worth having: one destination wants the raw record exactly as it
+/// arrived, another wants it reshaped. The two sinks therefore have different row types, which is
+/// also why a branch cannot simply reuse <see cref="UploadStage"/> — that one consumes
+/// <see cref="OrderDto"/>, and the untransformed branch is still carrying <see cref="OrderRow"/>.
+/// </remarks>
+[Description("Archives raw orders as they arrived")]
+public sealed class ArchiveStage(ILogger<ArchiveStage> logger) : IDataSink<OrderRow>, IAsyncCompletable
+{
+    private readonly List<OrderRow> _staged = [];
+
+    public IReadOnlyList<OrderRow> Archived { get; private set; } = [];
+
+    public ValueTask<ErrorOr<int>> WriteAsync(ReadOnlyMemory<OrderRow> batch, CancellationToken cancellationToken)
+    {
+        _staged.AddRange(batch.ToArray());
+        return ValueTask.FromResult<ErrorOr<int>>(batch.Length);
+    }
+
+    public ValueTask<ErrorOr<Success>> CompleteAsync(CancellationToken cancellationToken)
+    {
+        Archived = _staged.ToArray();
+        logger.LogInformation("Archived {RowCount} raw orders", Archived.Count);
+        return ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+/// <summary>
 /// The load port. Implements <see cref="IAsyncCompletable"/> so the commit happens once, at the end,
 /// and only when every batch landed — which disposal alone could not express.
 /// </summary>

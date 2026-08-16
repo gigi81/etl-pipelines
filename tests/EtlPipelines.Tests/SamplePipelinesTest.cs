@@ -65,6 +65,31 @@ public class SamplePipelinesTest
     }
 
     [Fact]
+    public async Task Fans_the_same_rows_out_to_two_destinations()
+    {
+        // The canonical branching shape: archive the raw record, and in parallel reshape it for the
+        // real load. The source is read once, not once per destination.
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(NullLogger<>));
+
+        services.AddEtlPipeline("orders", builder => builder
+            .From<DownloadStage, OrderRow>()
+            .Branch(
+                b1 => b1.To<ArchiveStage>(),
+                b2 => b2.Through<TransformStage, OrderDto>()
+                        .To<UploadStage>()));
+
+        var provider = services.BuildServiceProvider();
+        var result = await provider.GetRequiredEtlPipeline("orders").RunAsync(CancellationToken.None);
+
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
+
+        result.Value.RowsRead.Should().Be(3, "the source is read once however many branches there are");
+        result.Value.RowsWritten.Should().Be(6, "three rows reached each of the two destinations");
+        result.Value.Stages.Should().ContainSingle("a fan-out is still one dataflow");
+    }
+
+    [Fact]
     public async Task Injects_constructor_dependencies_into_ports_it_constructs()
     {
         // The ports are never registered, but DownloadStage and UploadStage both take an

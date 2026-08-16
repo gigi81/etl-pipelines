@@ -85,6 +85,38 @@ Reporting consumed and produced separately is what lets one contract carry every
 maps, filters, within-batch reduction, and 1:many expansion that overflows the output buffer. The
 runtime re-offers whatever was not consumed.
 
+## Branching
+
+Send the same rows to several destinations at once — archive the raw record while the same rows carry
+on into a transform and a load:
+
+```csharp
+services.AddEtlPipeline("orders", builder => builder
+    .From<DownloadStage, OrderRow>()
+    .Branch(
+        b1 => b1.To<ArchiveStage>(),
+        b2 => b2.Through<TransformStage, OrderDto>()
+                .To<UploadStage>()));
+```
+
+Every branch sees every row, and **the source is read once** however many destinations there are —
+which is the point, versus running two pipelines over the same query and hoping they agree. Each
+branch is a full dataflow: it can filter, transform, and even branch again. Every branch must
+terminate in `To(...)` or a nested `Branch(...)`, and `Branch` ends the dataflow, so the builder
+returns to adding stages afterwards.
+
+Three things worth knowing:
+
+- **Rows are shared, not copied.** Each branch gets its own batch buffer — pooling requires that — but
+  the row objects inside are the same instances. A branch that mutates a row changes what its
+  siblings see. Treat rows as read-only once they enter a branch; immutable row types (records) make
+  this a non-issue. This matches Spark, SSIS Multicast and TPL Dataflow's `BroadcastBlock`.
+- **The slowest branch governs.** Rows reach every branch before the next batch is taken, so a branch
+  writing to a slow endpoint throttles the others. That is deliberate — the alternative is unbounded
+  buffering for whichever branch runs ahead — but it means a slow destination costs you everywhere.
+- **A fan-out is still one stage.** It stays a single entry in `PipelineResult.Stages`, with `RowsOut`
+  summed across destinations: two branches over 1,000 rows report 1,000 in and 2,000 out.
+
 ## Reading from a database
 
 `DataReaderSource<TRow>` bridges any ADO.NET provider into a pipeline:
