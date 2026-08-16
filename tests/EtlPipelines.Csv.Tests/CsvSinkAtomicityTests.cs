@@ -31,7 +31,7 @@ public sealed class CsvSinkAtomicityTests
         //arrange
         var target = _host.File("ok.csv");
 
-        _host.AddPipeline(PipelineName, b => b
+        _host.AddEtlPipeline(PipelineName, b => b
             .WithOptions(o => o.BatchSize = 8)
             .From(new ArraySource<Row>(Rows(100)))
             .ToCsv(target));
@@ -54,7 +54,7 @@ public sealed class CsvSinkAtomicityTests
         // the sibling fails, so the write really is partial when the run gives up.
         var target = _host.File("failed.csv");
 
-        _host.AddPipeline(PipelineName, b => b
+        _host.AddEtlPipeline(PipelineName, b => b
             .WithOptions(o => o.BatchSize = 8)
             .From(new ArraySource<Row>(Rows(400)))
             .Branch(
@@ -87,7 +87,7 @@ public sealed class CsvSinkAtomicityTests
         var target = _host.File("existing.csv");
         await target.WriteAllTextAsync("Id,Name\n999,previous\n", CancellationToken.None);
 
-        _host.AddPipeline(PipelineName, b => b
+        _host.AddEtlPipeline(PipelineName, b => b
             .WithOptions(o => o.BatchSize = 8)
             .From(new ArraySource<Row>(Rows(400)))
             .Branch(
@@ -108,7 +108,7 @@ public sealed class CsvSinkAtomicityTests
         //arrange
         var target = _host.File("direct.csv");
 
-        _host.AddPipeline(PipelineName, b => b
+        _host.AddEtlPipeline(PipelineName, b => b
             .From(new ArraySource<Row>(Rows(10)))
             .ToCsv(target, new CsvSinkOptions { WriteAtomically = false }));
 
@@ -129,7 +129,7 @@ public sealed class CsvSinkAtomicityTests
         // Reads as a path walk rather than string concatenation, and neither directory exists yet.
         var target = _host.Root.SubDirectory("nested", "deeper").File("out.csv");
 
-        _host.AddPipeline(PipelineName, b => b.From(new ArraySource<Row>(Rows(3))).ToCsv(target));
+        _host.AddEtlPipeline(PipelineName, b => b.From(new ArraySource<Row>(Rows(3))).ToCsv(target));
 
         //act
         var result = await _host.RunAsync(PipelineName);
@@ -148,7 +148,7 @@ public sealed class CsvSinkAtomicityTests
         //arrange
         var buffer = new StringWriter();
 
-        _host.AddPipeline(PipelineName, b => b
+        _host.AddEtlPipeline(PipelineName, b => b
             .From(new ArraySource<Row>(Rows(3)))
             .To(new CsvSink<Row>(buffer, leaveOpen: true)));
 

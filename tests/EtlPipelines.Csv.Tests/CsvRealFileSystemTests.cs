@@ -39,8 +39,8 @@ public sealed class CsvRealFileSystemTests : IDisposable
         Order[] orders = [new(1, "acme", 10.50m), new(2, "Globex, Inc. \"HQ\"", 25.75m)];
         var readBack = new CollectingSink<Order>();
 
-        _host.AddPipeline(Write, b => b.From(new ArraySource<Order>(orders)).ToCsv(target))
-             .AddPipeline(Read, b => b.FromCsv<Order>(target).To(readBack));
+        _host.AddEtlPipeline(Write, b => b.From(new ArraySource<Order>(orders)).ToCsv(target))
+             .AddEtlPipeline(Read, b => b.FromCsv<Order>(target).To(readBack));
 
         //act
         var write = await _host.RunAsync(Write);
@@ -60,8 +60,8 @@ public sealed class CsvRealFileSystemTests : IDisposable
         // Worth proving against a real filesystem, not only a simulated one.
         var target = _host.File("twice.csv");
 
-        _host.AddPipeline(Write, b => b.From(new ArraySource<Order>(Orders(5))).ToCsv(target))
-             .AddPipeline(Rewrite, b => b.From(new ArraySource<Order>(Orders(10))).ToCsv(target));
+        _host.AddEtlPipeline(Write, b => b.From(new ArraySource<Order>(Orders(5))).ToCsv(target))
+             .AddEtlPipeline(Rewrite, b => b.From(new ArraySource<Order>(Orders(10))).ToCsv(target));
 
         //act
         var first = await _host.RunAsync(Write);
@@ -82,7 +82,7 @@ public sealed class CsvRealFileSystemTests : IDisposable
         //arrange
         var target = _host.Root.SubDirectory("nested", "deeper").File("out.csv");
 
-        _host.AddPipeline(PipelineName, b => b
+        _host.AddEtlPipeline(PipelineName, b => b
             .From(new ArraySource<Order>([new(1, "acme", 1m)]))
             .ToCsv(target));
 

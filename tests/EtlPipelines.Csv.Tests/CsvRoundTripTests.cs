@@ -35,8 +35,8 @@ public sealed class CsvRoundTripTests
         var target = _host.File("orders.csv");
         var readBack = new CollectingSink<Order>();
 
-        _host.AddPipeline(Write, b => b.From(new ArraySource<Order>(Orders)).ToCsv(target))
-             .AddPipeline(Read, b => b.FromCsv<Order>(target).To(readBack));
+        _host.AddEtlPipeline(Write, b => b.From(new ArraySource<Order>(Orders)).ToCsv(target))
+             .AddEtlPipeline(Read, b => b.FromCsv<Order>(target).To(readBack));
 
         //act
         var write = await _host.RunAsync(Write);
@@ -59,8 +59,8 @@ public sealed class CsvRoundTripTests
         var readBack = new CollectingSink<Order>();
 
         _host.Configure(s => s.AddSingleton<IDataSink<Order>>(readBack))
-             .AddPipeline(Write, b => b.From(new ArraySource<Order>(Orders)).ToCsv(target))
-             .AddPipeline(Read, b => b.FromCsv<Order>(target).To());
+             .AddEtlPipeline(Write, b => b.From(new ArraySource<Order>(Orders)).ToCsv(target))
+             .AddEtlPipeline(Read, b => b.FromCsv<Order>(target).To());
 
         //act
         var write = await _host.RunAsync(Write);
@@ -76,7 +76,7 @@ public sealed class CsvRoundTripTests
     public void Registers_csv_ports_as_scoped_and_keyed()
     {
         //arrange
-        _host.AddPipeline(PipelineName, b => b
+        _host.AddEtlPipeline(PipelineName, b => b
             .FromCsv<Order>(_host.File("in.csv"))
             .ToCsv(_host.File("out.csv")));
 
@@ -109,10 +109,10 @@ public sealed class CsvRoundTripTests
             var target = _host.File("culture.csv");
             var readBack = new CollectingSink<Order>();
 
-            _host.AddPipeline(Write, b => b
+            _host.AddEtlPipeline(Write, b => b
                      .From(new ArraySource<Order>([new(1, "acme", 1234.56m)]))
                      .ToCsv(target))
-                 .AddPipeline(Read, b => b.FromCsv<Order>(target).To(readBack));
+                 .AddEtlPipeline(Read, b => b.FromCsv<Order>(target).To(readBack));
 
             //act
             await _host.RunAsync(Write);
@@ -139,11 +139,11 @@ public sealed class CsvRoundTripTests
             .ToArray();
         var readBack = new CollectingSink<Order>();
 
-        _host.AddPipeline(Write, b => b
+        _host.AddEtlPipeline(Write, b => b
                  .WithOptions(o => o.BatchSize = 32)
                  .From(new ArraySource<Order>(orders))
                  .ToCsv(target))
-             .AddPipeline(Read, b => b
+             .AddEtlPipeline(Read, b => b
                  .WithOptions(o => o.BatchSize = 32)
                  .FromCsv<Order>(target)
                  .To(readBack));
@@ -165,10 +165,10 @@ public sealed class CsvRoundTripTests
         var source = _host.File("in.csv");
         var target = _host.File("out.csv");
 
-        _host.AddPipeline(Write, b => b
+        _host.AddEtlPipeline(Write, b => b
                  .From(new ArraySource<Order>([new(1, "acme", 10.50m), new(2, "globex", 3.25m)]))
                  .ToCsv(source))
-             .AddPipeline(Read, b => b
+             .AddEtlPipeline(Read, b => b
                  .FromCsv<Order>(source)
                  .Select(o => new OrderDto(o.Id, o.Customer, o.Amount * 100))
                  .ToCsv(target));
@@ -197,7 +197,7 @@ public sealed class CsvRoundTripTests
         var archive = _host.File("archive.csv");
         var converted = _host.File("converted.csv");
 
-        _host.AddPipeline(PipelineName, b => b
+        _host.AddEtlPipeline(PipelineName, b => b
             .From(new ArraySource<Order>([new(1, "acme", 10.50m), new(2, "globex", 3.25m)]))
             .Branch(
                 b1 => b1.ToCsv(archive),
@@ -223,7 +223,7 @@ public sealed class CsvRoundTripTests
             CancellationToken.None);
 
         var sink = new CollectingSink<Order>();
-        _host.AddPipeline(PipelineName, b => b.FromCsv<Order>(target).To(_ => sink));
+        _host.AddEtlPipeline(PipelineName, b => b.FromCsv<Order>(target).To(_ => sink));
 
         //act
         var first = await _host.RunAsync(PipelineName);
@@ -245,7 +245,7 @@ public sealed class CsvRoundTripTests
         await target.WriteAllTextAsync(string.Empty, CancellationToken.None);
 
         var sink = new CollectingSink<Order>();
-        _host.AddPipeline(PipelineName, b => b.FromCsv<Order>(target).To(sink));
+        _host.AddEtlPipeline(PipelineName, b => b.FromCsv<Order>(target).To(sink));
 
         //act
         var result = await _host.RunAsync(PipelineName);

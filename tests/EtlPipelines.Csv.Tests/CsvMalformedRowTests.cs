@@ -46,7 +46,7 @@ public sealed class CsvMalformedRowTests
         var file = await FileWithBadRows();
         var sink = new CollectingSink<Order>();
 
-        _host.AddPipeline(PipelineName, b => b
+        _host.AddEtlPipeline(PipelineName, b => b
             .WithOptions(o => o.BatchSize = 4)
             .FromCsv<Order>(file)
             .To(sink));
@@ -70,7 +70,7 @@ public sealed class CsvMalformedRowTests
         var deadLetters = new RecordingDeadLetterSink<string>();
 
         _host.Configure(s => s.AddSingleton<IDeadLetterSink<string>>(deadLetters))
-             .AddPipeline(PipelineName, b => b.FromCsv<Order>(file).To(new CollectingSink<Order>()));
+             .AddEtlPipeline(PipelineName, b => b.FromCsv<Order>(file).To(new CollectingSink<Order>()));
 
         //act
         await _host.RunAsync(PipelineName);
@@ -90,7 +90,7 @@ public sealed class CsvMalformedRowTests
         var file = await FileWithBadRows();
         var source = new CsvSource<Order>(file);
 
-        _host.AddPipeline(PipelineName, b => b.From<Order>(_ => source).To(new CollectingSink<Order>()));
+        _host.AddEtlPipeline(PipelineName, b => b.From<Order>(_ => source).To(new CollectingSink<Order>()));
 
         //act
         await _host.RunAsync(PipelineName);
@@ -110,7 +110,7 @@ public sealed class CsvMalformedRowTests
         var file = await FileWithBadRows();
         var source = new CsvSource<Order>(file);
 
-        _host.AddPipeline(PipelineName, b => b.From<Order>(_ => source).To(new CollectingSink<Order>()));
+        _host.AddEtlPipeline(PipelineName, b => b.From<Order>(_ => source).To(new CollectingSink<Order>()));
 
         //act
         var result = await _host.RunAsync(PipelineName);
@@ -126,7 +126,7 @@ public sealed class CsvMalformedRowTests
         //arrange
         var file = await FileWithBadRows();
 
-        _host.AddPipeline(PipelineName, b => b
+        _host.AddEtlPipeline(PipelineName, b => b
             .FromCsv<Order>(file, new CsvSourceOptions { SkipMalformedRows = false })
             .To(new CollectingSink<Order>()));
 

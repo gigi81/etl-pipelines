@@ -64,7 +64,7 @@ public sealed class CsvTestHost
     }
 
     /// <summary>Registers a named pipeline, exactly as an application's startup would.</summary>
-    public CsvTestHost AddPipeline(string name, Action<IPipelineBuilder> build)
+    public CsvTestHost AddEtlPipeline(string name, Action<IPipelineBuilder> build)
     {
         ThrowIfBuilt();
         _services.AddEtlPipeline(name, build);
