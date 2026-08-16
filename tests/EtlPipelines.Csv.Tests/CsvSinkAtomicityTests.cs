@@ -12,6 +12,8 @@ namespace EtlPipelines.Csv.Tests;
 /// </remarks>
 public sealed class CsvSinkAtomicityTests
 {
+    private const string PipelineName = "atomic";
+
     private readonly CsvTestHost _host = new();
 
     private sealed record Row(int Id, string Name);
@@ -19,20 +21,26 @@ public sealed class CsvSinkAtomicityTests
     private static Row[] Rows(int count) =>
         [.. Enumerable.Range(0, count).Select(i => new Row(i, $"n{i}"))];
 
+    /// <summary>A sink that fails part-way and slowly, so a sibling branch provably reaches disk first.</summary>
+    private static FailingSink<Row> SlowFailure() =>
+        new(failAfter: 40, delayPerBatch: TimeSpan.FromMilliseconds(10));
+
     [Fact]
     public async Task The_target_appears_only_once_the_run_succeeds()
     {
+        //arrange
         var target = _host.File("ok.csv");
 
-        _host.AddPipeline("atomic", b => b
+        _host.AddPipeline(PipelineName, b => b
             .WithOptions(o => o.BatchSize = 8)
             .From(new ArraySource<Row>(Rows(100)))
             .ToCsv(target));
 
-        var result = await _host.RunAsync("atomic");
+        //act
+        var result = await _host.RunAsync(PipelineName);
 
+        //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-
         (await target.ReadAllLinesAsync(CancellationToken.None))
             .Should().HaveCount(101, "header plus 100 rows");
         _host.TempFiles().Should().BeEmpty("the temporary file is renamed, not left behind, on success");
@@ -41,19 +49,22 @@ public sealed class CsvSinkAtomicityTests
     [Fact]
     public async Task A_failed_run_leaves_no_target_file_at_all()
     {
+        //arrange
+        // Back-pressure keeps the CSV branch from running away and finishing the whole file before
+        // the sibling fails, so the write really is partial when the run gives up.
         var target = _host.File("failed.csv");
 
-        // The sibling fails slowly and part-way, so the CSV branch provably has rows on disk by then.
-        // Back-pressure keeps it from running away and finishing the whole file first.
-        _host.AddPipeline("atomic", b => b
+        _host.AddPipeline(PipelineName, b => b
             .WithOptions(o => o.BatchSize = 8)
             .From(new ArraySource<Row>(Rows(400)))
             .Branch(
                 b1 => b1.ToCsv(target),
-                b2 => b2.To(new FailingSink<Row>(failAfter: 40, delayPerBatch: TimeSpan.FromMilliseconds(10)))));
+                b2 => b2.To(SlowFailure())));
 
-        var result = await _host.RunAsync("atomic");
+        //act
+        var result = await _host.RunAsync(PipelineName);
 
+        //assert
         result.IsError.Should().BeTrue();
 
         target.Refresh();
@@ -72,18 +83,21 @@ public sealed class CsvSinkAtomicityTests
     [Fact]
     public async Task A_failed_run_does_not_disturb_a_previous_good_file()
     {
+        //arrange
         var target = _host.File("existing.csv");
         await target.WriteAllTextAsync("Id,Name\n999,previous\n", CancellationToken.None);
 
-        _host.AddPipeline("atomic", b => b
+        _host.AddPipeline(PipelineName, b => b
             .WithOptions(o => o.BatchSize = 8)
             .From(new ArraySource<Row>(Rows(400)))
             .Branch(
                 b1 => b1.ToCsv(target),
-                b2 => b2.To(new FailingSink<Row>(failAfter: 40, delayPerBatch: TimeSpan.FromMilliseconds(10)))));
+                b2 => b2.To(SlowFailure())));
 
-        var result = await _host.RunAsync("atomic");
+        //act
+        var result = await _host.RunAsync(PipelineName);
 
+        //assert
         result.IsError.Should().BeTrue();
         (await target.ReadAllLinesAsync(CancellationToken.None)).Should().Equal("Id,Name", "999,previous");
     }
@@ -91,15 +105,18 @@ public sealed class CsvSinkAtomicityTests
     [Fact]
     public async Task Writes_straight_to_the_target_when_atomicity_is_turned_off()
     {
+        //arrange
         var target = _host.File("direct.csv");
 
-        _host.AddPipeline("direct", b => b
+        _host.AddPipeline(PipelineName, b => b
             .From(new ArraySource<Row>(Rows(10)))
             .ToCsv(target, new CsvSinkOptions { WriteAtomically = false }));
 
-        var result = await _host.RunAsync("direct");
+        //act
+        var result = await _host.RunAsync(PipelineName);
 
-        result.IsError.Should().BeFalse();
+        //assert
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
         target.Refresh();
         target.Exists.Should().BeTrue();
         _host.TempFiles().Should().BeEmpty();
@@ -108,13 +125,16 @@ public sealed class CsvSinkAtomicityTests
     [Fact]
     public async Task Creates_the_destination_directory()
     {
+        //arrange
         // Reads as a path walk rather than string concatenation, and neither directory exists yet.
         var target = _host.Root.SubDirectory("nested", "deeper").File("out.csv");
 
-        _host.AddPipeline("nested", b => b.From(new ArraySource<Row>(Rows(3))).ToCsv(target));
+        _host.AddPipeline(PipelineName, b => b.From(new ArraySource<Row>(Rows(3))).ToCsv(target));
 
-        var result = await _host.RunAsync("nested");
+        //act
+        var result = await _host.RunAsync(PipelineName);
 
+        //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
 
         // IFileInfo caches Exists from when it was created, which was before the sink ran.
@@ -125,14 +145,17 @@ public sealed class CsvSinkAtomicityTests
     [Fact]
     public async Task Writes_to_a_supplied_TextWriter_without_renaming()
     {
+        //arrange
         var buffer = new StringWriter();
 
-        _host.AddPipeline("writer", b => b
+        _host.AddPipeline(PipelineName, b => b
             .From(new ArraySource<Row>(Rows(3)))
             .To(new CsvSink<Row>(buffer, leaveOpen: true)));
 
-        var result = await _host.RunAsync("writer");
+        //act
+        var result = await _host.RunAsync(PipelineName);
 
+        //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
         buffer.ToString().Should().Contain("Id,Name").And.Contain("0,n0");
     }

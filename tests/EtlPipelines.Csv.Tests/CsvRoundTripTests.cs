@@ -9,6 +9,10 @@ namespace EtlPipelines.Csv.Tests;
 /// <summary>Reading and writing CSV through pipelines resolved from a container.</summary>
 public sealed class CsvRoundTripTests
 {
+    private const string PipelineName = "orders";
+    private const string Write = "write";
+    private const string Read = "read";
+
     private readonly CsvTestHost _host = new();
 
     public sealed record Order(int Id, string Customer, decimal Amount);
@@ -27,24 +31,27 @@ public sealed class CsvRoundTripTests
     [Fact]
     public async Task Round_trips_rows_through_a_file()
     {
+        //arrange
         var target = _host.File("orders.csv");
         var readBack = new CollectingSink<Order>();
 
-        _host.AddPipeline("write", b => b.From(new ArraySource<Order>(Orders)).ToCsv(target))
-             .AddPipeline("read", b => b.FromCsv<Order>(target).To(readBack));
+        _host.AddPipeline(Write, b => b.From(new ArraySource<Order>(Orders)).ToCsv(target))
+             .AddPipeline(Read, b => b.FromCsv<Order>(target).To(readBack));
 
-        var write = await _host.RunAsync("write");
+        //act
+        var write = await _host.RunAsync(Write);
+        var read = await _host.RunAsync(Read);
+
+        //assert
         write.IsError.Should().BeFalse(write.IsError ? write.FirstError.Description : null);
-
-        var read = await _host.RunAsync("read");
         read.IsError.Should().BeFalse(read.IsError ? read.FirstError.Description : null);
-
         readBack.Rows.Should().Equal(Orders);
     }
 
     [Fact]
     public async Task Resolves_both_ports_from_the_container()
     {
+        //arrange
         // The sink is named only by type; the container supplies it. This is the shape an application
         // actually writes, and it only works because composing the pipeline registers the CSV source
         // alongside whatever else is in the container.
@@ -52,37 +59,45 @@ public sealed class CsvRoundTripTests
         var readBack = new CollectingSink<Order>();
 
         _host.Configure(s => s.AddSingleton<IDataSink<Order>>(readBack))
-             .AddPipeline("write", b => b.From(new ArraySource<Order>(Orders)).ToCsv(target))
-             .AddPipeline("read", b => b.FromCsv<Order>(target).To());
+             .AddPipeline(Write, b => b.From(new ArraySource<Order>(Orders)).ToCsv(target))
+             .AddPipeline(Read, b => b.FromCsv<Order>(target).To());
 
-        (await _host.RunAsync("write")).IsError.Should().BeFalse();
-        (await _host.RunAsync("read")).IsError.Should().BeFalse();
+        //act
+        var write = await _host.RunAsync(Write);
+        var read = await _host.RunAsync(Read);
 
+        //assert
+        write.IsError.Should().BeFalse(write.IsError ? write.FirstError.Description : null);
+        read.IsError.Should().BeFalse(read.IsError ? read.FirstError.Description : null);
         readBack.Rows.Should().Equal(Orders);
     }
 
     [Fact]
     public void Registers_csv_ports_as_scoped_and_keyed()
     {
-        _host.AddPipeline("orders", b => b
+        //arrange
+        _host.AddPipeline(PipelineName, b => b
             .FromCsv<Order>(_host.File("in.csv"))
             .ToCsv(_host.File("out.csv")));
 
+        //act
         var ports = _host.Registrations
             .Where(d => d.ServiceType == typeof(IDataSource<Order>) || d.ServiceType == typeof(IDataSink<Order>))
             .ToArray();
 
+        //assert
         // The CSV ports are ordinary components: composing the pipeline registers them, scoped so each
         // run gets its own file handles, keyed so a second pipeline reading CSV does not collide.
         ports.Should().HaveCount(2);
         ports.Should().OnlyContain(d => d.Lifetime == ServiceLifetime.Scoped);
         ports.Should().OnlyContain(d => d.IsKeyedService);
-        ports.Should().OnlyContain(d => d.ServiceKey!.ToString()!.StartsWith("orders["));
+        ports.Should().OnlyContain(d => d.ServiceKey!.ToString()!.StartsWith($"{PipelineName}["));
     }
 
     [Fact]
     public async Task Formats_numbers_independently_of_the_machine_culture()
     {
+        //arrange
         // Under a comma-decimal culture, 10.50 would be written as "10,50" and then split into two
         // fields by the comma delimiter — corrupting every subsequent column. Invariant culture is
         // the default precisely so a data file means the same thing wherever it is processed.
@@ -94,17 +109,18 @@ public sealed class CsvRoundTripTests
             var target = _host.File("culture.csv");
             var readBack = new CollectingSink<Order>();
 
-            _host.AddPipeline("write", b => b
+            _host.AddPipeline(Write, b => b
                      .From(new ArraySource<Order>([new(1, "acme", 1234.56m)]))
                      .ToCsv(target))
-                 .AddPipeline("read", b => b.FromCsv<Order>(target).To(readBack));
+                 .AddPipeline(Read, b => b.FromCsv<Order>(target).To(readBack));
 
-            await _host.RunAsync("write");
-
+            //act
+            await _host.RunAsync(Write);
             var text = await target.ReadAllTextAsync(CancellationToken.None);
-            text.Should().Contain("1234.56", "the file must use the invariant separator, not the host's");
+            await _host.RunAsync(Read);
 
-            await _host.RunAsync("read");
+            //assert
+            text.Should().Contain("1234.56", "the file must use the invariant separator, not the host's");
             readBack.Rows.Should().Equal([new Order(1, "acme", 1234.56m)]);
         }
         finally
@@ -116,24 +132,27 @@ public sealed class CsvRoundTripTests
     [Fact]
     public async Task Streams_correctly_across_many_batch_boundaries()
     {
+        //arrange
         var target = _host.File("many.csv");
         var orders = Enumerable.Range(0, 2_500)
             .Select(i => new Order(i, $"customer-{i}", i * 1.5m))
             .ToArray();
         var readBack = new CollectingSink<Order>();
 
-        _host.AddPipeline("write", b => b
+        _host.AddPipeline(Write, b => b
                  .WithOptions(o => o.BatchSize = 32)
                  .From(new ArraySource<Order>(orders))
                  .ToCsv(target))
-             .AddPipeline("read", b => b
+             .AddPipeline(Read, b => b
                  .WithOptions(o => o.BatchSize = 32)
                  .FromCsv<Order>(target)
                  .To(readBack));
 
-        await _host.RunAsync("write");
-        var result = await _host.RunAsync("read");
+        //act
+        await _host.RunAsync(Write);
+        var result = await _host.RunAsync(Read);
 
+        //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
         readBack.Rows.Should().Equal(orders, "a partially filled buffer must not lose or repeat rows");
         result.Value.RowsRead.Should().Be(2_500);
@@ -142,20 +161,23 @@ public sealed class CsvRoundTripTests
     [Fact]
     public async Task Transforms_between_two_files()
     {
+        //arrange
         var source = _host.File("in.csv");
         var target = _host.File("out.csv");
 
-        _host.AddPipeline("seed", b => b
+        _host.AddPipeline(Write, b => b
                  .From(new ArraySource<Order>([new(1, "acme", 10.50m), new(2, "globex", 3.25m)]))
                  .ToCsv(source))
-             .AddPipeline("convert", b => b
+             .AddPipeline(Read, b => b
                  .FromCsv<Order>(source)
                  .Select(o => new OrderDto(o.Id, o.Customer, o.Amount * 100))
                  .ToCsv(target));
 
-        await _host.RunAsync("seed");
-        var result = await _host.RunAsync("convert");
+        //act
+        await _host.RunAsync(Write);
+        var result = await _host.RunAsync(Read);
 
+        //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
 
         var lines = await target.ReadAllLinesAsync(CancellationToken.None);
@@ -169,21 +191,23 @@ public sealed class CsvRoundTripTests
     [Fact]
     public async Task Fans_one_source_out_to_two_files()
     {
+        //arrange
         // A file sink per branch is the motivating case for branching: archive the raw rows while the
         // same rows carry on into a reshaped load.
         var archive = _host.File("archive.csv");
         var converted = _host.File("converted.csv");
 
-        _host.AddPipeline("fanout", b => b
+        _host.AddPipeline(PipelineName, b => b
             .From(new ArraySource<Order>([new(1, "acme", 10.50m), new(2, "globex", 3.25m)]))
             .Branch(
                 b1 => b1.ToCsv(archive),
                 b2 => b2.Select(o => new OrderDto(o.Id, o.Customer, o.Amount * 100)).ToCsv(converted)));
 
-        var result = await _host.RunAsync("fanout");
+        //act
+        var result = await _host.RunAsync(PipelineName);
 
+        //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-
         (await archive.ReadAllLinesAsync(CancellationToken.None)).Should().HaveCount(3);
         (await converted.ReadAllLinesAsync(CancellationToken.None)).Should().HaveCount(3);
         result.Value.RowsWritten.Should().Be(4, "two rows reached each of the two files");
@@ -192,17 +216,20 @@ public sealed class CsvRoundTripTests
     [Fact]
     public async Task Reads_the_file_from_the_start_on_every_run()
     {
+        //arrange
         var target = _host.File("repeat.csv");
         await target.WriteAllTextAsync(
             "Id,Customer,Amount\n1,acme,1.00\n2,globex,2.00\n",
             CancellationToken.None);
 
         var sink = new CollectingSink<Order>();
-        _host.AddPipeline("repeat", b => b.FromCsv<Order>(target).To(_ => sink));
+        _host.AddPipeline(PipelineName, b => b.FromCsv<Order>(target).To(_ => sink));
 
-        var first = await _host.RunAsync("repeat");
-        var second = await _host.RunAsync("repeat");
+        //act
+        var first = await _host.RunAsync(PipelineName);
+        var second = await _host.RunAsync(PipelineName);
 
+        //assert
         first.Value.RowsRead.Should().Be(2);
         second.Value.RowsRead.Should().Be(
             2,
@@ -213,14 +240,17 @@ public sealed class CsvRoundTripTests
     [Fact]
     public async Task Reads_an_empty_file_as_no_rows()
     {
+        //arrange
         var target = _host.File("empty.csv");
         await target.WriteAllTextAsync(string.Empty, CancellationToken.None);
 
         var sink = new CollectingSink<Order>();
-        _host.AddPipeline("empty", b => b.FromCsv<Order>(target).To(sink));
+        _host.AddPipeline(PipelineName, b => b.FromCsv<Order>(target).To(sink));
 
-        var result = await _host.RunAsync("empty");
+        //act
+        var result = await _host.RunAsync(PipelineName);
 
+        //assert
         result.IsError.Should().BeFalse("an empty file is not a failure");
         sink.Rows.Should().BeEmpty();
     }

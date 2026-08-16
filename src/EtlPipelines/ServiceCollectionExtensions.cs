@@ -31,7 +31,13 @@ public static class ServiceCollectionExtensions
     /// <para>
     /// The pipeline object itself is assembled on first resolution, once a provider exists.
     /// </para>
+    /// <para>
+    /// <paramref name="name"/> must be unique within the container: it is how the pipeline is
+    /// resolved, and it keys the components composing it registers. Registering a second pipeline
+    /// under a name already taken throws rather than replacing the first.
+    /// </para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">A pipeline is already registered under that name.</exception>
     public static IServiceCollection AddEtlPipeline(
         this IServiceCollection services,
         string name,
@@ -41,6 +47,18 @@ public static class ServiceCollectionExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(configure);
 
+        // Checked before composing, for two reasons. The name is how a pipeline is resolved, so a
+        // duplicate would leave one of them unreachable; and composing registers components under
+        // keys derived from the name, so a second pipeline of the same name would quietly overwrite
+        // the first one's components as well as its blueprint.
+        if (IsRegistered(services, name))
+        {
+            throw new InvalidOperationException(
+                $"A pipeline named '{name}' is already registered. Pipeline names identify them for " +
+                "resolution and key their components, so each must be unique — registering a second " +
+                "one would silently replace the first.");
+        }
+
         var builder = new EtlPipelineBuilder(name, services);
         configure(builder);
 
@@ -48,6 +66,21 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(builder.CreateBlueprint());
 
         return services;
+    }
+
+    private static bool IsRegistered(IServiceCollection services, string name)
+    {
+        foreach (var descriptor in services)
+        {
+            if (descriptor.ServiceType == typeof(PipelineBlueprint)
+                && descriptor.ImplementationInstance is PipelineBlueprint registered
+                && string.Equals(registered.Name, name, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 

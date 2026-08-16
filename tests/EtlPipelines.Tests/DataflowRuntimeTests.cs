@@ -15,19 +15,22 @@ namespace EtlPipelines.Tests;
 /// </remarks>
 public class DataflowRuntimeTests
 {
+    private const string PipelineName = "dataflow";
+
     /// <summary>A struct row, so buffer pooling is observable without per-row object allocation.</summary>
     private readonly record struct Measurement(long Id, double Value);
 
     [Fact]
     public async Task Back_pressure_bounds_how_far_the_source_runs_ahead()
     {
+        //arrange
         const int batchSize = 100;
         const int capacity = 2;
 
         var source = new InMemorySource<int>(Enumerable.Range(0, 100_000));
         var sink = new InMemorySink<int> { WriteDelay = TimeSpan.FromMilliseconds(20) };
 
-        var pipeline = EtlPipeline.CreateBuilder("backpressure")
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
             .WithOptions(o =>
             {
                 o.BatchSize = batchSize;
@@ -38,12 +41,15 @@ public class DataflowRuntimeTests
             .Build();
 
         using var cts = new CancellationTokenSource();
+
+        //act
         var run = pipeline.RunAsync(cts.Token);
 
         // Long enough for an unbounded source to race far ahead of a 20ms-per-batch sink: the sink
         // can have absorbed at most ~15 batches in this window, out of 1000 available.
         await Task.Delay(300, CancellationToken.None);
 
+        //assert
         var produced = source.Produced;
         var written = sink.Rows.Count;
 
@@ -71,6 +77,7 @@ public class DataflowRuntimeTests
     [Fact]
     public async Task Extract_and_load_overlap_instead_of_running_in_sequence()
     {
+        //arrange
         // The whole point of the channel wiring. A sequential executor would finish every read
         // before the first write, so the sink's first write would land after the source's last read.
         var firstWrite = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -79,7 +86,7 @@ public class DataflowRuntimeTests
         var source = new TimestampedSource(50, () => Volatile.Write(ref lastRead, Stopwatch.GetTimestamp()));
         var sink = new TimestampedSink(t => firstWrite.TrySetResult(t));
 
-        var pipeline = EtlPipeline.CreateBuilder("overlap")
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
             .WithOptions(o =>
             {
                 o.BatchSize = 1;
@@ -89,11 +96,12 @@ public class DataflowRuntimeTests
             .To(sink)
             .Build();
 
+        //act
         var result = await pipeline.RunAsync(CancellationToken.None);
-
-        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-
         var firstWriteAt = await firstWrite.Task;
+
+        //assert
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
         firstWriteAt.Should().BeLessThan(
             Volatile.Read(ref lastRead),
             "the sink must start writing before the source finishes reading, or the stages are serialized");
@@ -102,12 +110,13 @@ public class DataflowRuntimeTests
     [Fact]
     public async Task Recycles_batch_buffers_instead_of_churning_them()
     {
+        //arrange
         // Struct rows mean the only per-batch allocation would be the batch array itself. If those
         // were not pooled, five million rows at a thousand per batch would be five thousand
         // large-object allocations; pooling keeps collections essentially flat.
         const int rows = 5_000_000;
 
-        var pipeline = EtlPipeline.CreateBuilder("pooling")
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
             .WithOptions(o => o.BatchSize = 1_000)
             .From(new GeneratedSource(rows))
             .Select(m => new Measurement(m.Id, m.Value * 2))
@@ -119,10 +128,12 @@ public class DataflowRuntimeTests
         GC.WaitForPendingFinalizers();
         GC.Collect();
 
+        //act
         var gen0Before = GC.CollectionCount(0);
         var result = await pipeline.RunAsync(CancellationToken.None);
         var gen0After = GC.CollectionCount(0);
 
+        //assert
         result.IsError.Should().BeFalse();
         result.Value.RowsWritten.Should().Be(rows);
 
@@ -136,19 +147,22 @@ public class DataflowRuntimeTests
     [Fact]
     public async Task Cancellation_stops_the_run_promptly_and_disposes_the_ports()
     {
+        //arrange
         var source = new InMemorySource<int>(Enumerable.Range(0, 10_000_000))
         {
             ReadDelay = TimeSpan.FromMilliseconds(5),
         };
         var sink = new InMemorySink<int>();
 
-        var pipeline = EtlPipeline.CreateBuilder("cancel")
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
             .WithOptions(o => o.BatchSize = 10)
             .From(source)
             .To(sink)
             .Build();
 
         using var cts = new CancellationTokenSource();
+
+        //act
         var run = pipeline.RunAsync(cts.Token);
 
         await Task.Delay(50, CancellationToken.None);
@@ -158,6 +172,7 @@ public class DataflowRuntimeTests
         var result = await run;
         stopwatch.Stop();
 
+        //assert
         result.IsError.Should().BeTrue();
         result.FirstError.Code.Should().EndWith("cancelled");
         stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2), "cancellation must not wait for the whole source");
@@ -169,16 +184,19 @@ public class DataflowRuntimeTests
     [Fact]
     public async Task Commits_the_sink_exactly_once_on_success()
     {
+        //arrange
         var sink = new InMemorySink<int>();
 
-        var pipeline = EtlPipeline.CreateBuilder("commit")
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
             .WithOptions(o => o.BatchSize = 4)
             .From(new InMemorySource<int>(Enumerable.Range(0, 100)))
             .To(sink)
             .Build();
 
+        //act
         var result = await pipeline.RunAsync(CancellationToken.None);
 
+        //assert
         result.IsError.Should().BeFalse();
         sink.Completions.Should().Be(1, "completion is a commit signal, not a per-batch flush");
         sink.Disposals.Should().Be(1);
@@ -187,18 +205,21 @@ public class DataflowRuntimeTests
     [Fact]
     public async Task Does_not_commit_the_sink_when_the_run_fails()
     {
+        //arrange
         // The reason completion is separate from disposal: disposal runs on the failure path too,
         // where committing a half-written load is exactly the wrong thing to do.
         var sink = new InMemorySink<int> { Reject = x => x == 42 };
 
-        var pipeline = EtlPipeline.CreateBuilder("commit")
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
             .WithOptions(o => o.BatchSize = 4)
             .From(new InMemorySource<int>(Enumerable.Range(0, 100)))
             .To(sink)
             .Build();
 
+        //act
         var result = await pipeline.RunAsync(CancellationToken.None);
 
+        //assert
         result.IsError.Should().BeTrue();
         sink.Completions.Should().Be(0);
         sink.Disposals.Should().Be(1, "disposal still has to happen so resources are released");
@@ -207,9 +228,10 @@ public class DataflowRuntimeTests
     [Fact]
     public async Task Runs_coarse_job_stages_in_the_order_they_were_added()
     {
+        //arrange
         var order = new List<string>();
 
-        var pipeline = EtlPipeline.CreateBuilder("job")
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
             .AddStage("download", (_, _) =>
             {
                 order.Add("download");
@@ -222,8 +244,10 @@ public class DataflowRuntimeTests
             })
             .Build();
 
+        //act
         var result = await pipeline.RunAsync(CancellationToken.None);
 
+        //assert
         result.IsError.Should().BeFalse();
         order.Should().Equal("download", "swap");
         result.Value.Stages.Select(s => s.Name).Should().Equal("download", "swap");
@@ -232,18 +256,21 @@ public class DataflowRuntimeTests
     [Fact]
     public async Task Supports_concurrent_runs_of_the_same_pipeline()
     {
+        //arrange
         // Nodes hold per-run state — row counters, channels, completion tasks. If a run reused the
         // node objects the builder produced, eight runs at once would trample each other's counts.
-        var pipeline = EtlPipeline.CreateBuilder("concurrent")
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
             .WithOptions(o => o.BatchSize = 16)
             .From<FixedSource, int>()
             .Select(x => x * 2)
             .To<NullSink>()
             .Build();
 
+        //act
         var runs = await Task.WhenAll(
             Enumerable.Range(0, 8).Select(_ => pipeline.RunAsync(CancellationToken.None)));
 
+        //assert
         runs.Should().OnlyContain(r => !r.IsError);
         runs.Should().OnlyContain(
             r => r.Value.RowsRead == FixedSource.Total && r.Value.RowsWritten == FixedSource.Total,

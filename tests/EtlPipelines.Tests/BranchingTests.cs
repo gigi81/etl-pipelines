@@ -1,4 +1,3 @@
-using EtlPipelines.Abstractions.Building;
 using EtlPipelines.Abstractions.Ports;
 using EtlPipelines.Tests.Fixtures;
 using FluentAssertions;
@@ -16,22 +15,28 @@ namespace EtlPipelines.Tests;
 /// </remarks>
 public class BranchingTests
 {
+    private const string PipelineName = "fanout";
+
     [Fact]
     public async Task Every_branch_receives_every_row()
     {
+        //arrange
         // 2000 rows against a 16-row batch: ~125 batch boundaries for a fan-out to lose a batch at.
         var left = new InMemorySink<int>();
         var right = new InMemorySink<int>();
 
-        var result = await EtlPipeline.CreateBuilder("fanout")
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
             .WithOptions(o => o.BatchSize = 16)
             .From(new InMemorySource<int>(Enumerable.Range(0, 2_000)))
             .Branch(
                 b1 => b1.To(left),
                 b2 => b2.To(right))
-            .Build()
-            .RunAsync(CancellationToken.None);
+            .Build();
 
+        //act
+        var result = await pipeline.RunAsync(CancellationToken.None);
+
+        //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
 
         left.Rows.Should().Equal(Enumerable.Range(0, 2_000), "no row may be dropped or duplicated");
@@ -44,18 +49,22 @@ public class BranchingTests
     [Fact]
     public async Task Branches_run_independent_transform_chains()
     {
+        //arrange
         var raw = new InMemorySink<int>();
         var doubled = new InMemorySink<string>();
 
-        var result = await EtlPipeline.CreateBuilder("chains")
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
             .WithOptions(o => o.BatchSize = 8)
             .From(new InMemorySource<int>(Enumerable.Range(1, 100)))
             .Branch(
                 b1 => b1.Where(x => x % 2 == 0).To(raw),
                 b2 => b2.Select(x => $"#{x * 2}").To(doubled))
-            .Build()
-            .RunAsync(CancellationToken.None);
+            .Build();
 
+        //act
+        var result = await pipeline.RunAsync(CancellationToken.None);
+
+        //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
 
         // One branch filtering must not affect what the other sees.
@@ -68,12 +77,13 @@ public class BranchingTests
     [Fact]
     public async Task Recycles_per_branch_buffers_instead_of_leaking_them()
     {
+        //arrange
         // Each branch is handed its own rented buffer. A missed Release in the fan-out pump is
         // invisible except as heap growth, so measure it: struct rows mean the batch arrays are the
         // only thing that could churn.
         const int rows = 2_000_000;
 
-        var pipeline = EtlPipeline.CreateBuilder("pooling")
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
             .WithOptions(o => o.BatchSize = 1_000)
             .From(new CountingSource(rows))
             .Branch(
@@ -85,10 +95,12 @@ public class BranchingTests
         GC.WaitForPendingFinalizers();
         GC.Collect();
 
+        //act
         var gen0Before = GC.CollectionCount(0);
         var result = await pipeline.RunAsync(CancellationToken.None);
         var gen0After = GC.CollectionCount(0);
 
+        //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
         result.Value.RowsWritten.Should().Be(rows * 2);
 
@@ -102,13 +114,14 @@ public class BranchingTests
     [Fact]
     public async Task Does_not_hand_the_same_pooled_buffer_to_two_branches()
     {
+        //arrange
         // Releasing one batch twice would return the same array to the pool twice, so a later rent
         // hands one array to two consumers and their contents tear into each other. Running many
         // batches through both branches and checking both are intact is what surfaces that.
         var left = new InMemorySink<int>();
         var right = new InMemorySink<int>();
 
-        var result = await EtlPipeline.CreateBuilder("nodoublefree")
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
             .WithOptions(o =>
             {
                 o.BatchSize = 4;
@@ -118,9 +131,12 @@ public class BranchingTests
             .Branch(
                 b1 => b1.To(left),
                 b2 => b2.To(right))
-            .Build()
-            .RunAsync(CancellationToken.None);
+            .Build();
 
+        //act
+        var result = await pipeline.RunAsync(CancellationToken.None);
+
+        //assert
         result.IsError.Should().BeFalse();
         left.Rows.Should().Equal(Enumerable.Range(0, 5_000));
         right.Rows.Should().Equal(Enumerable.Range(0, 5_000), "a torn buffer shows up as wrong values here");
@@ -129,13 +145,14 @@ public class BranchingTests
     [Fact]
     public async Task A_slow_branch_throttles_the_whole_fan_out()
     {
+        //arrange
         // Rows go to every branch before the next batch is taken, so the slowest branch governs.
         // Documented behaviour, and the alternative would be unbounded buffering for the fast one.
         var source = new InMemorySource<int>(Enumerable.Range(0, 100_000));
         var fast = new InMemorySink<int>();
         var slow = new InMemorySink<int> { WriteDelay = TimeSpan.FromMilliseconds(20) };
 
-        var pipeline = EtlPipeline.CreateBuilder("throttle")
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
             .WithOptions(o =>
             {
                 o.BatchSize = 100;
@@ -148,10 +165,12 @@ public class BranchingTests
             .Build();
 
         using var cts = new CancellationTokenSource();
-        var run = pipeline.RunAsync(cts.Token);
 
+        //act
+        var run = pipeline.RunAsync(cts.Token);
         await Task.Delay(300, CancellationToken.None);
 
+        //assert
         source.Produced.Should().BeLessThan(100_000, "the slow branch must stall the source");
 
         // The real property. Comparing the fast branch against the source would prove nothing — it
@@ -177,18 +196,22 @@ public class BranchingTests
     [Fact]
     public async Task A_failing_branch_stops_the_whole_stage()
     {
+        //arrange
         var healthy = new InMemorySink<int>();
         var failing = new InMemorySink<int> { Reject = x => x == 500 };
 
-        var result = await EtlPipeline.CreateBuilder("failure")
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
             .WithOptions(o => o.BatchSize = 16)
             .From(new InMemorySource<int>(Enumerable.Range(0, 5_000)))
             .Branch(
                 b1 => b1.To(healthy),
                 b2 => b2.To(failing))
-            .Build()
-            .RunAsync(CancellationToken.None);
+            .Build();
 
+        //act
+        var result = await pipeline.RunAsync(CancellationToken.None);
+
+        //assert
         // The important part is that this returns at all: the healthy branch must not be left
         // blocked on a channel nobody drains once its sibling gave up.
         result.IsError.Should().BeTrue();
@@ -199,11 +222,12 @@ public class BranchingTests
     [Fact]
     public async Task Branches_can_themselves_branch()
     {
+        //arrange
         var a = new InMemorySink<int>();
         var b = new InMemorySink<int>();
         var c = new InMemorySink<int>();
 
-        var result = await EtlPipeline.CreateBuilder("nested")
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
             .WithOptions(o => o.BatchSize = 8)
             .From(new InMemorySource<int>(Enumerable.Range(0, 200)))
             .Branch(
@@ -211,9 +235,12 @@ public class BranchingTests
                 b2 => b2.Branch(
                     b3 => b3.To(b),
                     b4 => b4.To(c)))
-            .Build()
-            .RunAsync(CancellationToken.None);
+            .Build();
 
+        //act
+        var result = await pipeline.RunAsync(CancellationToken.None);
+
+        //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
 
         a.Rows.Should().HaveCount(200);
@@ -228,13 +255,19 @@ public class BranchingTests
     [Fact]
     public void Rejects_a_branch_that_never_terminates()
     {
-        var act = () => EtlPipeline.CreateBuilder("bad")
-            .From(new InMemorySource<int>([1]))
+        //arrange
+        var source = new InMemorySource<int>([1]);
+        var sink = new InMemorySink<int>();
+
+        //act
+        var act = () => EtlPipeline.CreateBuilder(PipelineName)
+            .From(source)
             .Branch(
-                b1 => b1.To(new InMemorySink<int>()),
+                b1 => b1.To(sink),
                 b2 => b2.Where(x => x > 0))
             .Build();
 
+        //assert
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*Branch 1 never terminated*");
     }
@@ -242,11 +275,17 @@ public class BranchingTests
     [Fact]
     public void Rejects_a_branch_with_fewer_than_two_paths()
     {
-        var act = () => EtlPipeline.CreateBuilder("bad")
-            .From(new InMemorySource<int>([1]))
-            .Branch(b1 => b1.To(new InMemorySink<int>()))
+        //arrange
+        var source = new InMemorySource<int>([1]);
+        var sink = new InMemorySink<int>();
+
+        //act
+        var act = () => EtlPipeline.CreateBuilder(PipelineName)
+            .From(source)
+            .Branch(b1 => b1.To(sink))
             .Build();
 
+        //assert
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*at least two branches*");
     }
@@ -254,16 +293,18 @@ public class BranchingTests
     [Fact]
     public void Registers_components_inside_branches_as_scoped_and_keyed()
     {
+        //arrange
         var services = new ServiceCollection();
-
-        services.AddEtlPipeline("orders", builder => builder
+        services.AddEtlPipeline(PipelineName, builder => builder
             .From<CountingSource, int>()
             .Branch(
                 b1 => b1.To<NullSink>(),
                 b2 => b2.To<NullSink>()));
 
+        //act
         var sinks = services.Where(d => d.ServiceType == typeof(IDataSink<int>)).ToArray();
 
+        //assert
         // Two branches using the same sink type must not overwrite each other, which is exactly what
         // distinct keys buy — with a single unkeyed registration one branch would win for both.
         sinks.Should().HaveCount(2);
