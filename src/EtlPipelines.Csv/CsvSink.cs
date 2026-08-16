@@ -33,6 +33,7 @@ public sealed class CsvSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsync
 
     private TextWriter? _writer;
     private CsvWriter? _csv;
+    private IFileInfo? _writingTo;
 
     /// <summary>Writes to <paramref name="file"/>, overwriting it if it already exists.</summary>
     /// <param name="file">Destination file. Its filesystem is the one the sink writes through.</param>
@@ -70,7 +71,7 @@ public sealed class CsvSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsync
     /// The file currently being written — the temporary one while a run is in flight, and the target
     /// once it has been promoted.
     /// </summary>
-    public IFileInfo? WritingTo { get; private set; }
+    public IFileInfo? WritingTo => _writingTo;
 
     /// <inheritdoc />
     public ValueTask InitializeAsync(CancellationToken cancellationToken)
@@ -84,15 +85,15 @@ public sealed class CsvSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsync
         {
             // The temporary file is a sibling of the target on purpose: a rename is only atomic within
             // a volume, and the system temp directory is often on a different one.
-            WritingTo = _options.WriteAtomically
+            _writingTo = _options.WriteAtomically
                 ? _target.Directory.File($"{Guid.NewGuid():N}.tmp")
                 : _target;
 
             // Reads better than pulling the directory name out of the path by hand, and Create is a
             // no-op when the directory is already there.
-            WritingTo.Directory?.Create();
+            _writingTo.Directory?.Create();
 
-            _writer = new StreamWriter(WritingTo.Create(), _options.Encoding);
+            _writer = new StreamWriter(_writingTo.Create(), _options.Encoding);
         }
 
         _csv = new CsvWriter(_writer!, _options.CreateConfiguration());
@@ -144,10 +145,10 @@ public sealed class CsvSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsync
         // renaming a file that has not finished flushing would promote a partial one anywhere.
         await CloseAsync().ConfigureAwait(false);
 
-        if (_target is not null && _options.WriteAtomically && WritingTo is not null)
+        if (_target is not null && _options.WriteAtomically && _writingTo is not null)
         {
-            WritingTo.MoveTo(_target.FullName, overwrite: true);
-            WritingTo = _target;
+            _writingTo.MoveTo(_target.FullName, overwrite: true);
+            _writingTo = _target;
         }
 
         return Result.Success;
