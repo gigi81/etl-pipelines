@@ -85,6 +85,29 @@ Reporting consumed and produced separately is what lets one contract carry every
 maps, filters, within-batch reduction, and 1:many expansion that overflows the output buffer. The
 runtime re-offers whatever was not consumed.
 
+## Reading from a database
+
+`DataReaderSource<TRow>` bridges any ADO.NET provider into a pipeline:
+
+```csharp
+services.AddEtlPipeline("orders", builder => builder
+    .From<OrderRow>(sp => new DataReaderSource<OrderRow>(
+        async ct => await sp.GetRequiredService<OrderCommandFactory>().ExecuteReaderAsync(ct),
+        r => new OrderRow(r.GetInt32(0), r.GetString(1), r.GetDecimal(2))))
+    .Through<NormalizeOrders, OrderDto>()
+    .To<SqlSink>());
+```
+
+The mapping delegate is not optional decoration. An `IDataRecord` is a **cursor positioned on the
+current row**, not a value — it is the same object every iteration and its contents change as the
+reader advances. A batch built from the record itself would hold N references to one object showing
+the last row read. The delegate copies the columns out, and the signature enforces it.
+
+The reader is opened in `InitializeAsync`, not in the constructor, so a registered source holds no
+open cursor between runs — each run opens its own and the run's scope closes it. Where the provider's
+reader derives from `DbDataReader` (all of them do), `ReadAsync` is used rather than the blocking
+`IDataReader.Read`; the synchronous fallback keeps in-memory and legacy readers working.
+
 ## Writing a transform
 
 You rarely implement `IDataTransform` yourself. Write per-row code and the framework supplies the
