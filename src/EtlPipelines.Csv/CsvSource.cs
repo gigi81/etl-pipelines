@@ -1,3 +1,4 @@
+using System.IO.Abstractions;
 using CsvHelper;
 
 namespace EtlPipelines.Csv;
@@ -34,14 +35,25 @@ public sealed class CsvSource<TRow> : IDataSource<TRow>, IAsyncInitializable
     /// <param name="path">Path to the file to read.</param>
     /// <param name="options">Format settings. Defaults are UTF-8, comma-delimited, invariant culture.</param>
     /// <param name="deadLetters">Receives the raw text of any row that could not be parsed.</param>
-    public CsvSource(string path, CsvSourceOptions? options = null, IDeadLetterSink<string>? deadLetters = null)
+    /// <param name="fileSystem">
+    /// The filesystem to read through. Defaults to the real one; pass a <c>MockFileSystem</c> to test
+    /// against an in-memory filesystem instead.
+    /// </param>
+    public CsvSource(
+        string path,
+        CsvSourceOptions? options = null,
+        IDeadLetterSink<string>? deadLetters = null,
+        IFileSystem? fileSystem = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        var files = fileSystem ?? new FileSystem();
 
         _options = options ?? new CsvSourceOptions();
         _deadLetters = deadLetters;
         _ownsReader = true;
-        _open = _ => new ValueTask<TextReader>(new StreamReader(path, _options.Encoding));
+        _open = _ => new ValueTask<TextReader>(
+            new StreamReader(files.FileInfo.New(path).OpenRead(), _options.Encoding));
     }
 
     /// <summary>Reads CSV from a reader opened when the run starts.</summary>

@@ -1,4 +1,4 @@
-using EtlPipelines.Abstractions.Ports;
+using System.IO.Abstractions;
 using EtlPipelines.Csv;
 using FluentAssertions;
 
@@ -13,18 +13,15 @@ namespace EtlPipelines.Csv.Tests;
 /// registered. These tests also pin the known limitation: the source port has no per-row rejection
 /// channel, so those skips cannot reach the run's <c>RowsFailed</c>.
 /// </remarks>
-public sealed class CsvMalformedRowTests : IDisposable
+public sealed class CsvMalformedRowTests
 {
-    private readonly string _directory = Directory.CreateTempSubdirectory("etl-csv-bad-").FullName;
-
-    public void Dispose() => Directory.Delete(_directory, recursive: true);
+    private readonly TestFileSystem _fs = new();
 
     public sealed record Order(int Id, string Customer, decimal Amount);
 
     /// <summary>Writes a file whose 2nd, 5th and 8th data rows have an unparseable amount.</summary>
     private async Task<string> FileWithBadRows()
     {
-        var path = System.IO.Path.Combine(_directory, "bad.csv");
         var lines = new List<string> { "Id,Customer,Amount" };
 
         for (var i = 1; i <= 10; i++)
@@ -34,8 +31,8 @@ public sealed class CsvMalformedRowTests : IDisposable
                 : $"{i},customer-{i},{i}.50");
         }
 
-        await File.WriteAllLinesAsync(path, lines, CancellationToken.None);
-        return path;
+        await _fs.File("bad.csv").WriteAllLinesAsync(lines, CancellationToken.None);
+        return _fs.Path("bad.csv");
     }
 
     [Fact]
@@ -46,7 +43,7 @@ public sealed class CsvMalformedRowTests : IDisposable
 
         var result = await EtlPipeline.CreateBuilder("bad")
             .WithOptions(o => o.BatchSize = 4)
-            .FromCsv<Order>(path)
+            .FromCsv<Order>(path, fileSystem: _fs.FileSystem)
             .To(sink)
             .Build()
             .RunAsync(CancellationToken.None);
@@ -61,7 +58,7 @@ public sealed class CsvMalformedRowTests : IDisposable
     {
         var path = await FileWithBadRows();
         var deadLetters = new RecordingDeadLetterSink<string>();
-        var source = new CsvSource<Order>(path, deadLetters: deadLetters);
+        var source = new CsvSource<Order>(path, deadLetters: deadLetters, fileSystem: _fs.FileSystem);
 
         var sink = new CollectingSink<Order>();
         await EtlPipeline.CreateBuilder("bad")
@@ -87,7 +84,7 @@ public sealed class CsvMalformedRowTests : IDisposable
         // a source has nowhere to report one. Closing the gap means giving the source port a
         // rejection channel — when that lands, this test should change.
         var path = await FileWithBadRows();
-        var source = new CsvSource<Order>(path);
+        var source = new CsvSource<Order>(path, fileSystem: _fs.FileSystem);
 
         var result = await EtlPipeline.CreateBuilder("bad")
             .From<Order>(_ => source)
@@ -105,7 +102,7 @@ public sealed class CsvMalformedRowTests : IDisposable
         var path = await FileWithBadRows();
 
         var result = await EtlPipeline.CreateBuilder("strict")
-            .FromCsv<Order>(path, new CsvSourceOptions { SkipMalformedRows = false })
+            .FromCsv<Order>(path, new CsvSourceOptions { SkipMalformedRows = false }, _fs.FileSystem)
             .To(new CollectingSink<Order>())
             .Build()
             .RunAsync(CancellationToken.None);
@@ -117,7 +114,7 @@ public sealed class CsvMalformedRowTests : IDisposable
     public async Task Reports_a_clear_error_when_read_before_initialization()
     {
         var path = await FileWithBadRows();
-        var source = new CsvSource<Order>(path);
+        var source = new CsvSource<Order>(path, fileSystem: _fs.FileSystem);
 
         var read = await source.ReadAsync(new Order[1], CancellationToken.None);
 

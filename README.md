@@ -155,6 +155,24 @@ mean the same thing wherever it is processed.
 Both option types also expose `HasHeaderRecord`, `Delimiter`, `Encoding`, a `Configure` escape hatch
 for the full `CsvConfiguration`, and `ConfigureContext` for registering class maps.
 
+**Every filesystem call goes through `IFileSystem`** (`System.IO.Abstractions`), so a pipeline that
+reads and writes files can be tested without touching a disk:
+
+```csharp
+var fs = new MockFileSystem();
+
+// per call site...
+builder.FromCsv<Order>("in.csv", fileSystem: fs).ToCsv("out.csv", fileSystem: fs);
+
+// ...or once, for every CSV port in the pipeline
+services.AddSingleton<IFileSystem>(fs);
+```
+
+The ports take the filesystem passed to them, else one registered in the container, else the real
+one — so production code needs no ceremony. Note that `MockFileSystem` is a reimplementation and can
+differ from a real disk at the edges (overwriting renames, nested directory creation), so a handful
+of tests deliberately run against the real filesystem to catch that.
+
 ## Reading from a database
 
 `DataReaderSource<TRow>` bridges any ADO.NET provider into a pipeline:

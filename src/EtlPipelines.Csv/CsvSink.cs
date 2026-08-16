@@ -1,3 +1,4 @@
+using System.IO.Abstractions;
 using CsvHelper;
 
 namespace EtlPipelines.Csv;
@@ -21,6 +22,7 @@ namespace EtlPipelines.Csv;
 /// <typeparam name="TRow">The row type to write.</typeparam>
 public sealed class CsvSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsyncCompletable
 {
+    private readonly IFileSystem _fileSystem;
     private readonly string? _targetPath;
     private readonly CsvSinkOptions _options;
     private readonly bool _ownsWriter;
@@ -32,11 +34,16 @@ public sealed class CsvSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsync
     /// <summary>Writes to the file at <paramref name="path"/>.</summary>
     /// <param name="path">Destination path. Overwritten if it already exists.</param>
     /// <param name="options">Format settings, including whether to write atomically.</param>
-    public CsvSink(string path, CsvSinkOptions? options = null)
+    /// <param name="fileSystem">
+    /// The filesystem to write through. Defaults to the real one; pass a <c>MockFileSystem</c> to
+    /// test against an in-memory filesystem instead.
+    /// </param>
+    public CsvSink(string path, CsvSinkOptions? options = null, IFileSystem? fileSystem = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
-        _targetPath = Path.GetFullPath(path);
+        _fileSystem = fileSystem ?? new FileSystem();
+        _targetPath = _fileSystem.Path.GetFullPath(path);
         _options = options ?? new CsvSinkOptions();
         _ownsWriter = true;
     }
@@ -56,6 +63,8 @@ public sealed class CsvSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsync
     {
         ArgumentNullException.ThrowIfNull(writer);
 
+        // Nothing here touches the filesystem, but the field is non-nullable for the path-based flow.
+        _fileSystem = new FileSystem();
         _writer = writer;
         _options = options ?? new CsvSinkOptions();
         _ownsWriter = !leaveOpen;
@@ -80,13 +89,13 @@ public sealed class CsvSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsync
                 ? $"{_targetPath}.{Guid.NewGuid():N}.tmp"
                 : _targetPath;
 
-            var directory = Path.GetDirectoryName(_writingTo);
-            if (!string.IsNullOrEmpty(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
+            var file = _fileSystem.FileInfo.New(_writingTo);
 
-            _writer = new StreamWriter(_writingTo, append: false, _options.Encoding);
+            // Reads better than combining Path.GetDirectoryName with Directory.CreateDirectory, and
+            // Create is a no-op when the directory already exists.
+            file.Directory?.Create();
+
+            _writer = new StreamWriter(file.Create(), _options.Encoding);
         }
 
         _csv = new CsvWriter(_writer!, _options.CreateConfiguration());
@@ -140,7 +149,7 @@ public sealed class CsvSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsync
 
         if (_targetPath is not null && _options.WriteAtomically && _writingTo is not null)
         {
-            File.Move(_writingTo, _targetPath, overwrite: true);
+            _fileSystem.File.Move(_writingTo, _targetPath, overwrite: true);
             _writingTo = _targetPath;
         }
 

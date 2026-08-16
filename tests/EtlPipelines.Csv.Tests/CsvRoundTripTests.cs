@@ -1,17 +1,14 @@
 using System.Globalization;
+using System.IO.Abstractions;
 using EtlPipelines.Csv;
 using FluentAssertions;
 
 namespace EtlPipelines.Csv.Tests;
 
-/// <summary>Reading and writing CSV through a real pipeline.</summary>
-public sealed class CsvRoundTripTests : IDisposable
+/// <summary>Reading and writing CSV through a real pipeline, against an in-memory filesystem.</summary>
+public sealed class CsvRoundTripTests
 {
-    private readonly string _directory = Directory.CreateTempSubdirectory("etl-csv-").FullName;
-
-    public void Dispose() => Directory.Delete(_directory, recursive: true);
-
-    private string Path(string name) => System.IO.Path.Combine(_directory, name);
+    private readonly TestFileSystem _fs = new();
 
     public sealed record Order(int Id, string Customer, decimal Amount);
 
@@ -20,7 +17,7 @@ public sealed class CsvRoundTripTests : IDisposable
     [Fact]
     public async Task Round_trips_rows_through_a_file()
     {
-        var target = Path("orders.csv");
+        var target = _fs.Path("orders.csv");
 
         Order[] orders =
         [
@@ -33,7 +30,7 @@ public sealed class CsvRoundTripTests : IDisposable
 
         var write = await EtlPipeline.CreateBuilder("write")
             .From(new ArraySource<Order>(orders))
-            .ToCsv(target)
+            .ToCsv(target, fileSystem: _fs.FileSystem)
             .Build()
             .RunAsync(CancellationToken.None);
 
@@ -41,7 +38,7 @@ public sealed class CsvRoundTripTests : IDisposable
 
         var readBack = new CollectingSink<Order>();
         var read = await EtlPipeline.CreateBuilder("read")
-            .FromCsv<Order>(target)
+            .FromCsv<Order>(target, fileSystem: _fs.FileSystem)
             .To(readBack)
             .Build()
             .RunAsync(CancellationToken.None);
@@ -61,21 +58,21 @@ public sealed class CsvRoundTripTests : IDisposable
 
         try
         {
-            var target = Path("culture.csv");
+            var target = _fs.Path("culture.csv");
             Order[] orders = [new(1, "acme", 1234.56m)];
 
             await EtlPipeline.CreateBuilder("write")
                 .From(new ArraySource<Order>(orders))
-                .ToCsv(target)
+                .ToCsv(target, fileSystem: _fs.FileSystem)
                 .Build()
                 .RunAsync(CancellationToken.None);
 
-            var text = await File.ReadAllTextAsync(target, CancellationToken.None);
+            var text = await _fs.File("culture.csv").ReadAllTextAsync(CancellationToken.None);
             text.Should().Contain("1234.56", "the file must use the invariant separator, not the host's");
 
             var readBack = new CollectingSink<Order>();
             await EtlPipeline.CreateBuilder("read")
-                .FromCsv<Order>(target)
+                .FromCsv<Order>(target, fileSystem: _fs.FileSystem)
                 .To(readBack)
                 .Build()
                 .RunAsync(CancellationToken.None);
@@ -91,7 +88,7 @@ public sealed class CsvRoundTripTests : IDisposable
     [Fact]
     public async Task Streams_correctly_across_many_batch_boundaries()
     {
-        var target = Path("many.csv");
+        var target = _fs.Path("many.csv");
         var orders = Enumerable.Range(0, 2_500)
             .Select(i => new Order(i, $"customer-{i}", i * 1.5m))
             .ToArray();
@@ -99,14 +96,14 @@ public sealed class CsvRoundTripTests : IDisposable
         await EtlPipeline.CreateBuilder("write")
             .WithOptions(o => o.BatchSize = 32)
             .From(new ArraySource<Order>(orders))
-            .ToCsv(target)
+            .ToCsv(target, fileSystem: _fs.FileSystem)
             .Build()
             .RunAsync(CancellationToken.None);
 
         var readBack = new CollectingSink<Order>();
         var result = await EtlPipeline.CreateBuilder("read")
             .WithOptions(o => o.BatchSize = 32)
-            .FromCsv<Order>(target)
+            .FromCsv<Order>(target, fileSystem: _fs.FileSystem)
             .To(readBack)
             .Build()
             .RunAsync(CancellationToken.None);
@@ -119,25 +116,25 @@ public sealed class CsvRoundTripTests : IDisposable
     [Fact]
     public async Task Transforms_between_two_files()
     {
-        var source = Path("in.csv");
-        var target = Path("out.csv");
+        var source = _fs.Path("in.csv");
+        var target = _fs.Path("out.csv");
 
         await EtlPipeline.CreateBuilder("seed")
             .From(new ArraySource<Order>([new(1, "acme", 10.50m), new(2, "globex", 3.25m)]))
-            .ToCsv(source)
+            .ToCsv(source, fileSystem: _fs.FileSystem)
             .Build()
             .RunAsync(CancellationToken.None);
 
         var result = await EtlPipeline.CreateBuilder("convert")
-            .FromCsv<Order>(source)
+            .FromCsv<Order>(source, fileSystem: _fs.FileSystem)
             .Select(o => new OrderDto(o.Id, o.Customer, o.Amount * 100))
-            .ToCsv(target)
+            .ToCsv(target, fileSystem: _fs.FileSystem)
             .Build()
             .RunAsync(CancellationToken.None);
 
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
 
-        var lines = await File.ReadAllLinesAsync(target, CancellationToken.None);
+        var lines = await _fs.File("out.csv").ReadAllLinesAsync(CancellationToken.None);
         lines[0].Should().Be("Id,Customer,AmountInCents");
 
         // 1050.00, not 1050: decimal multiplication preserves scale, and CsvHelper writes the value
@@ -150,35 +147,34 @@ public sealed class CsvRoundTripTests : IDisposable
     {
         // A file sink per branch is the motivating case for branching: archive the raw rows while the
         // same rows carry on into a reshaped load.
-        var archive = Path("archive.csv");
-        var converted = Path("converted.csv");
-
         var result = await EtlPipeline.CreateBuilder("fanout")
             .From(new ArraySource<Order>([new(1, "acme", 10.50m), new(2, "globex", 3.25m)]))
             .Branch(
-                b1 => b1.ToCsv(archive),
-                b2 => b2.Select(o => new OrderDto(o.Id, o.Customer, o.Amount * 100)).ToCsv(converted))
+                b1 => b1.ToCsv(_fs.Path("archive.csv"), fileSystem: _fs.FileSystem),
+                b2 => b2.Select(o => new OrderDto(o.Id, o.Customer, o.Amount * 100))
+                        .ToCsv(_fs.Path("converted.csv"), fileSystem: _fs.FileSystem))
             .Build()
             .RunAsync(CancellationToken.None);
 
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
 
-        File.Exists(archive).Should().BeTrue();
-        File.Exists(converted).Should().BeTrue();
-        (await File.ReadAllLinesAsync(archive, CancellationToken.None)).Should().HaveCount(3);
-        (await File.ReadAllLinesAsync(converted, CancellationToken.None)).Should().HaveCount(3);
+        _fs.File("archive.csv").Exists.Should().BeTrue();
+        _fs.File("converted.csv").Exists.Should().BeTrue();
+        (await _fs.File("archive.csv").ReadAllLinesAsync(CancellationToken.None)).Should().HaveCount(3);
+        (await _fs.File("converted.csv").ReadAllLinesAsync(CancellationToken.None)).Should().HaveCount(3);
         result.Value.RowsWritten.Should().Be(4, "two rows reached each of the two files");
     }
 
     [Fact]
     public async Task Reads_the_file_from_the_start_on_every_run()
     {
-        var target = Path("repeat.csv");
-        await File.WriteAllTextAsync(target, "Id,Customer,Amount\n1,acme,1.00\n2,globex,2.00\n", CancellationToken.None);
+        var target = _fs.Path("repeat.csv");
+        await _fs.File("repeat.csv")
+            .WriteAllTextAsync("Id,Customer,Amount\n1,acme,1.00\n2,globex,2.00\n", CancellationToken.None);
 
         var sink = new CollectingSink<Order>();
         var pipeline = EtlPipeline.CreateBuilder("repeat")
-            .FromCsv<Order>(target)
+            .FromCsv<Order>(target, fileSystem: _fs.FileSystem)
             .To(_ => sink)
             .Build();
 
@@ -196,12 +192,11 @@ public sealed class CsvRoundTripTests : IDisposable
     [Fact]
     public async Task Reads_an_empty_file_as_no_rows()
     {
-        var target = Path("empty.csv");
-        await File.WriteAllTextAsync(target, string.Empty, CancellationToken.None);
+        await _fs.File("empty.csv").WriteAllTextAsync(string.Empty, CancellationToken.None);
 
         var sink = new CollectingSink<Order>();
         var result = await EtlPipeline.CreateBuilder("empty")
-            .FromCsv<Order>(target)
+            .FromCsv<Order>(_fs.Path("empty.csv"), fileSystem: _fs.FileSystem)
             .To(sink)
             .Build()
             .RunAsync(CancellationToken.None);

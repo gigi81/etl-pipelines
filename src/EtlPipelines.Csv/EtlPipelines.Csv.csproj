@@ -15,6 +15,13 @@
 
   <ItemGroup>
     <PackageReference Include="CsvHelper" />
+    <!--
+      Every filesystem call goes through IFileSystem so the connector can be tested against an
+      in-memory filesystem. Wrappers supplies the concrete FileSystem used by default; Extensions
+      supplies the IFileInfo/IDirectoryInfo conveniences that keep the call sites readable.
+    -->
+    <PackageReference Include="TestableIO.System.IO.Abstractions.Wrappers" />
+    <PackageReference Include="TestableIO.System.IO.Abstractions.Extensions" />
   </ItemGroup>
 
 </Project>
