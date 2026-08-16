@@ -6,16 +6,19 @@
   </Configurations>
   <Folder Name="/Solution Items/">
     <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
     <File Path="LICENSE.md" />
     <File Path="README.md" />
   </Folder>
   <Folder Name="/src/">
     <File Path="src/Directory.Build.props" />
     <Project Path="src/EtlPipelines.Abstractions/EtlPipelines.Abstractions.csproj" />
+    <Project Path="src/EtlPipelines.Csv/EtlPipelines.Csv.csproj" />
     <Project Path="src/EtlPipelines/EtlPipelines.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <File Path="src/Directory.Build.props" />
+    <File Path="tests/Directory.Build.props" />
+    <Project Path="tests/EtlPipelines.Csv.Tests/EtlPipelines.Csv.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Tests/EtlPipelines.Tests.csproj" />
   </Folder>
 </Solution>

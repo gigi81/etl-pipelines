@@ -117,6 +117,44 @@ Three things worth knowing:
 - **A fan-out is still one stage.** It stays a single entry in `PipelineResult.Stages`, with `RowsOut`
   summed across destinations: two branches over 1,000 rows report 1,000 in and 2,000 out.
 
+## CSV files
+
+`EtlPipelines.Csv` adds a CSV source and sink built on CsvHelper. It is a separate package so the
+core runtime takes no CsvHelper dependency, and it references only `EtlPipelines.Abstractions` — a
+connector never depends on the execution engine.
+
+```csharp
+builder.FromCsv<Order>("orders.csv")
+       .Select(o => new OrderDto(o.Id, o.Customer, o.Amount * 100))
+       .ToCsv("out.csv");
+```
+
+**The sink writes atomically.** Rows stream into a temporary file beside the target, which is renamed
+into place from `CompleteAsync` — the hook the runtime calls once, only on success. So the target path
+either does not exist or holds a whole file, and a downstream job can never pick up a truncated one.
+A failed run leaves the temp file for inspection and does not touch a previous good target. This is
+exactly why `IAsyncCompletable` is separate from `DisposeAsync`, which also runs on failure. Set
+`WriteAtomically = false` if something needs to watch the file grow.
+
+**Malformed rows are skipped, not fatal.** One unparseable row costing a ten-million-row load is the
+classic CSV complaint, so `CsvSource` skips bad rows, counts them on `MalformedRows`, and hands their
+raw text to a registered `IDeadLetterSink<string>` so nothing is lost. Set `SkipMalformedRows = false`
+to stop on the first one instead.
+
+> **Known limitation.** Those skips do **not** appear in `PipelineResult.RowsFailed` and do not count
+> against `MaxRowErrors`. A transform can reject one row — `TransformResult.RejectedRow` carries it
+> into the row-error policy — but `IDataSource.ReadAsync` returns only a count, with no channel for a
+> rejected row, so a source cannot reach that machinery. Check `MalformedRows` and the dead-letter
+> sink. Closing the gap means giving `IDataSource` a rejection channel mirroring the transform side.
+
+**Culture defaults to invariant**, and that is a correctness decision rather than a preference. Under
+a machine-local culture a decimal written as `1.5` reads back as `1,5` on a comma-separator host — and
+with a comma delimiter it splits into two fields, shifting every column after it. A data file must
+mean the same thing wherever it is processed.
+
+Both option types also expose `HasHeaderRecord`, `Delimiter`, `Encoding`, a `Configure` escape hatch
+for the full `CsvConfiguration`, and `ConfigureContext` for registering class maps.
+
 ## Reading from a database
 
 `DataReaderSource<TRow>` bridges any ADO.NET provider into a pipeline:

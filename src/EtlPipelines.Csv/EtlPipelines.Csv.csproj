@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>CSV source and sink for EtlPipelines, built on CsvHelper.</Description>
+  </PropertyGroup>
+
+  <!--
+    Deliberately references the abstractions only, not the EtlPipelines runtime. Every type a
+    connector needs - the ports, the lifecycle interfaces, and the builder interfaces - lives in
+    Abstractions, so a connector never depends on the execution engine.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\EtlPipelines.Abstractions\EtlPipelines.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CsvHelper" />
+  </ItemGroup>
+
+</Project>
