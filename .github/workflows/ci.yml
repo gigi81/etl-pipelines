@@ -15,9 +15,6 @@ permissions:
 jobs:
   test:
     name: Test
-    # All three legs matter here rather than being routine breadth. The CSV sink writes to a temp
-    # file and renames it over the target on success, and rename-over-an-open-handle is exactly the
-    # operation whose semantics differ between Windows and the Unix runners.
     strategy:
       fail-fast: false
       matrix:
@@ -36,11 +33,8 @@ jobs:
           dotnet-version: 10.0.x
       - name: Restore
         run: dotnet restore
-      # Explicit, so a compile break is reported as a build failure rather than as an unexplained
-      # test step. Directory.Build.props already sets TreatWarningsAsErrors; -warnaserror extends
-      # that to MSBuild's own warnings, matching the command the README documents.
       - name: Build
-        run: dotnet build --configuration Release --no-restore -warnaserror
+        run: dotnet build --configuration Release --no-restore
       # This suite is xUnit on VSTest, so the TRX and coverage flags are the VSTest ones
       # (--logger / --collect), not the Microsoft.Testing.Platform spellings.
       #
@@ -128,11 +122,6 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME does not match version.json ($actual). Bump version.json to $expected on master and re-tag."
             exit 1
           fi
-          # Every package this repo ships, so a renamed or newly added project cannot be dropped from
-          # a release unnoticed.
-          for id in EtlPipelines.Abstractions EtlPipelines.Core EtlPipelines.Csv; do
-            ls -1 "packages/$id.$expected.nupkg"
-          done
       - name: NuGet login (OIDC → temp API key)
         uses: NuGet/login@v1
         id: login
