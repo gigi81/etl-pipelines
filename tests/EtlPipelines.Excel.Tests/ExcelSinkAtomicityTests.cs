@@ -1,6 +1,5 @@
 using System.IO.Abstractions;
 using EtlPipelines.Core;
-using FluentAssertions;
 
 namespace EtlPipelines.Excel.Tests;
 
@@ -31,7 +30,7 @@ public sealed class ExcelSinkAtomicityTests
     private static FailingSink<Row> SlowFailure() =>
         new(failAfter: 40, delayPerBatch: TimeSpan.FromMilliseconds(10));
 
-    [Fact]
+    [Test]
     public async Task The_target_appears_only_once_the_run_succeeds()
     {
         //arrange
@@ -54,7 +53,7 @@ public sealed class ExcelSinkAtomicityTests
         _host.TempFiles().Should().BeEmpty("the temporary file is renamed, not left behind, on success");
     }
 
-    [Fact]
+    [Test]
     public async Task A_failed_run_leaves_no_target_file_at_all()
     {
         //arrange
@@ -87,7 +86,7 @@ public sealed class ExcelSinkAtomicityTests
         temps[0].Length.Should().BeGreaterThan(0, "bytes had already streamed to disk when the run failed");
     }
 
-    [Fact]
+    [Test]
     public async Task A_failed_run_does_not_disturb_a_previous_good_file()
     {
         //arrange
@@ -119,7 +118,7 @@ public sealed class ExcelSinkAtomicityTests
         readBack.Rows[0].Name.Should().Be("previous");
     }
 
-    [Fact]
+    [Test]
     public async Task Writes_straight_to_the_target_when_atomicity_is_turned_off()
     {
         //arrange
@@ -141,7 +140,7 @@ public sealed class ExcelSinkAtomicityTests
         _host.TempFiles().Should().BeEmpty("nothing is written through a temporary file in this mode");
     }
 
-    [Fact]
+    [Test]
     public async Task Creates_the_destination_directory()
     {
         //arrange
@@ -161,7 +160,7 @@ public sealed class ExcelSinkAtomicityTests
         target.Exists.Should().BeTrue("a destination directory that does not exist yet is created");
     }
 
-    [Fact]
+    [Test]
     public async Task Writes_to_a_supplied_stream_without_renaming()
     {
         //arrange

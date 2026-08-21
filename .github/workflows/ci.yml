@@ -2,12 +2,12 @@ name: Continuous Integration
 on:
   push:
     branches:
-      - master
+      - main
       - 'feature/**'
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
   pull_request:
-    branches: [master]
+    branches: [main]
 permissions:
   contents: read
   actions: read
@@ -35,39 +35,40 @@ jobs:
         run: dotnet restore
       - name: Build
         run: dotnet build --configuration Release --no-restore
-      # This suite is xUnit on VSTest, so the TRX and coverage flags are the VSTest ones
-      # (--logger / --collect), not the Microsoft.Testing.Platform spellings.
+      # TUnit runs on Microsoft.Testing.Platform (see global.json), so the report and coverage flags
+      # are the platform's own (--report-trx / --coverage) rather than the VSTest ones
+      # (--logger / --collect).
       #
-      # Results are left in each project's own TestResults folder instead of a shared
-      # --results-directory: the TRX name is only unique to the second, so two projects finishing
-      # within the same second collide there and one project's results vanish from the report.
+      # A shared --results-directory is safe here: MTP puts the assembly name in the TRX filename, so
+      # the collision that once forced a results directory per project cannot happen.
       #
-      # shell: bash on every leg so that `|| true` means the same thing everywhere — under the
+      # shell: bash on every leg so that `|| true` means the same thing everywhere - under the
       # Windows default of pwsh there is no `true` command, so the step would fail anyway and the
       # reporter below would never get to render which test broke.
       - name: Run tests
         shell: bash
         run: >
           dotnet test --configuration Release --no-build
-          --logger "trx;LogFilePrefix=test-results"
-          --collect:"XPlat Code Coverage"
+          --results-directory ./TestResults
+          --report-trx --report-trx-filename "{asm}-test-results.trx"
+          --coverage --coverage-output-format cobertura
           || true
       - name: Test report
         uses: dorny/test-reporter@v3.0.0
         if: always()
         with:
           name: test-results-${{ matrix.os }}
-          path: "tests/*/TestResults/*.trx"
+          path: "./TestResults/*-test-results.trx"
           reporter: dotnet-trx
           fail-on-error: true
-      # One level of wildcard, deliberately: the collector also drops an intermediate copy under
-      # TestResults/_<machine>/In/<machine>/, and a ** glob would upload each report twice.
+      # One level, deliberately: the collector also drops a copy under TestResults/_<machine>/In/,
+      # and a ** glob would upload every report twice.
       - name: Upload coverage
         uses: actions/upload-artifact@v7
         if: always()
         with:
           name: Code coverage ${{ matrix.os }}
-          path: "tests/*/TestResults/*/coverage.cobertura.xml"
+          path: "./TestResults/*.cobertura.xml"
   pack:
     name: Pack
     needs: [test]
@@ -119,7 +120,7 @@ jobs:
           expected="${GITHUB_REF_NAME#v}"
           actual="$(jq -r .version version.json)"
           if [ "$expected" != "$actual" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match version.json ($actual). Bump version.json to $expected on master and re-tag."
+            echo "::error::Tag $GITHUB_REF_NAME does not match version.json ($actual). Bump version.json to $expected on main and re-tag."
             exit 1
           fi
       - name: NuGet login (OIDC → temp API key)

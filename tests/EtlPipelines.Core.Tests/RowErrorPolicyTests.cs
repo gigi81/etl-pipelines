@@ -2,7 +2,6 @@ using EtlPipelines.Abstractions.Building;
 using EtlPipelines.Abstractions.Configuration;
 using EtlPipelines.Abstractions.Ports;
 using EtlPipelines.Core.Tests.Fixtures;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Core.Tests;
@@ -32,7 +31,7 @@ public class RowErrorPolicyTests
             .TrySelect(RejectMultiplesOfTen)
             .To(sink);
 
-    [Fact]
+    [Test]
     public async Task Fails_the_run_on_the_first_bad_row_by_default()
     {
         //arrange
@@ -48,7 +47,7 @@ public class RowErrorPolicyTests
         sink.Completions.Should().Be(0, "a failed run must not commit");
     }
 
-    [Fact]
+    [Test]
     public async Task Skips_bad_rows_and_finishes_when_told_to()
     {
         //arrange
@@ -69,7 +68,7 @@ public class RowErrorPolicyTests
         sink.Completions.Should().Be(1);
     }
 
-    [Fact]
+    [Test]
     public async Task Routes_bad_rows_to_the_dead_letter_sink()
     {
         //arrange
@@ -106,7 +105,7 @@ public class RowErrorPolicyTests
         deadLetters.Entries.Should().OnlyContain(e => e.Error.Code == "row.rejected");
     }
 
-    [Fact]
+    [Test]
     public async Task Stops_once_too_many_rows_have_been_rejected()
     {
         //arrange
@@ -127,7 +126,7 @@ public class RowErrorPolicyTests
         result.FirstError.Description.Should().Contain("limit 3");
     }
 
-    [Fact]
+    [Test]
     public async Task Treats_zero_max_errors_as_unlimited()
     {
         //arrange
@@ -147,7 +146,7 @@ public class RowErrorPolicyTests
         result.Value.RowsFailed.Should().Be(10);
     }
 
-    [Fact]
+    [Test]
     public async Task Reports_a_sink_failure_against_the_whole_batch()
     {
         //arrange
@@ -174,7 +173,7 @@ public class RowErrorPolicyTests
         sink.Rows.Should().HaveCount(92);
     }
 
-    [Fact]
+    [Test]
     public void Rejects_options_that_cannot_produce_a_working_pipeline()
     {
         //arrange

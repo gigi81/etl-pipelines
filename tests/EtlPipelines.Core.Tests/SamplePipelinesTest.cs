@@ -1,6 +1,5 @@
 using EtlPipelines.Abstractions.Ports;
 using EtlPipelines.Core.Tests.Stages;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -19,7 +18,7 @@ public class SamplePipelinesTest
 
     private static readonly List<Guid> Observed = [];
 
-    [Fact]
+    [Test]
     public async Task Runs_a_source_transform_sink_dataflow()
     {
         //arrange
@@ -48,7 +47,7 @@ public class SamplePipelinesTest
         ]);
     }
 
-    [Fact]
+    [Test]
     public async Task Declares_the_whole_pipeline_in_one_call()
     {
         //arrange
@@ -73,7 +72,7 @@ public class SamplePipelinesTest
         result.Value.Stages.Should().ContainSingle();
     }
 
-    [Fact]
+    [Test]
     public async Task Fans_the_same_rows_out_to_two_destinations()
     {
         //arrange
@@ -99,7 +98,7 @@ public class SamplePipelinesTest
         result.Value.Stages.Should().ContainSingle("a fan-out is still one dataflow");
     }
 
-    [Fact]
+    [Test]
     public async Task Injects_constructor_dependencies_into_ports_it_constructs()
     {
         //arrange
@@ -121,7 +120,7 @@ public class SamplePipelinesTest
         await act.Should().NotThrowAsync();
     }
 
-    [Fact]
+    [Test]
     public async Task Builds_stateful_ports_fresh_for_every_run()
     {
         //arrange
@@ -144,7 +143,7 @@ public class SamplePipelinesTest
         second.Value.RowsWritten.Should().Be(3, "the second run must not inherit the first run's position");
     }
 
-    [Fact]
+    [Test]
     public async Task Still_resolves_ports_the_container_owns()
     {
         //arrange
@@ -173,7 +172,7 @@ public class SamplePipelinesTest
         result.Value.RowsWritten.Should().Be(2);
     }
 
-    [Fact]
+    [Test]
     public async Task Rejects_a_bad_row_and_fails_the_run_by_default()
     {
         //arrange
@@ -194,7 +193,7 @@ public class SamplePipelinesTest
         result.FirstError.Code.Should().Be("order.negative_amount");
     }
 
-    [Fact]
+    [Test]
     public void Registers_every_named_component_as_scoped_and_keyed()
     {
         //arrange
@@ -221,7 +220,7 @@ public class SamplePipelinesTest
             "the key carries the pipeline name it belongs to");
     }
 
-    [Fact]
+    [Test]
     public async Task Keeps_two_pipelines_that_share_a_component_type_apart()
     {
         //arrange
@@ -253,7 +252,7 @@ public class SamplePipelinesTest
         one.Value.RowsWritten.Should().Be(1);
     }
 
-    [Fact]
+    [Test]
     public async Task Resolves_stages_from_the_scope_the_run_creates()
     {
         //arrange
@@ -289,7 +288,7 @@ public class SamplePipelinesTest
         Observed[0].Should().NotBe(Observed[2], "and each run gets a fresh scope");
     }
 
-    [Fact]
+    [Test]
     public void Refuses_to_register_two_pipelines_under_one_name()
     {
         //arrange
@@ -314,7 +313,7 @@ public class SamplePipelinesTest
             .WithMessage("*must be unique*");
     }
 
-    [Fact]
+    [Test]
     public async Task Keeps_pipelines_registered_under_different_names_apart()
     {
         //arrange
@@ -346,7 +345,7 @@ public class SamplePipelinesTest
         one.Value.RowsWritten.Should().Be(1);
     }
 
-    [Fact]
+    [Test]
     public void Says_so_plainly_when_no_pipelines_are_registered_at_all()
     {
         //arrange
@@ -363,7 +362,7 @@ public class SamplePipelinesTest
             .WithMessage("*AddEtlPipeline*");
     }
 
-    [Fact]
+    [Test]
     public void Lists_the_known_names_when_asked_for_one_that_does_not_exist()
     {
         //arrange
@@ -382,7 +381,7 @@ public class SamplePipelinesTest
         act.Should().Throw<InvalidOperationException>().WithMessage($"*{PipelineName}*");
     }
 
-    [Fact]
+    [Test]
     public void Refuses_to_build_a_pipeline_with_no_stages()
     {
         //arrange

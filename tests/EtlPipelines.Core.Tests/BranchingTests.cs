@@ -1,6 +1,5 @@
 using EtlPipelines.Abstractions.Ports;
 using EtlPipelines.Core.Tests.Fixtures;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Core.Tests;
@@ -17,7 +16,7 @@ public class BranchingTests
 {
     private const string PipelineName = "fanout";
 
-    [Fact]
+    [Test]
     public async Task Every_branch_receives_every_row()
     {
         //arrange
@@ -46,7 +45,7 @@ public class BranchingTests
         result.Value.RowsWritten.Should().Be(4_000, "rows out is the total actually written");
     }
 
-    [Fact]
+    [Test]
     public async Task Branches_run_independent_transform_chains()
     {
         //arrange
@@ -74,7 +73,9 @@ public class BranchingTests
         doubled.Rows[0].Should().Be("#2");
     }
 
-    [Fact]
+    [Test]
+    // Not in parallel: counts gen-0 collections, which any concurrent allocation perturbs.
+    [NotInParallel]
     public async Task Recycles_per_branch_buffers_instead_of_leaking_them()
     {
         //arrange
@@ -111,7 +112,7 @@ public class BranchingTests
             "per-branch buffers must go back to the pool, not be abandoned");
     }
 
-    [Fact]
+    [Test]
     public async Task Does_not_hand_the_same_pooled_buffer_to_two_branches()
     {
         //arrange
@@ -142,7 +143,9 @@ public class BranchingTests
         right.Rows.Should().Equal(Enumerable.Range(0, 5_000), "a torn buffer shows up as wrong values here");
     }
 
-    [Fact]
+    [Test]
+    // Not in parallel: measures how far one branch runs ahead of another in a fixed window.
+    [NotInParallel]
     public async Task A_slow_branch_throttles_the_whole_fan_out()
     {
         //arrange
@@ -193,7 +196,7 @@ public class BranchingTests
         }
     }
 
-    [Fact]
+    [Test]
     public async Task A_failing_branch_stops_the_whole_stage()
     {
         //arrange
@@ -219,7 +222,7 @@ public class BranchingTests
         healthy.Completions.Should().Be(0, "a failed stage commits nothing");
     }
 
-    [Fact]
+    [Test]
     public async Task Branches_can_themselves_branch()
     {
         //arrange
@@ -252,7 +255,7 @@ public class BranchingTests
         result.Value.RowsWritten.Should().Be(600);
     }
 
-    [Fact]
+    [Test]
     public void Rejects_a_branch_that_never_terminates()
     {
         //arrange
@@ -272,7 +275,7 @@ public class BranchingTests
             .WithMessage("*Branch 1 never terminated*");
     }
 
-    [Fact]
+    [Test]
     public void Rejects_a_branch_with_fewer_than_two_paths()
     {
         //arrange
@@ -290,7 +293,7 @@ public class BranchingTests
             .WithMessage("*at least two branches*");
     }
 
-    [Fact]
+    [Test]
     public void Registers_components_inside_branches_as_scoped_and_keyed()
     {
         //arrange

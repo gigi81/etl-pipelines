@@ -1,6 +1,5 @@
 using System.IO.Abstractions;
 using EtlPipelines.Core;
-using FluentAssertions;
 
 namespace EtlPipelines.Excel.Tests;
 
@@ -15,7 +14,7 @@ namespace EtlPipelines.Excel.Tests;
 /// in-memory stream can be more forgiving about than a file on disk. The only thing that changes is
 /// which <see cref="IFileSystem"/> the container is given.
 /// </remarks>
-public sealed class ExcelRealFileSystemTests : IDisposable
+public sealed class ExcelRealFileSystemTests
 {
     private const string PipelineName = "orders";
     private const string Write = "write";
@@ -24,7 +23,9 @@ public sealed class ExcelRealFileSystemTests : IDisposable
 
     private readonly ExcelTestHost _host = new(new FileSystem());
 
-    public void Dispose() => _host.Root.Delete(recursive: true);
+    /// <summary>Removes the scratch directory this test wrote to on the real disk.</summary>
+    [After(Test)]
+    public void DeleteScratchDirectory() => _host.Root.Delete(recursive: true);
 
     public sealed class Order
     {
@@ -36,7 +37,7 @@ public sealed class ExcelRealFileSystemTests : IDisposable
     private static Order[] Orders(int count) =>
         [.. Enumerable.Range(0, count).Select(i => new Order { Id = i, Customer = $"c{i}", Amount = i })];
 
-    [Fact]
+    [Test]
     public async Task Round_trips_through_the_real_file_system()
     {
         //arrange
@@ -64,7 +65,7 @@ public sealed class ExcelRealFileSystemTests : IDisposable
         readBack.Rows.Select(r => r.Amount).Should().Equal(10.50m, 25.75m);
     }
 
-    [Fact]
+    [Test]
     public async Task Renames_over_an_existing_file_on_the_real_disk()
     {
         //arrange
@@ -91,7 +92,7 @@ public sealed class ExcelRealFileSystemTests : IDisposable
         _host.TempFiles().Should().BeEmpty();
     }
 
-    [Fact]
+    [Test]
     public async Task Creates_nested_directories_on_the_real_disk()
     {
         //arrange
@@ -110,7 +111,7 @@ public sealed class ExcelRealFileSystemTests : IDisposable
         target.Exists.Should().BeTrue();
     }
 
-    [Fact]
+    [Test]
     public async Task Streams_a_large_sheet_through_the_pipeline()
     {
         //arrange

@@ -1,5 +1,4 @@
 using System.IO.Abstractions;
-using FluentAssertions;
 
 namespace EtlPipelines.Csv.Tests;
 
@@ -25,7 +24,7 @@ public sealed class CsvSinkAtomicityTests
     private static FailingSink<Row> SlowFailure() =>
         new(failAfter: 40, delayPerBatch: TimeSpan.FromMilliseconds(10));
 
-    [Fact]
+    [Test]
     public async Task The_target_appears_only_once_the_run_succeeds()
     {
         //arrange
@@ -46,7 +45,7 @@ public sealed class CsvSinkAtomicityTests
         _host.TempFiles().Should().BeEmpty("the temporary file is renamed, not left behind, on success");
     }
 
-    [Fact]
+    [Test]
     public async Task A_failed_run_leaves_no_target_file_at_all()
     {
         //arrange
@@ -80,7 +79,7 @@ public sealed class CsvSinkAtomicityTests
         written.Length.Should().BeLessThan(401, "and the file is genuinely incomplete");
     }
 
-    [Fact]
+    [Test]
     public async Task A_failed_run_does_not_disturb_a_previous_good_file()
     {
         //arrange
@@ -102,7 +101,7 @@ public sealed class CsvSinkAtomicityTests
         (await target.ReadAllLinesAsync(CancellationToken.None)).Should().Equal("Id,Name", "999,previous");
     }
 
-    [Fact]
+    [Test]
     public async Task Writes_straight_to_the_target_when_atomicity_is_turned_off()
     {
         //arrange
@@ -122,7 +121,7 @@ public sealed class CsvSinkAtomicityTests
         _host.TempFiles().Should().BeEmpty();
     }
 
-    [Fact]
+    [Test]
     public async Task Creates_the_destination_directory()
     {
         //arrange
@@ -142,7 +141,7 @@ public sealed class CsvSinkAtomicityTests
         target.Exists.Should().BeTrue();
     }
 
-    [Fact]
+    [Test]
     public async Task Writes_to_a_supplied_TextWriter_without_renaming()
     {
         //arrange

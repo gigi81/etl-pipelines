@@ -1,5 +1,4 @@
 using System.IO.Abstractions;
-using FluentAssertions;
 
 namespace EtlPipelines.Csv.Tests;
 
@@ -13,7 +12,7 @@ namespace EtlPipelines.Csv.Tests;
 /// up as a failure rather than as a production surprise. The only thing that changes is which
 /// <see cref="IFileSystem"/> the container is given.
 /// </remarks>
-public sealed class CsvRealFileSystemTests : IDisposable
+public sealed class CsvRealFileSystemTests
 {
     private const string PipelineName = "orders";
     private const string Write = "write";
@@ -22,7 +21,9 @@ public sealed class CsvRealFileSystemTests : IDisposable
 
     private readonly CsvTestHost _host = new(new FileSystem());
 
-    public void Dispose() => _host.Root.Delete(recursive: true);
+    /// <summary>Removes the scratch directory this test wrote to on the real disk.</summary>
+    [After(Test)]
+    public void DeleteScratchDirectory() => _host.Root.Delete(recursive: true);
 
     private sealed record Order(int Id, string Customer, decimal Amount);
 
@@ -31,7 +32,7 @@ public sealed class CsvRealFileSystemTests : IDisposable
             .Select(i => new Order(i, $"c{i}", i))
             .ToArray();
 
-    [Fact]
+    [Test]
     public async Task Round_trips_through_the_real_file_system()
     {
         //arrange
@@ -52,7 +53,7 @@ public sealed class CsvRealFileSystemTests : IDisposable
         readBack.Rows.Should().Equal(orders);
     }
 
-    [Fact]
+    [Test]
     public async Task Renames_over_an_existing_file_on_the_real_disk()
     {
         //arrange
@@ -76,7 +77,7 @@ public sealed class CsvRealFileSystemTests : IDisposable
         _host.TempFiles().Should().BeEmpty();
     }
 
-    [Fact]
+    [Test]
     public async Task Creates_nested_directories_on_the_real_disk()
     {
         //arrange
