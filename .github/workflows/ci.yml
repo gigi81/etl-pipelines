@@ -130,7 +130,7 @@ jobs:
           fi
           # Every package this repo ships, so a renamed or newly added project cannot be dropped from
           # a release unnoticed.
-          for id in EtlPipelines.Abstractions EtlPipelines EtlPipelines.Csv; do
+          for id in EtlPipelines.Abstractions EtlPipelines.Core EtlPipelines.Csv; do
             ls -1 "packages/$id.$expected.nupkg"
           done
       - name: NuGet login (OIDC → temp API key)

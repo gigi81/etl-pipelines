@@ -13,12 +13,12 @@
   <Folder Name="/src/">
     <File Path="src/Directory.Build.props" />
     <Project Path="src/EtlPipelines.Abstractions/EtlPipelines.Abstractions.csproj" />
+    <Project Path="src/EtlPipelines.Core/EtlPipelines.Core.csproj" />
     <Project Path="src/EtlPipelines.Csv/EtlPipelines.Csv.csproj" />
-    <Project Path="src/EtlPipelines/EtlPipelines.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <File Path="tests/Directory.Build.props" />
+    <Project Path="tests/EtlPipelines.Core.Tests/EtlPipelines.Core.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Csv.Tests/EtlPipelines.Csv.Tests.csproj" />
-    <Project Path="tests/EtlPipelines.Tests/EtlPipelines.Tests.csproj" />
   </Folder>
 </Solution>

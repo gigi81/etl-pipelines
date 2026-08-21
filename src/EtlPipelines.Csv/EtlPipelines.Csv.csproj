@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <!--
-    Deliberately references the abstractions only, not the EtlPipelines runtime. Every type a
+    Deliberately references the abstractions only, not the EtlPipelines.Core runtime. Every type a
     connector needs - the ports, the lifecycle interfaces, and the builder interfaces - lives in
     Abstractions, so a connector never depends on the execution engine.
   -->

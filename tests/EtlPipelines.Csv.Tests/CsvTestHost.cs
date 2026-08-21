@@ -2,6 +2,7 @@ using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using EtlPipelines.Abstractions.Building;
 using EtlPipelines.Abstractions.Execution;
+using EtlPipelines.Core;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Csv.Tests;

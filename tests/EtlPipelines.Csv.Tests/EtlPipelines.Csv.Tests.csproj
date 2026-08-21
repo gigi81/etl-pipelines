@@ -23,7 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\EtlPipelines.Csv\EtlPipelines.Csv.csproj" />
-    <ProjectReference Include="..\..\src\EtlPipelines\EtlPipelines.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Core\EtlPipelines.Core.csproj" />
   </ItemGroup>
 
 </Project>

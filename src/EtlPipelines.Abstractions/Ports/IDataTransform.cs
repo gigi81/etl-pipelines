@@ -27,7 +27,7 @@ namespace EtlPipelines.Abstractions.Ports;
 /// state is silently discarded.
 /// </para>
 /// <para>
-/// Most implementations should derive from one of the base classes in the <c>EtlPipelines</c> package
+/// Most implementations should derive from one of the base classes in the <c>EtlPipelines.Core</c> package
 /// (<c>RowTransform</c>, <c>HashAggregateTransform</c>, <c>SortedAggregateTransform</c>) rather than
 /// implementing this interface directly; those handle the consumed/produced bookkeeping.
 /// </para>
