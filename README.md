@@ -3,11 +3,19 @@
 A streaming ETL pipeline abstraction for .NET, built so that extract, transform and load actually
 overlap rather than run one after another.
 
-## The shape of it
+## Install
+
+| Package | For |
+|---|---|
+| `EtlPipelines.Core` | The runtime and the builder. Start here. |
+| `EtlPipelines.Csv` | CSV source and sink, built on CsvHelper. |
+| `EtlPipelines.Abstractions` | The contracts alone, for a library that defines ports without referencing the engine. Pulled in by the other two. |
+
+## Quick start
 
 ```csharp
 services.AddEtlPipeline("orders", builder => builder
-    .From<CsvSource, OrderRow>()
+    .From<DownloadOrders, OrderRow>()
     .Where(o => o.Amount > 0)
     .Through<NormalizeOrders, OrderDto>()
     .To<SqlSink>());
@@ -21,29 +29,28 @@ That is the whole registration. Naming the port types in the pipeline declaratio
 registered — there is no separate pass adding `IDataSource<OrderRow>` and friends to the container
 and then a second one referring back to them. Constructor dependencies are still injected normally.
 
+Each step re-types the builder, so a step whose input does not match the previous step's output is a
+compile error rather than a run-time surprise. `To<SqlSink>()` needs only one type argument because
+the row type is already known by then; `From` and `Through` need two, since C# cannot infer a row
+type from a port type.
+
+## How components are created
+
 Every component goes into the container as **scoped** and **keyed to the pipeline name**, and
-`RunAsync` creates one scope per run:
+`RunAsync` creates one scope per run.
 
 - **Scoped** means each run resolves its own instances and the scope disposes them all when the run
-  ends. That is what stateful components need — a source tracks read position, an aggregate
+  ends. That is what stateful components need — a source tracks its read position, an aggregate
   accumulates — and it is why two runs, sequential or concurrent, share nothing.
 - **Keyed** means two pipelines can use the same component type without collision. An `orders` and an
   `invoices` pipeline can each have their own `SqlSink` registered against `IDataSink<T>`, configured
   differently, and neither overwrites the other.
 
 The run scope is the single owner: nothing else disposes a component, so there is no double disposal
-and no leak. One consequence worth knowing — above `WithParallelism(1)` all workers share the one
-instance the run resolved, so a parallel transform must be thread-safe.
+and no leak.
 
-Each step re-types the builder, so a step whose input does not match the previous step's output is a
-compile error rather than a run-time surprise. `To<SqlSink>()` needs only one type argument because
-the row type is already known by then; `From` and `Through` need two, since C# cannot infer a row
-type from a port type.
-
-Ports named this way are **built fresh for each run**, which is what stateful ports need: a source
-tracks its read position and an aggregate accumulates state, so one shared instance would carry the
-previous run's leftovers into the next. When something else should own the lifetime — a port
-configured elsewhere, a shared pool — name only the row type and the container keeps ownership:
+When something else should own the lifetime — a port configured elsewhere, a shared pool — name only
+the row type and the container keeps ownership:
 
 ```csharp
 services.AddScoped<IDataSource<OrderRow>>(sp => /* ... */);
@@ -54,23 +61,10 @@ services.AddEtlPipeline("orders", builder => builder
     .To<SqlSink>());
 ```
 
-## Layout
+## The three ports
 
-`EtlPipelines.Abstractions` is grouped by concern, with each folder its own namespace:
-
-| Namespace | Contains |
-|---|---|
-| `.Ports` | `IDataSource`, `IDataSink`, `IDataTransform`, `TransformResult`, `IDrainable` |
-| `.Lifecycle` | `IAsyncInitializable`, `IAsyncCompletable` |
-| `.Execution` | `IPipeline`, `IPipelineStage`, `PipelineContext`, `PipelineResult`, `StageResult` |
-| `.Building` | `IPipelineBuilder`, `IDataflowBuilder` |
-| `.Configuration` | `PipelineOptions`, `RowErrorAction`, `IDeadLetterSink` |
-
-Implementing a source needs `.Ports` alone; a coarse job stage needs `.Execution`. Projects that
-touch most groups can collapse the noise with a `GlobalUsings.cs`, which is what the runtime package
-itself does.
-
-## Three ports
+Ports live in `EtlPipelines.Abstractions.Ports`; the lifecycle hooks below in `.Lifecycle`, options
+in `.Configuration`, results in `.Execution`.
 
 | Port | Contract |
 |---|---|
@@ -84,6 +78,14 @@ flag with its undefined states.
 Reporting consumed and produced separately is what lets one contract carry every cardinality — 1:1
 maps, filters, within-batch reduction, and 1:many expansion that overflows the output buffer. The
 runtime re-offers whatever was not consumed.
+
+Two capabilities are opt-in, probed for rather than baked into every contract so that a port stays a
+single-method interface:
+
+- `IAsyncInitializable` — async setup before rows flow.
+- `IAsyncCompletable` — flush and commit, called once and **only on success**. Distinct from
+  `DisposeAsync`, which also runs on the failure path and cannot report an error. This split is what
+  makes a commit-on-success sink, such as the atomic CSV writer below, possible at all.
 
 ## Branching
 
@@ -119,9 +121,7 @@ Three things worth knowing:
 
 ## CSV files
 
-`EtlPipelines.Csv` adds a CSV source and sink built on CsvHelper. It is a separate package so the
-core runtime takes no CsvHelper dependency, and it references only `EtlPipelines.Abstractions` — a
-connector never depends on the execution engine.
+`EtlPipelines.Csv` is a separate package, so the core runtime takes no CsvHelper dependency.
 
 ```csharp
 builder.FromCsv<Order>(fileSystem.FileInfo.New("orders.csv"))
@@ -130,21 +130,14 @@ builder.FromCsv<Order>(fileSystem.FileInfo.New("orders.csv"))
 ```
 
 Files are named as `IFileInfo` (`System.IO.Abstractions`), not as paths. An `IFileInfo` already
-carries the filesystem it belongs to, so the ports never have to be told which one to use and the
-package never constructs one — it depends on the abstraction package alone, not the wrappers. A test
-hands it `new MockFileSystem().FileInfo.New("orders.csv")` and the entire connector runs in memory:
-
-```csharp
-var fs = new MockFileSystem();
-builder.FromCsv<Order>(fs.FileInfo.New("in.csv")).ToCsv(fs.FileInfo.New("out.csv"));
-```
+carries the filesystem it belongs to, so the ports never have to be told which one to use. Hand them
+`new MockFileSystem().FileInfo.New("orders.csv")` and the entire connector runs in memory.
 
 **The sink writes atomically.** Rows stream into a temporary file beside the target, which is renamed
-into place from `CompleteAsync` — the hook the runtime calls once, only on success. So the target path
-either does not exist or holds a whole file, and a downstream job can never pick up a truncated one.
-A failed run leaves the temp file for inspection and does not touch a previous good target. This is
-exactly why `IAsyncCompletable` is separate from `DisposeAsync`, which also runs on failure. Set
-`WriteAtomically = false` if something needs to watch the file grow.
+into place on success. So the target path either does not exist or holds a whole file, and a
+downstream job can never pick up a truncated one. A failed run leaves the temp file for inspection
+and does not touch a previous good target. Set `WriteAtomically = false` if something needs to watch
+the file grow.
 
 **Malformed rows are skipped, not fatal.** One unparseable row costing a ten-million-row load is the
 classic CSV complaint, so `CsvSource` skips bad rows, counts them on `MalformedRows`, and hands their
@@ -164,10 +157,6 @@ mean the same thing wherever it is processed.
 
 Both option types also expose `HasHeaderRecord`, `Delimiter`, `Encoding`, a `Configure` escape hatch
 for the full `CsvConfiguration`, and `ConfigureContext` for registering class maps.
-
-Note that `MockFileSystem` is a reimplementation and can differ from a real disk at the edges this
-connector leans on hardest — overwriting renames and nested directory creation — so a few tests
-deliberately run against the real filesystem so a divergence fails rather than surprises.
 
 ## Reading from a database
 
@@ -208,7 +197,8 @@ public sealed class ToCents : RowTransform<OrderRow, OrderDto>
 ```
 
 `Transform` is synchronous on purpose: most transforms are pure CPU, and an async state machine per
-row costs more than the work. Use `SelectAsync` when a step genuinely awaits something.
+row costs more than the work. Use `SelectAsync` when a step genuinely awaits something. `RowFilter<TRow>`
+is the same idea for a predicate.
 
 ## Aggregation
 
@@ -247,7 +237,7 @@ to aggregate in process. This is a pipeline, not a query engine.
 Rejected rows go to a registered `IDeadLetterSink<TRow>`. Expected data-level failures return
 `ErrorOr`; genuine infrastructure faults stay exceptions and are caught at the stage boundary.
 
-## Performance notes
+## Performance
 
 - Bounded channels between stages give **back-pressure**: a slow sink throttles the source instead
   of letting batches pile up. Capacity above one is what makes the stages overlap.
@@ -256,17 +246,11 @@ Rejected rows go to a registered `IDeadLetterSink<TRow>`. Expected data-level fa
   because the buffer is recycled immediately. Copy out anything that must outlive the call.
 - When `TRow` is a class, pooling the array still leaves one object allocation per row. Struct rows
   or reusable row instances are the escape hatch.
-- `WithParallelism(n)` applies to the preceding transform. It does not preserve order, and it is
-  rejected for stateful transforms — parallel workers would each drain a separate partial aggregate.
-
-## Opt-in capabilities
-
-The runtime probes for these rather than baking them into every contract, so a stage stays a
-single-method interface:
-
-- `IAsyncInitializable` — async setup before rows flow.
-- `IAsyncCompletable` — flush and commit, called once, **only on success**. Distinct from
-  `DisposeAsync`, which also runs on the failure path and cannot report an error.
+- `WithParallelism(n)` does not preserve order, and it is rejected for stateful transforms — parallel
+  workers would each drain a separate partial aggregate. Above `WithParallelism(1)` all workers share
+  the one instance the run resolved, so a parallel transform must be thread-safe.
+- `BatchSize` (default 10,000) and `ChannelCapacity` (default 4) are the two knobs on `PipelineOptions`
+  that trade memory for throughput.
 
 ## Observability
 
