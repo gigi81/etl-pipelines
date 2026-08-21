@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using EtlPipelines.Abstractions.Ports;
 using EtlPipelines.Core.Tests.Fixtures;
-using FluentAssertions;
 
 namespace EtlPipelines.Core.Tests;
 
@@ -20,7 +19,9 @@ public class DataflowRuntimeTests
     /// <summary>A struct row, so buffer pooling is observable without per-row object allocation.</summary>
     private readonly record struct Measurement(long Id, double Value);
 
-    [Fact]
+    [Test]
+    // Not in parallel: measures how far the source runs ahead in a fixed window.
+    [NotInParallel]
     public async Task Back_pressure_bounds_how_far_the_source_runs_ahead()
     {
         //arrange
@@ -74,7 +75,9 @@ public class DataflowRuntimeTests
         }
     }
 
-    [Fact]
+    [Test]
+    // Not in parallel: measures that two stages overlap rather than run in sequence.
+    [NotInParallel]
     public async Task Extract_and_load_overlap_instead_of_running_in_sequence()
     {
         //arrange
@@ -107,7 +110,9 @@ public class DataflowRuntimeTests
             "the sink must start writing before the source finishes reading, or the stages are serialized");
     }
 
-    [Fact]
+    [Test]
+    // Not in parallel: counts gen-0 collections, which any concurrent allocation perturbs.
+    [NotInParallel]
     public async Task Recycles_batch_buffers_instead_of_churning_them()
     {
         //arrange
@@ -144,7 +149,9 @@ public class DataflowRuntimeTests
             "batch arrays come from the pool, so a five-million-row run should not churn the heap");
     }
 
-    [Fact]
+    [Test]
+    // Not in parallel: asserts an upper bound on how long cancellation takes.
+    [NotInParallel]
     public async Task Cancellation_stops_the_run_promptly_and_disposes_the_ports()
     {
         //arrange
@@ -181,7 +188,7 @@ public class DataflowRuntimeTests
         sink.Disposals.Should().Be(1);
     }
 
-    [Fact]
+    [Test]
     public async Task Commits_the_sink_exactly_once_on_success()
     {
         //arrange
@@ -202,7 +209,7 @@ public class DataflowRuntimeTests
         sink.Disposals.Should().Be(1);
     }
 
-    [Fact]
+    [Test]
     public async Task Does_not_commit_the_sink_when_the_run_fails()
     {
         //arrange
@@ -225,7 +232,7 @@ public class DataflowRuntimeTests
         sink.Disposals.Should().Be(1, "disposal still has to happen so resources are released");
     }
 
-    [Fact]
+    [Test]
     public async Task Runs_coarse_job_stages_in_the_order_they_were_added()
     {
         //arrange
@@ -253,7 +260,7 @@ public class DataflowRuntimeTests
         result.Value.Stages.Select(s => s.Name).Should().Equal("download", "swap");
     }
 
-    [Fact]
+    [Test]
     public async Task Supports_concurrent_runs_of_the_same_pipeline()
     {
         //arrange

@@ -1,7 +1,6 @@
 using EtlPipelines.Abstractions.Execution;
 using EtlPipelines.Abstractions.Ports;
 using EtlPipelines.Core.Tests.Fixtures;
-using FluentAssertions;
 
 namespace EtlPipelines.Core.Tests;
 
@@ -44,9 +43,9 @@ public class AggregationTests
             .To(sink)
             .Build();
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
     public async Task Groups_rows_that_straddle_batch_boundaries(bool sorted)
     {
         //arrange
@@ -82,7 +81,9 @@ public class AggregationTests
         result.Value.RowsWritten.Should().Be(regions);
     }
 
-    [Fact]
+    [Test]
+    // Not in parallel: waits for rows to appear within a bounded time.
+    [NotInParallel]
     public async Task Sorted_aggregate_emits_before_its_input_is_exhausted()
     {
         //arrange
@@ -107,7 +108,9 @@ public class AggregationTests
         sink.Rows.Should().HaveCount(100);
     }
 
-    [Fact]
+    [Test]
+    // Not in parallel: waits for the source to reach a mark within a bounded time.
+    [NotInParallel]
     public async Task Hash_aggregate_emits_nothing_until_its_input_is_exhausted()
     {
         //arrange
@@ -132,7 +135,7 @@ public class AggregationTests
         sink.Rows.Should().HaveCount(100);
     }
 
-    [Fact]
+    [Test]
     public async Task Drains_more_groups_than_fit_in_a_single_output_buffer()
     {
         //arrange
@@ -154,7 +157,7 @@ public class AggregationTests
         sink.Rows.Select(r => r.Region).Should().OnlyHaveUniqueItems();
     }
 
-    [Fact]
+    [Test]
     public async Task Expands_one_row_into_more_rows_than_the_output_buffer_holds()
     {
         //arrange
@@ -183,7 +186,7 @@ public class AggregationTests
         result.Value.RowsWritten.Should().Be(5_000);
     }
 
-    [Fact]
+    [Test]
     public void Refuses_to_parallelise_a_stateful_transform()
     {
         //arrange
@@ -209,7 +212,7 @@ public class AggregationTests
             .WithMessage("*carries state across batches*");
     }
 
-    [Fact]
+    [Test]
     public async Task Allows_parallelism_on_a_stateless_transform()
     {
         //arrange

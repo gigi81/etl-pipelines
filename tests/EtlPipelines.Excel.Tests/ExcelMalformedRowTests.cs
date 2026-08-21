@@ -1,7 +1,6 @@
 using System.IO.Abstractions;
 using EtlPipelines.Abstractions.Configuration;
 using EtlPipelines.Core;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Excel.Tests;
@@ -68,7 +67,7 @@ public sealed class ExcelMalformedRowTests
         return file;
     }
 
-    [Fact]
+    [Test]
     public async Task Skips_bad_rows_and_keeps_the_good_ones()
     {
         //arrange
@@ -89,7 +88,7 @@ public sealed class ExcelMalformedRowTests
         sink.Rows.Select(o => o.Id).Should().Equal(1, 3, 4, 6, 7, 9, 10);
     }
 
-    [Fact]
+    [Test]
     public async Task Takes_the_dead_letter_sink_from_the_container()
     {
         //arrange
@@ -113,7 +112,7 @@ public sealed class ExcelMalformedRowTests
         deadLetters.Entries.Should().OnlyContain(e => e.Error.Code == "excel.cell_not_convertible");
     }
 
-    [Fact]
+    [Test]
     public async Task Counts_skipped_rows_without_a_dead_letter_sink_registered()
     {
         //arrange
@@ -129,7 +128,7 @@ public sealed class ExcelMalformedRowTests
         source.MalformedRows.Should().Be(3, "skipping is not the same as ignoring");
     }
 
-    [Fact]
+    [Test]
     public async Task Skipped_rows_do_not_reach_the_runs_failure_count()
     {
         //arrange
@@ -150,7 +149,7 @@ public sealed class ExcelMalformedRowTests
         result.Value.RowsFailed.Should().Be(0, "but the source port cannot report them to the run");
     }
 
-    [Fact]
+    [Test]
     public async Task Fails_the_run_when_told_not_to_skip()
     {
         //arrange
@@ -168,7 +167,7 @@ public sealed class ExcelMalformedRowTests
         result.FirstError.Code.Should().Be("excel.cell_not_convertible");
     }
 
-    [Fact]
+    [Test]
     public async Task Names_the_column_and_the_value_that_would_not_convert()
     {
         //arrange
@@ -189,7 +188,7 @@ public sealed class ExcelMalformedRowTests
             .And.Contain("Decimal");
     }
 
-    [Fact]
+    [Test]
     public async Task Ignores_columns_the_row_type_does_not_mention()
     {
         //arrange
@@ -209,7 +208,7 @@ public sealed class ExcelMalformedRowTests
         sink.Rows.Select(r => r.Id).Should().Equal(Enumerable.Range(1, 10));
     }
 
-    [Fact]
+    [Test]
     public async Task Reports_a_clear_error_when_read_before_initialization()
     {
         //arrange

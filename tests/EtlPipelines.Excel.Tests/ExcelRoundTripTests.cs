@@ -1,6 +1,5 @@
 using System.Globalization;
 using EtlPipelines.Core;
-using FluentAssertions;
 
 namespace EtlPipelines.Excel.Tests;
 
@@ -39,7 +38,7 @@ public class ExcelRoundTripTests
         new() { Id = 3, Customer = "wörks ünicode", Amount = 0m, Placed = new DateTime(2026, 5, 6) },
     ];
 
-    [Fact]
+    [Test]
     public async Task Writes_rows_and_reads_them_back_unchanged()
     {
         //arrange
@@ -62,7 +61,9 @@ public class ExcelRoundTripTests
         readBack.Rows.Should().Equal(original);
     }
 
-    [Fact]
+    [Test]
+    // Not in parallel: assigns CultureInfo.CurrentCulture, which is not this test’s to share.
+    [NotInParallel]
     public async Task Round_trips_a_decimal_under_a_comma_separator_culture()
     {
         //arrange
@@ -97,7 +98,7 @@ public class ExcelRoundTripTests
         }
     }
 
-    [Fact]
+    [Test]
     public async Task Streams_correctly_across_many_batch_boundaries()
     {
         //arrange
@@ -135,7 +136,7 @@ public class ExcelRoundTripTests
         readBack.Rows.Select(r => r.Id).Should().Equal(Enumerable.Range(0, rows), "no row may be dropped or reordered");
     }
 
-    [Fact]
+    [Test]
     public async Task Reads_the_sheet_from_the_start_on_every_run()
     {
         //arrange
@@ -159,7 +160,7 @@ public class ExcelRoundTripTests
         sink.Rows.Should().HaveCount(6);
     }
 
-    [Fact]
+    [Test]
     public async Task Writes_and_reads_a_named_worksheet()
     {
         //arrange
@@ -182,7 +183,7 @@ public class ExcelRoundTripTests
         readBack.Rows.Should().HaveCount(3);
     }
 
-    [Fact]
+    [Test]
     public async Task Transforms_between_reading_and_writing()
     {
         //arrange
@@ -213,7 +214,7 @@ public class ExcelRoundTripTests
         readBack.Rows[0].Amount.Should().Be(1050m);
     }
 
-    [Fact]
+    [Test]
     public async Task Fans_the_same_rows_out_to_two_workbooks()
     {
         //arrange
@@ -247,7 +248,7 @@ public class ExcelRoundTripTests
         fromConverted.Rows.Select(r => r.Amount).Should().Equal(21.00m, -6.50m, 0m);
     }
 
-    [Fact]
+    [Test]
     public async Task Writes_a_readable_workbook_when_there_are_no_rows_at_all()
     {
         //arrange

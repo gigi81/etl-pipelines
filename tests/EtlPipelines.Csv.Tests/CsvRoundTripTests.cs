@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.IO.Abstractions;
 using EtlPipelines.Abstractions.Ports;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Csv.Tests;
@@ -28,7 +27,7 @@ public sealed class CsvRoundTripTests
         new(3, "initech", 3.99m),
     ];
 
-    [Fact]
+    [Test]
     public async Task Round_trips_rows_through_a_file()
     {
         //arrange
@@ -48,7 +47,7 @@ public sealed class CsvRoundTripTests
         readBack.Rows.Should().Equal(Orders);
     }
 
-    [Fact]
+    [Test]
     public async Task Resolves_both_ports_from_the_container()
     {
         //arrange
@@ -72,7 +71,7 @@ public sealed class CsvRoundTripTests
         readBack.Rows.Should().Equal(Orders);
     }
 
-    [Fact]
+    [Test]
     public void Registers_csv_ports_as_scoped_and_keyed()
     {
         //arrange
@@ -94,7 +93,9 @@ public sealed class CsvRoundTripTests
         ports.Should().OnlyContain(d => d.ServiceKey!.ToString()!.StartsWith($"{PipelineName}["));
     }
 
-    [Fact]
+    [Test]
+    // Not in parallel: assigns CultureInfo.CurrentCulture, which is not this test’s to share.
+    [NotInParallel]
     public async Task Formats_numbers_independently_of_the_machine_culture()
     {
         //arrange
@@ -129,7 +130,7 @@ public sealed class CsvRoundTripTests
         }
     }
 
-    [Fact]
+    [Test]
     public async Task Streams_correctly_across_many_batch_boundaries()
     {
         //arrange
@@ -158,7 +159,7 @@ public sealed class CsvRoundTripTests
         result.Value.RowsRead.Should().Be(2_500);
     }
 
-    [Fact]
+    [Test]
     public async Task Transforms_between_two_files()
     {
         //arrange
@@ -188,7 +189,7 @@ public sealed class CsvRoundTripTests
         lines[1].Should().Be("1,acme,1050.00");
     }
 
-    [Fact]
+    [Test]
     public async Task Fans_one_source_out_to_two_files()
     {
         //arrange
@@ -213,7 +214,7 @@ public sealed class CsvRoundTripTests
         result.Value.RowsWritten.Should().Be(4, "two rows reached each of the two files");
     }
 
-    [Fact]
+    [Test]
     public async Task Reads_the_file_from_the_start_on_every_run()
     {
         //arrange
@@ -237,7 +238,7 @@ public sealed class CsvRoundTripTests
         sink.Rows.Should().HaveCount(4);
     }
 
-    [Fact]
+    [Test]
     public async Task Reads_an_empty_file_as_no_rows()
     {
         //arrange

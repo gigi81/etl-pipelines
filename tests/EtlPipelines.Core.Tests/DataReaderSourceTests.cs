@@ -3,7 +3,6 @@ using System.Data.Common;
 using EtlPipelines.Abstractions.Ports;
 using EtlPipelines.Core.Sources;
 using EtlPipelines.Core.Tests.Fixtures;
-using FluentAssertions;
 
 namespace EtlPipelines.Core.Tests;
 
@@ -30,7 +29,7 @@ public class DataReaderSourceTests
         return table;
     }
 
-    [Fact]
+    [Test]
     public async Task Streams_every_row_through_a_pipeline()
     {
         //arrange
@@ -54,7 +53,7 @@ public class DataReaderSourceTests
         sink.Rows[0].Name.Should().Be("person-0");
     }
 
-    [Fact]
+    [Test]
     public async Task Fills_the_buffer_then_reports_zero_at_the_end()
     {
         //arrange
@@ -81,7 +80,7 @@ public class DataReaderSourceTests
         reads[3].Should().Be(0, "and it stays zero once latched");
     }
 
-    [Fact]
+    [Test]
     public async Task Uses_the_asynchronous_path_when_the_provider_offers_one()
     {
         //arrange
@@ -104,7 +103,7 @@ public class DataReaderSourceTests
         read.Value.Should().Be(4);
     }
 
-    [Fact]
+    [Test]
     public async Task Falls_back_to_the_synchronous_path_for_a_plain_IDataReader()
     {
         //arrange
@@ -125,7 +124,7 @@ public class DataReaderSourceTests
         buffer[..3].Select(p => p.Name).Should().Equal("a", "b", "c");
     }
 
-    [Fact]
+    [Test]
     public async Task Materialises_each_row_rather_than_buffering_the_cursor()
     {
         //arrange
@@ -145,7 +144,7 @@ public class DataReaderSourceTests
         buffer.Should().OnlyHaveUniqueItems();
     }
 
-    [Fact]
+    [Test]
     public async Task Opens_its_reader_per_run_rather_than_at_construction()
     {
         //arrange
@@ -171,7 +170,7 @@ public class DataReaderSourceTests
         await source.DisposeAsync();
     }
 
-    [Fact]
+    [Test]
     public async Task Reports_a_clear_error_when_used_before_initialization()
     {
         //arrange
@@ -186,7 +185,7 @@ public class DataReaderSourceTests
         read.FirstError.Code.Should().Be("datareader.not_initialized");
     }
 
-    [Fact]
+    [Test]
     public async Task Closes_the_reader_it_owns_and_leaves_a_borrowed_one_alone()
     {
         //arrange
