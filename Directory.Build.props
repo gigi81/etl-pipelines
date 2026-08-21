@@ -21,4 +21,28 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Copyright>Copyright (c) 2025 Luigi Grilli</Copyright>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      Nerdbank.GitVersioning publishes GitBuildVersion and friends to the cloud build it detects,
+      which on github actions means every project appending them to the $GITHUB_ENV file. A solution
+      wide build does that from as many processes as it builds projects at once, and two appends
+      landing together tear a line in half: the runner then fails the step that had just passed with
+      "Unable to process file command 'env' successfully. Error: Invalid format '2.0'", half of a
+      torn GitBuildVersion. Nothing reads those variables, so they are not published at all.
+    -->
+    <NBGV_SetCloudBuildVersionVars>false</NBGV_SetCloudBuildVersionVars>
+  </PropertyGroup>
+
+  <!--
+    The package version comes from version.json rather than from the tag, which is what lets the
+    deploy job refuse a tag that disagrees with it. Needs the full commit history at checkout
+    (fetch-depth: 0) to compute the height.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Nerdbank.GitVersioning">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
 </Project>

@@ -1,0 +1,148 @@
+name: Continuous Integration
+on:
+  push:
+    branches:
+      - master
+      - 'feature/**'
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+  actions: read
+  checks: write
+jobs:
+  test:
+    name: Test
+    # All three legs matter here rather than being routine breadth. The CSV sink writes to a temp
+    # file and renames it over the target on success, and rename-over-an-open-handle is exactly the
+    # operation whose semantics differ between Windows and the Unix runners.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v7
+        with:
+          # Nerdbank.GitVersioning computes the version from the commit height, so a shallow clone
+          # gives it the wrong answer.
+          fetch-depth: 0
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore
+      # Explicit, so a compile break is reported as a build failure rather than as an unexplained
+      # test step. Directory.Build.props already sets TreatWarningsAsErrors; -warnaserror extends
+      # that to MSBuild's own warnings, matching the command the README documents.
+      - name: Build
+        run: dotnet build --configuration Release --no-restore -warnaserror
+      # This suite is xUnit on VSTest, so the TRX and coverage flags are the VSTest ones
+      # (--logger / --collect), not the Microsoft.Testing.Platform spellings.
+      #
+      # Results are left in each project's own TestResults folder instead of a shared
+      # --results-directory: the TRX name is only unique to the second, so two projects finishing
+      # within the same second collide there and one project's results vanish from the report.
+      #
+      # shell: bash on every leg so that `|| true` means the same thing everywhere — under the
+      # Windows default of pwsh there is no `true` command, so the step would fail anyway and the
+      # reporter below would never get to render which test broke.
+      - name: Run tests
+        shell: bash
+        run: >
+          dotnet test --configuration Release --no-build
+          --logger "trx;LogFilePrefix=test-results"
+          --collect:"XPlat Code Coverage"
+          || true
+      - name: Test report
+        uses: dorny/test-reporter@v3.0.0
+        if: always()
+        with:
+          name: test-results-${{ matrix.os }}
+          path: "tests/*/TestResults/*.trx"
+          reporter: dotnet-trx
+          fail-on-error: true
+      # One level of wildcard, deliberately: the collector also drops an intermediate copy under
+      # TestResults/_<machine>/In/<machine>/, and a ** glob would upload each report twice.
+      - name: Upload coverage
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Code coverage ${{ matrix.os }}
+          path: "tests/*/TestResults/*/coverage.cobertura.xml"
+  pack:
+    name: Pack
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Create packages
+        run: dotnet pack --configuration Release --output ./packages
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: NuGet packages
+          path: packages/*.*
+  deploy:
+    name: Deploy
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [pack]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      # The packages pushed are the ones the pack job already built and the test job already vetted,
+      # rather than a fresh build made here that nothing has run against.
+      - uses: actions/download-artifact@v8
+        with:
+          name: NuGet packages
+          path: packages
+      # Nerdbank.GitVersioning takes the version from version.json, not from the tag, so the two have
+      # to agree: bump version.json in a PR first, then tag the merge commit. Without this check a
+      # mismatched tag would silently publish whatever version.json happened to say.
+      - name: Verify the tag matches version.json
+        run: |
+          expected="${GITHUB_REF_NAME#v}"
+          actual="$(jq -r .version version.json)"
+          if [ "$expected" != "$actual" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version.json ($actual). Bump version.json to $expected on master and re-tag."
+            exit 1
+          fi
+          # Every package this repo ships, so a renamed or newly added project cannot be dropped from
+          # a release unnoticed.
+          for id in EtlPipelines.Abstractions EtlPipelines EtlPipelines.Csv; do
+            ls -1 "packages/$id.$expected.nupkg"
+          done
+      - name: NuGet login (OIDC → temp API key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+      - name: Push packages
+        run: dotnet nuget push "packages/*.nupkg" --api-key ${{steps.login.outputs.NUGET_API_KEY}} --source https://api.nuget.org/v3/index.json --skip-duplicate
+      - name: Create a GitHub release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          generateReleaseNotes: true
