@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Excel (.xlsx) source and sink for EtlPipelines, built on MiniExcel.</Description>
+    <!--
+      NU5104 fires because a stable package is being built against a prerelease dependency, and this
+      repo turns warnings into errors - so without this a tagged release cannot pack this project at
+      all. MiniExcel 2.x is deliberately the version referenced: it is the line whose reader and writer
+      both stream through IAsyncEnumerable, which is what keeps a workbook from being materialised.
+      Remove this the moment MiniExcel 2.0 ships stable.
+    -->
+    <NoWarn>$(NoWarn);NU5104</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    Deliberately references the abstractions only, not the EtlPipelines.Core runtime. Every type a
+    connector needs - the ports, the lifecycle interfaces, and the builder interfaces - lives in
+    Abstractions, so a connector never depends on the execution engine.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\EtlPipelines.Abstractions\EtlPipelines.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      MiniExcel.OpenXml rather than the MiniExcel meta-package: that one also pulls in MiniExcel.Csv,
+      a second CSV implementation sitting next to the CsvHelper-based connector this repo already
+      ships. The OpenXml package brings MiniExcel.Core with it, which is where the entry point lives.
+    -->
+    <PackageReference Include="MiniExcel.OpenXml" />
+    <PackageReference Include="TestableIO.System.IO.Abstractions" />
+    <PackageReference Include="TestableIO.System.IO.Abstractions.Extensions" />
+  </ItemGroup>
+
+</Project>

@@ -9,7 +9,8 @@ overlap rather than run one after another.
 |---|---|
 | `EtlPipelines.Core` | The runtime and the builder. Start here. |
 | `EtlPipelines.Csv` | CSV source and sink, built on CsvHelper. |
-| `EtlPipelines.Abstractions` | The contracts alone, for a library that defines ports without referencing the engine. Pulled in by the other two. |
+| `EtlPipelines.Excel` | Excel (`.xlsx`) source and sink, built on MiniExcel. |
+| `EtlPipelines.Abstractions` | The contracts alone, for a library that defines ports without referencing the engine. Pulled in by the others. |
 
 ## Quick start
 
@@ -157,6 +158,43 @@ mean the same thing wherever it is processed.
 
 Both option types also expose `HasHeaderRecord`, `Delimiter`, `Encoding`, a `Configure` escape hatch
 for the full `CsvConfiguration`, and `ConfigureContext` for registering class maps.
+
+## Excel files
+
+`EtlPipelines.Excel` reads and writes `.xlsx` worksheets through
+[MiniExcel](https://github.com/mini-software/MiniExcel) (Apache-2.0). It is a separate package, and it
+takes `MiniExcel.OpenXml` rather than the `MiniExcel` meta-package — that one also pulls in a second
+CSV implementation, next to the CsvHelper-based one this repo already ships.
+
+```csharp
+builder.FromExcel<Order>(fileSystem.FileInfo.New("orders.xlsx"))
+       .Select(o => new OrderDto(o.Id, o.Customer, o.Amount * 100))
+       .ToExcel(fileSystem.FileInfo.New("out.xlsx"));
+```
+
+Files are named as `IFileInfo`, sheets are chosen with `SheetName`, and everything the
+[CSV section](#csv-files) says about the atomic write and about malformed rows applies here too,
+including the same known limitation about `RowsFailed`. Two things differ.
+
+**The row type needs a parameterless constructor and settable properties.** Columns are matched to it
+by name, case-insensitively, and MiniExcel's own `[MiniExcelColumnName]` and `[MiniExcelIgnore]`
+attributes are honoured. A positional `record` will not work here, unlike on the CSV side — the
+worksheet reader has to construct the row before it can fill it. A column the row type does not
+mention is ignored, so a sheet may carry more than one pipeline cares about.
+
+**The atomic write matters more.** An `.xlsx` is a zip archive whose central directory is written
+last, so a run that dies part-way leaves not a short-but-readable file but one Excel refuses to open
+at all. Rows stream into a temporary file that is renamed into place only on success, so the target
+either does not exist or opens.
+
+Neither end materialises the workbook. The source pulls rows from MiniExcel's asynchronous stream as
+the pipeline consumes them, and the sink hands rows to the writer through a bounded channel — so the
+sheet is written as it arrives rather than being collected first, and `BufferedRows` is the
+back-pressure knob between the pipeline and the disk.
+
+> **Preview dependency.** MiniExcel 2.x is still a preview release, and its API changed substantially
+> from 1.x. Pinned deliberately: 2.x is the line with `IAsyncEnumerable` streaming on both sides,
+> which is what makes a non-materialising connector possible.
 
 ## Reading from a database
 
