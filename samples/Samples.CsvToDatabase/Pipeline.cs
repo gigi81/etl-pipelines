@@ -38,8 +38,6 @@ public static class TradesPipeline
     /// <summary>The connection string for the sample's own database, inside its workspace.</summary>
     public static string ConnectionString(IDirectoryInfo directory)
     {
-        ArgumentNullException.ThrowIfNull(directory);
-
         return $"Data Source={directory.File("trades.db").FullName}";
     }
 
@@ -60,9 +58,6 @@ public static class TradesPipeline
         Action<IServiceCollection, string>? configureConnection = null,
         string? parameterPrefix = null)
     {
-        ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(directory);
-
         if (configureConnection is not null)
         {
             configureConnection(services, Connection);

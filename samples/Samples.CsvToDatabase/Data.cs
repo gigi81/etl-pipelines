@@ -21,9 +21,6 @@ public sealed class TradesData : IPipelineStage
         [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
         ILogger<TradesData> logger)
     {
-        ArgumentNullException.ThrowIfNull(directory);
-        ArgumentNullException.ThrowIfNull(logger);
-
         _directory = directory;
         _logger = logger;
     }
@@ -75,9 +72,6 @@ public sealed class TradesTable : IPipelineStage
         [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
         ILogger<TradesTable> logger)
     {
-        ArgumentNullException.ThrowIfNull(directory);
-        ArgumentNullException.ThrowIfNull(logger);
-
         _directory = directory;
         _logger = logger;
     }

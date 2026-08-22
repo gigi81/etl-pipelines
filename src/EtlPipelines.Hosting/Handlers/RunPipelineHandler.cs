@@ -13,8 +13,6 @@ public class RunPipelineHandler : BaseHandler<RunPipelineParams>
     public RunPipelineHandler(ParseResult result, RunPipelineParams parameters, PipelineRunner runner)
         : base(result, parameters)
     {
-        ArgumentNullException.ThrowIfNull(runner);
-
         _runner = runner;
     }
 

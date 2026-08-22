@@ -28,8 +28,6 @@ public sealed class PipelineTraceLogger : IDisposable
     /// <summary>Begins listening to the runtime's activity source.</summary>
     public PipelineTraceLogger(ILogger<PipelineTraceLogger> logger)
     {
-        ArgumentNullException.ThrowIfNull(logger);
-
         _logger = logger;
         _listener = new ActivityListener
         {

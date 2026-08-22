@@ -19,9 +19,6 @@ public sealed class ReadingsData : IPipelineStage
         [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
         ILogger<ReadingsData> logger)
     {
-        ArgumentNullException.ThrowIfNull(directory);
-        ArgumentNullException.ThrowIfNull(logger);
-
         _directory = directory;
         _logger = logger;
     }

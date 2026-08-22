@@ -53,14 +53,11 @@ internal sealed class DataflowBuilder<TRow>(
 
     public IDataflowBuilder<TOut> Through<TOut>(IDataTransform<TRow, TOut> transform)
     {
-        ArgumentNullException.ThrowIfNull(transform);
         return Register<TOut>(transform.GetType().Name, (_, _) => transform, transform is IDrainable<TOut>);
     }
 
     public IDataflowBuilder<TOut> Through<TOut>(Func<IServiceProvider, IDataTransform<TRow, TOut>> factory)
     {
-        ArgumentNullException.ThrowIfNull(factory);
-
         // The concrete type is unknown until the factory runs, so a drainable transform here is
         // caught at run time by TransformNode rather than now.
         return Register<TOut>($"{typeof(TRow).Name}->{typeof(TOut).Name}", (services, _) => factory(services), stateful: false);
@@ -68,34 +65,27 @@ internal sealed class DataflowBuilder<TRow>(
 
     public IDataflowBuilder<TOut> Select<TOut>(Func<TRow, TOut> map)
     {
-        ArgumentNullException.ThrowIfNull(map);
-
         Func<TRow, ErrorOr<TOut>> lifted = row => map(row);
         return TrySelect(lifted);
     }
 
     public IDataflowBuilder<TOut> TrySelect<TOut>(Func<TRow, ErrorOr<TOut>> map)
     {
-        ArgumentNullException.ThrowIfNull(map);
         return Register<TOut>("Select", (_, _) => new SelectTransform<TRow, TOut>(map), stateful: false);
     }
 
     public IDataflowBuilder<TOut> SelectAsync<TOut>(Func<TRow, CancellationToken, ValueTask<ErrorOr<TOut>>> map)
     {
-        ArgumentNullException.ThrowIfNull(map);
         return Register<TOut>("SelectAsync", (_, _) => new SelectAsyncTransform<TRow, TOut>(map), stateful: false);
     }
 
     public IDataflowBuilder<TRow> Where(Func<TRow, bool> predicate)
     {
-        ArgumentNullException.ThrowIfNull(predicate);
         return Register<TRow>("Where", (_, _) => new WhereTransform<TRow>(predicate), stateful: false);
     }
 
     public IDataflowBuilder<TOut> SelectMany<TOut>(Func<TRow, IEnumerable<TOut>> expand)
     {
-        ArgumentNullException.ThrowIfNull(expand);
-
         // Expansion holds a half-drained enumerator between calls, so it is per-worker state even
         // though it is not an aggregate.
         return Register<TOut>("SelectMany", (_, _) => new ExpandTransform<TRow, TOut>(expand), stateful: true);
@@ -109,11 +99,6 @@ internal sealed class DataflowBuilder<TRow>(
         bool inputIsSortedByKey = false)
         where TKey : notnull
     {
-        ArgumentNullException.ThrowIfNull(keySelector);
-        ArgumentNullException.ThrowIfNull(seed);
-        ArgumentNullException.ThrowIfNull(accumulate);
-        ArgumentNullException.ThrowIfNull(resultSelector);
-
         return Register<TOut>(
             inputIsSortedByKey ? "GroupBy(sorted)" : "GroupBy",
             (_, _) => inputIsSortedByKey
@@ -146,8 +131,6 @@ internal sealed class DataflowBuilder<TRow>(
 
     public IPipelineBuilder Branch(params Action<IDataflowBuilder<TRow>>[] branches)
     {
-        ArgumentNullException.ThrowIfNull(branches);
-
         if (branches.Length < 2)
         {
             throw new InvalidOperationException(
@@ -159,8 +142,6 @@ internal sealed class DataflowBuilder<TRow>(
 
         for (var i = 0; i < branches.Length; i++)
         {
-            ArgumentNullException.ThrowIfNull(branches[i]);
-
             IReadOnlyList<DataflowNode>? captured = null;
             var branch = new DataflowBuilder<TRow>(owner, [], captured2 => captured = captured2);
 
@@ -192,14 +173,11 @@ internal sealed class DataflowBuilder<TRow>(
 
     public IPipelineBuilder To(object serviceKey)
     {
-        ArgumentNullException.ThrowIfNull(serviceKey);
         return Terminate(typeof(TRow).Name, EtlPipelineBuilder.Keyed<IDataSink<TRow>>(serviceKey));
     }
 
     public IPipelineBuilder To(IDataSink<TRow> sink)
     {
-        ArgumentNullException.ThrowIfNull(sink);
-
         var key = owner.NextKey("sink");
         owner.Services.AddKeyedScoped<IDataSink<TRow>>(key, (_, _) => sink);
         return Terminate(sink.GetType().Name, EtlPipelineBuilder.Keyed<IDataSink<TRow>>(key));
@@ -207,8 +185,6 @@ internal sealed class DataflowBuilder<TRow>(
 
     public IPipelineBuilder To(Func<IServiceProvider, IDataSink<TRow>> factory)
     {
-        ArgumentNullException.ThrowIfNull(factory);
-
         var key = owner.NextKey("sink");
         owner.Services.AddKeyedScoped<IDataSink<TRow>>(key, (services, _) => factory(services));
         return Terminate(typeof(TRow).Name, EtlPipelineBuilder.Keyed<IDataSink<TRow>>(key));

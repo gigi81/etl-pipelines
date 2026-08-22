@@ -23,9 +23,6 @@ public sealed class ImportData : IPipelineStage
         [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
         ILogger<ImportData> logger)
     {
-        ArgumentNullException.ThrowIfNull(directory);
-        ArgumentNullException.ThrowIfNull(logger);
-
         _directory = directory;
         _logger = logger;
     }
