@@ -10,6 +10,8 @@ overlap rather than run one after another.
 | `EtlPipelines.Core` | The runtime and the builder. Start here. |
 | `EtlPipelines.Csv` | CSV source and sink, built on CsvHelper. |
 | `EtlPipelines.Excel` | Excel (`.xlsx`) source and sink, built on MiniExcel. |
+| `EtlPipelines.Sql` | Source and sink for any ADO.NET provider. |
+| `EtlPipelines.Sql.Sqlite` .`SqlServer` .`PostgreSql` .`MySql` .`Oracle` | One per engine: the driver, and that engine's bulk-load fast path. |
 | `EtlPipelines.Abstractions` | The contracts alone, for a library that defines ports without referencing the engine. Pulled in by the others. |
 
 ## Quick start
@@ -196,17 +198,60 @@ back-pressure knob between the pipeline and the disk.
 > from 1.x. Pinned deliberately: 2.x is the line with `IAsyncEnumerable` streaming on both sides,
 > which is what makes a non-materialising connector possible.
 
-## Reading from a database
+## SQL databases
 
-`DataReaderSource<TRow>` bridges any ADO.NET provider into a pipeline:
+`EtlPipelines.Sql` works against any ADO.NET provider, and a package per engine adds that engine's
+bulk-load path. Reference the one you need — a SQLite job never pulls in the Oracle driver.
 
 ```csharp
+var open = SqliteConnections.Open(connectionString);
+
 services.AddEtlPipeline("orders", builder => builder
-    .From<OrderRow>(sp => new DataReaderSource<OrderRow>(
-        async ct => await sp.GetRequiredService<OrderCommandFactory>().ExecuteReaderAsync(ct),
-        r => new OrderRow(r.GetInt32(0), r.GetString(1), r.GetDecimal(2))))
-    .Through<NormalizeOrders, OrderDto>()
-    .To<SqlSink>());
+    .FromSql(open, "SELECT Id, Customer, Amount FROM orders", r =>
+        new Order(r.GetInt64(0), r.GetString(1), r.GetDecimal(2)))
+    .Select(o => o with { Amount = o.Amount * 100 })
+    .ToSqlTable(open, "orders_cents"));
+```
+
+**A run is one transaction, committed only when it succeeds.** This is the database counterpart of
+the file connectors writing through a temporary file: a run that fails part-way leaves the table as
+it was, rather than holding some fraction of the rows for a downstream job to read as though the load
+had finished. Set `UseTransaction = false` for a load large enough to strain the server's log, and
+accept partial writes in exchange.
+
+**Bulk loading is automatic when the provider package is registered.** `AddSqlServerBulkLoader()` and
+friends put an `IBulkLoader` in the container, and the sink picks it up:
+
+| Package | Fast path |
+|---|---|
+| `Sqlite` | none — a prepared INSERT reused inside one transaction, which *is* the fast path for SQLite |
+| `SqlServer` | `SqlBulkCopy` |
+| `PostgreSql` | binary `COPY` |
+| `MySql` | `MySqlBulkCopy`, serving MariaDB too |
+| `Oracle` | array binding — one INSERT carrying the whole batch |
+
+Batches reach the loader as a `DbDataReader` over the pooled buffer, so nothing is copied into a
+`DataTable` on the way. Set `UseBulkLoader = false` to force the portable INSERT path; bulk loaders
+are faster but do not all behave identically to an INSERT, and some bypass triggers.
+
+Two things differ between engines and will bite quietly:
+
+- **Identifiers go in exactly as the row type spells them.** Nothing is quoted, so PostgreSQL folds
+  `Id` to `id` and Oracle to `ID`, as they would for any statement. Create tables unquoted and it
+  matches; create them quoted and mixed-case and it will not.
+- **MySQL and MariaDB need `AllowLoadLocalInfile=true`** on the connection string and `local_infile`
+  on the server, because `MySqlBulkCopy` is built on `LOAD DATA LOCAL INFILE`. Oracle binds with `:`
+  rather than `@`, which only matters on the INSERT path — see `SqlSinkOptions.ParameterPrefix`.
+
+### Reading from any reader
+
+`DataReaderSource<TRow>` sits underneath `FromSql` and takes any `IDataReader` directly, which is
+what to use for a provider with no package here, or for a reader you already have:
+
+```csharp
+new DataReaderSource<OrderRow>(
+    async ct => await command.ExecuteReaderAsync(ct),
+    r => new OrderRow(r.GetInt32(0), r.GetString(1), r.GetDecimal(2)))
 ```
 
 The mapping delegate is not optional decoration. An `IDataRecord` is a **cursor positioned on the
