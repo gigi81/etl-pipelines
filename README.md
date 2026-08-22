@@ -530,5 +530,7 @@ Every span, instrument and tag name is declared in `EtlDiagnostics` and nowhere 
 Tagged with `etl.pipeline`, `etl.stage` and `etl.outcome`. **Rows are counted whether the stage
 succeeded or not** — one that died after half a million rows still consumed them, and a counter that
 only moved on success would report a failed load as having done nothing at all. `etl.outcome` is what
-tells the two apart. Spans carry `etl.run_id` as well, and a failed one is marked
-`ActivityStatusCode.Error` with the error's description.
+tells the two apart. Spans carry `etl.run.id`, and the row counts under the same names the
+instruments use; a failed span is marked `ActivityStatusCode.Error` with the error's description.
+
+Names are dot-separated throughout, following OpenTelemetry's attribute naming.

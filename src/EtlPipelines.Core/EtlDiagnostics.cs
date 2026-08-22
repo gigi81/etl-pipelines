@@ -21,17 +21,24 @@ public static class EtlDiagnostics
 
     private const string Prefix = "etl";
 
-    // The two things a run is made of. Each names a span, a tag on that span, and the instruments
-    // that measure it, and deliberately the same word in all three places: that is what lets a trace
-    // and a metric be lined up against each other.
+    // Namespaces. Each names a span and a tag on that span, and prefixes the instruments measuring
+    // it — deliberately the same word in all three, which is what lets a trace and a metric be lined
+    // up against each other.
     private const string Pipeline = $"{Prefix}.pipeline";
     private const string Stage = $"{Prefix}.stage";
     private const string Rows = $"{Prefix}.rows";
 
-    private const string RunTag = $"{Prefix}.run_id";
-    private const string OutcomeTag = $"{Prefix}.outcome";
-    private const string RowsInTag = $"{Prefix}.rows_in";
-    private const string RowsOutTag = $"{Prefix}.rows_out";
+    // Dot-separated throughout, per OpenTelemetry's attribute naming: the dot is what namespaces a
+    // name, and a quantity that is both counted and put on a span should be called the same thing in
+    // each place rather than etl.rows.in in one and etl.rows_in in the other.
+    private const string RowsIn = $"{Rows}.in";
+    private const string RowsOut = $"{Rows}.out";
+    private const string RowsFailed = $"{Rows}.failed";
+    private const string StageDuration = $"{Stage}.duration";
+    private const string RunDuration = $"{Pipeline}.duration";
+    private const string Runs = $"{Pipeline}.runs";
+    private const string RunId = $"{Prefix}.run.id";
+    private const string Outcome = $"{Prefix}.outcome";
 
     private const string Succeeded = "succeeded";
     private const string Failed = "failed";
@@ -40,23 +47,23 @@ public static class EtlDiagnostics
 
     private static readonly Meter Meter = new(SourceName);
 
-    private static readonly Counter<long> RowsIn =
-        Meter.CreateCounter<long>($"{Rows}.in", "rows", "Rows consumed by a stage.");
+    private static readonly Counter<long> RowsInCounter =
+        Meter.CreateCounter<long>(RowsIn, "rows", "Rows consumed by a stage.");
 
-    private static readonly Counter<long> RowsOut =
-        Meter.CreateCounter<long>($"{Rows}.out", "rows", "Rows produced by a stage.");
+    private static readonly Counter<long> RowsOutCounter =
+        Meter.CreateCounter<long>(RowsOut, "rows", "Rows produced by a stage.");
 
-    private static readonly Counter<long> RowsFailed =
-        Meter.CreateCounter<long>($"{Rows}.failed", "rows", "Rows rejected by a stage.");
+    private static readonly Counter<long> RowsFailedCounter =
+        Meter.CreateCounter<long>(RowsFailed, "rows", "Rows rejected by a stage.");
 
-    private static readonly Histogram<double> StageDuration =
-        Meter.CreateHistogram<double>($"{Stage}.duration", "ms", "Stage wall-clock duration.");
+    private static readonly Histogram<double> StageDurationHistogram =
+        Meter.CreateHistogram<double>(StageDuration, "ms", "Stage wall-clock duration.");
 
-    private static readonly Histogram<double> RunDuration =
-        Meter.CreateHistogram<double>($"{Pipeline}.duration", "ms", "Pipeline wall-clock duration.");
+    private static readonly Histogram<double> RunDurationHistogram =
+        Meter.CreateHistogram<double>(RunDuration, "ms", "Pipeline wall-clock duration.");
 
-    private static readonly Counter<long> Runs =
-        Meter.CreateCounter<long>($"{Pipeline}.runs", "runs", "Pipeline runs, tagged by outcome.");
+    private static readonly Counter<long> RunsCounter =
+        Meter.CreateCounter<long>(Runs, "runs", "Pipeline runs, tagged by outcome.");
 
     /// <summary>Begins the span covering one run.</summary>
     internal static Activity? StartRun(PipelineContext context)
@@ -64,7 +71,7 @@ public static class EtlDiagnostics
         var activity = ActivitySource.StartActivity($"{Pipeline} {context.PipelineName}");
 
         activity?.SetTag(Pipeline, context.PipelineName);
-        activity?.SetTag(RunTag, context.RunId);
+        activity?.SetTag(RunId, context.RunId);
 
         return activity;
     }
@@ -76,7 +83,7 @@ public static class EtlDiagnostics
 
         activity?.SetTag(Pipeline, context.PipelineName);
         activity?.SetTag(Stage, stage);
-        activity?.SetTag(RunTag, context.RunId);
+        activity?.SetTag(RunId, context.RunId);
 
         return activity;
     }
@@ -99,16 +106,16 @@ public static class EtlDiagnostics
         {
             { Pipeline, context.PipelineName },
             { Stage, result.Name },
-            { OutcomeTag, Outcome(error) },
+            { Outcome, OutcomeOf(error) },
         };
 
-        RowsIn.Add(result.RowsIn, tags);
-        RowsOut.Add(result.RowsOut, tags);
-        RowsFailed.Add(result.RowsFailed, tags);
-        StageDuration.Record(result.Elapsed.TotalMilliseconds, tags);
+        RowsInCounter.Add(result.RowsIn, tags);
+        RowsOutCounter.Add(result.RowsOut, tags);
+        RowsFailedCounter.Add(result.RowsFailed, tags);
+        StageDurationHistogram.Record(result.Elapsed.TotalMilliseconds, tags);
 
-        activity?.SetTag(RowsInTag, result.RowsIn);
-        activity?.SetTag(RowsOutTag, result.RowsOut);
+        activity?.SetTag(RowsIn, result.RowsIn);
+        activity?.SetTag(RowsOut, result.RowsOut);
 
         Fail(activity, error);
     }
@@ -123,16 +130,16 @@ public static class EtlDiagnostics
         var tags = new TagList
         {
             { Pipeline, context.PipelineName },
-            { OutcomeTag, Outcome(error) },
+            { Outcome, OutcomeOf(error) },
         };
 
-        RunDuration.Record(elapsed.TotalMilliseconds, tags);
-        Runs.Add(1, tags);
+        RunDurationHistogram.Record(elapsed.TotalMilliseconds, tags);
+        RunsCounter.Add(1, tags);
 
         Fail(activity, error);
     }
 
-    private static string Outcome(Error? error) => error is null ? Succeeded : Failed;
+    private static string OutcomeOf(Error? error) => error is null ? Succeeded : Failed;
 
     private static void Fail(Activity? activity, Error? error)
     {
