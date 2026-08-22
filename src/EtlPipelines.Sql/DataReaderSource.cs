@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using Dapper;
 
 namespace EtlPipelines.Sql;
 
@@ -29,9 +30,10 @@ namespace EtlPipelines.Sql;
 public sealed class DataReaderSource<TRow> : IDataSource<TRow>, IAsyncInitializable
 {
     private readonly Func<CancellationToken, ValueTask<IDataReader>>? _open;
-    private readonly Func<IDataRecord, TRow> _map;
     private readonly bool _ownsReader;
+    private readonly bool _ownsMap;
 
+    private Func<IDataReader, TRow>? _map;
     private IDataReader? _reader;
     private bool _exhausted;
 
@@ -42,14 +44,19 @@ public sealed class DataReaderSource<TRow> : IDataSource<TRow>, IAsyncInitializa
     /// Opens the reader. Called once per run, so this is where the command should be executed —
     /// typically <c>await command.ExecuteReaderAsync(ct)</c>.
     /// </param>
-    /// <param name="map">Copies the current row out of the record into a <typeparamref name="TRow"/>.</param>
-    public DataReaderSource(Func<CancellationToken, ValueTask<IDataReader>> open, Func<IDataRecord, TRow> map)
+    /// <param name="map">
+    /// Copies the current row out of the reader into a <typeparamref name="TRow"/>. Left
+    /// <see langword="null"/>, Dapper's compiled parser for the row type is used.
+    /// </param>
+    public DataReaderSource(
+        Func<CancellationToken, ValueTask<IDataReader>> open,
+        Func<IDataReader, TRow>? map = null)
     {
         ArgumentNullException.ThrowIfNull(open);
-        ArgumentNullException.ThrowIfNull(map);
 
         _open = open;
         _map = map;
+        _ownsMap = map is null;
         _ownsReader = true;
     }
 
@@ -57,7 +64,10 @@ public sealed class DataReaderSource<TRow> : IDataSource<TRow>, IAsyncInitializa
     /// Creates a source over a reader that is already open.
     /// </summary>
     /// <param name="reader">The open reader to consume.</param>
-    /// <param name="map">Copies the current row out of the record into a <typeparamref name="TRow"/>.</param>
+    /// <param name="map">
+    /// Copies the current row out of the reader into a <typeparamref name="TRow"/>. Left
+    /// <see langword="null"/>, Dapper's compiled parser for the row type is used.
+    /// </param>
     /// <param name="leaveOpen">
     /// Set when the caller keeps ownership of the reader. Otherwise the source disposes it, together
     /// with the run's scope.
@@ -66,13 +76,13 @@ public sealed class DataReaderSource<TRow> : IDataSource<TRow>, IAsyncInitializa
     /// A reader is a one-shot forward cursor, so a source built this way cannot be run twice. Prefer
     /// the factory constructor for anything registered in a container.
     /// </remarks>
-    public DataReaderSource(IDataReader reader, Func<IDataRecord, TRow> map, bool leaveOpen = false)
+    public DataReaderSource(IDataReader reader, Func<IDataReader, TRow>? map = null, bool leaveOpen = false)
     {
         ArgumentNullException.ThrowIfNull(reader);
-        ArgumentNullException.ThrowIfNull(map);
 
         _reader = reader;
         _map = map;
+        _ownsMap = map is null;
         _ownsReader = !leaveOpen;
     }
 
@@ -83,12 +93,16 @@ public sealed class DataReaderSource<TRow> : IDataSource<TRow>, IAsyncInitializa
         {
             _reader = await _open(cancellationToken).ConfigureAwait(false);
         }
+
+        // Built here rather than in the constructor: Dapper compiles the parser against the columns
+        // the query actually returned, which nothing knows until the reader is open.
+        _map ??= _reader?.GetRowParser<TRow>();
     }
 
     /// <inheritdoc />
     public async ValueTask<ErrorOr<int>> ReadAsync(Memory<TRow> buffer, CancellationToken cancellationToken)
     {
-        if (_reader is null)
+        if (_reader is null || _map is null)
         {
             return Error.Failure(
                 "datareader.not_initialized",
@@ -112,10 +126,44 @@ public sealed class DataReaderSource<TRow> : IDataSource<TRow>, IAsyncInitializa
             }
 
             // buffer.Span is re-acquired per row on purpose: a Span cannot live across an await.
-            buffer.Span[count++] = _map(_reader);
+            buffer.Span[count++] = Materialise(_reader);
         }
 
         return count;
+    }
+
+    /// <summary>
+    /// Turns the row the reader is sitting on into a <typeparamref name="TRow"/>, rebuilding the
+    /// mapping if this row does not have the shape the mapping was built for.
+    /// </summary>
+    /// <remarks>
+    /// Only the mapping this class built for itself is ever rebuilt; one the caller supplied is
+    /// theirs, and a failure in it is theirs to see.
+    /// <para>
+    /// The rebuild exists for SQLite, which types a <em>value</em> rather than a column: in a NUMERIC
+    /// column, 4.5 comes back as a Double and 3.0 comes back as an Int64, because NUMERIC affinity
+    /// stores a whole number as an integer. A parser compiled against one of those cannot read the
+    /// other, and which one it was compiled against depends on nothing more than which rows the query
+    /// happened to return. Rebuilding against the row in hand is the only thing that reads both.
+    /// </para>
+    /// <para>
+    /// Driven by the failure rather than by checking every row, so a provider that reports stable
+    /// column types — which is all four of the others — pays nothing at all. A SQLite column that
+    /// genuinely alternates costs one rebuild per change; Dapper caches compiled parsers, so it is
+    /// the throw and not the compile that is being paid for. Pass a mapping delegate to avoid it.
+    /// </para>
+    /// </remarks>
+    private TRow Materialise(IDataReader reader)
+    {
+        try
+        {
+            return _map!(reader);
+        }
+        catch (DataException) when (_ownsMap)
+        {
+            _map = reader.GetRowParser<TRow>();
+            return _map(reader);
+        }
     }
 
     /// <summary>

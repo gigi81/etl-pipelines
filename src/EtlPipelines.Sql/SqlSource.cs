@@ -15,8 +15,10 @@ namespace EtlPipelines.Sql;
 /// and the run's scope closes it.
 /// </para>
 /// <para>
-/// The mapping delegate is not optional decoration; see <see cref="DataReaderSource{TRow}"/> for why
-/// a batch built from the record itself would hold one object showing the last row read.
+/// Rows must be materialised out of the reader; see <see cref="DataReaderSource{TRow}"/> for why a
+/// batch built from the reader itself would hold one object showing the last row read. Left
+/// unspecified, the mapping is Dapper's compiled parser for the row type, matching columns to
+/// properties by name.
 /// </para>
 /// </remarks>
 /// <typeparam name="TRow">The row type to read into.</typeparam>
@@ -24,7 +26,7 @@ public sealed class SqlSource<TRow> : IDataSource<TRow>, IAsyncInitializable
 {
     private readonly Func<CancellationToken, ValueTask<DbConnection>> _open;
     private readonly string _sql;
-    private readonly Func<IDataRecord, TRow> _map;
+    private readonly Func<IDataReader, TRow>? _map;
     private readonly SqlSourceOptions _options;
 
     private DbConnection? _connection;
@@ -34,22 +36,45 @@ public sealed class SqlSource<TRow> : IDataSource<TRow>, IAsyncInitializable
     /// <summary>Reads the results of <paramref name="sql"/>.</summary>
     /// <param name="openConnection">Opens the connection. Called once per run.</param>
     /// <param name="sql">The query to run.</param>
-    /// <param name="map">Copies the columns of the current row out into a row object.</param>
+    /// <param name="map">
+    /// Copies the columns of the current row out into a row object. Left <see langword="null"/>,
+    /// Dapper's compiled parser for the row type is used.
+    /// </param>
     /// <param name="options">Command settings and parameter binding.</param>
     public SqlSource(
         Func<CancellationToken, ValueTask<DbConnection>> openConnection,
         string sql,
-        Func<IDataRecord, TRow> map,
+        Func<IDataReader, TRow>? map = null,
         SqlSourceOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(openConnection);
         ArgumentException.ThrowIfNullOrWhiteSpace(sql);
-        ArgumentNullException.ThrowIfNull(map);
 
         _open = openConnection;
         _sql = sql;
         _map = map;
         _options = options ?? new SqlSourceOptions();
+    }
+
+    /// <summary>Reads the results of <paramref name="sql"/> over a named connection.</summary>
+    /// <param name="connections">The factory for the connection this source reads from.</param>
+    /// <param name="sql">The query to run.</param>
+    /// <param name="map">
+    /// Copies the columns of the current row out into a row object. Left <see langword="null"/>,
+    /// Dapper's compiled parser for the row type is used.
+    /// </param>
+    /// <param name="options">Command settings and parameter binding.</param>
+    public SqlSource(
+        IDbConnectionFactory connections,
+        string sql,
+        Func<IDataReader, TRow>? map = null,
+        SqlSourceOptions? options = null)
+        : this(
+            (connections ?? throw new ArgumentNullException(nameof(connections))).OpenAsync,
+            sql,
+            map,
+            options)
+    {
     }
 
     /// <inheritdoc />

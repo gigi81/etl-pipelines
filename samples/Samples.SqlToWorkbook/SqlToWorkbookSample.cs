@@ -1,4 +1,3 @@
-using System.Data;
 using EtlPipelines.Core;
 using EtlPipelines.Excel;
 using EtlPipelines.Samples.Common;
@@ -37,35 +36,33 @@ public sealed class SqlToWorkbookSample : Sample
 
     public override string Description => "Three queries, three sheets, one workbook";
 
+    /// <summary>The database this sample reports on, named once and referred to by name after that.</summary>
+    public const string Connection = "sales";
+
+    public override IEnumerable<KeyValuePair<string, string?>> ConnectionStrings(SampleWorkspace workspace) =>
+        [new(Connection, $"Data Source={workspace.File("sales.db").FullName}")];
+
     public override void Register(IServiceCollection services, SampleWorkspace workspace)
     {
         var report = workspace.File("report.xlsx");
-        var open = SqliteConnections.Open(ConnectionString(workspace));
+
+        // The connection string comes from configuration, under ConnectionStrings:sales.
+        services.AddSqliteConnection(Connection);
 
         // Three sources, three sheets, one workbook. Each From/To pair is its own stage, and stages
         // run one after another, which is the ordering a single workbook needs.
+        //
+        // No mapping delegate: columns are matched to properties by name, by the compiled parser
+        // Dapper builds once the query's columns are known.
         services.AddEtlPipeline(PipelineName, builder => builder
-            .FromSql(open, "SELECT Id, Customer, Amount FROM orders ORDER BY Id", ReadOrder)
+            .FromSql<Order>(Connection, "SELECT Id, Customer, Amount FROM orders ORDER BY Id")
             .ToExcelSheet(report, "Orders")
-            .FromSql(open, "SELECT Region, Total FROM region_totals ORDER BY Region", ReadRegionTotal)
+            .FromSql<RegionTotal>(Connection, "SELECT Region, Total FROM region_totals ORDER BY Region")
             .ToExcelSheet(report, "By region")
-            .FromSql(open, "SELECT Name, Country FROM customers ORDER BY Name", ReadCustomer)
+            .FromSql<Customer>(Connection, "SELECT Name, Country FROM customers ORDER BY Name")
             .ToExcelSheet(report, "Customers"));
     }
 
     public override Task PrepareAsync(SampleWorkspace workspace, CancellationToken cancellationToken) =>
-        SampleData.SeedAsync(ConnectionString(workspace), cancellationToken);
-
-    /// <summary>Stands in for the database a real job would already be pointed at.</summary>
-    internal static string ConnectionString(SampleWorkspace workspace) =>
-        $"Data Source={workspace.File("sales.db").FullName}";
-
-    private static Order ReadOrder(IDataRecord r) =>
-        new() { Id = r.GetInt64(0), Customer = r.GetString(1), Amount = r.GetDecimal(2) };
-
-    private static RegionTotal ReadRegionTotal(IDataRecord r) =>
-        new() { Region = r.GetString(0), Total = r.GetDecimal(1) };
-
-    private static Customer ReadCustomer(IDataRecord r) =>
-        new() { Name = r.GetString(0), Country = r.GetString(1) };
+        SampleData.SeedAsync($"Data Source={workspace.File("sales.db").FullName}", cancellationToken);
 }

@@ -65,4 +65,56 @@ public static class MySqlExtensions
             return connection;
         };
     }
+
+    /// <summary>
+    /// Registers a named MySQL and MariaDB connection, taking its connection string from configuration, and
+    /// that engine's bulk-load fast path alongside it.
+    /// </summary>
+    /// <param name="services">The container.</param>
+    /// <param name="name">
+    /// The name <c>FromSql</c> and <c>ToSqlTable</c> refer to, and the name of the connection string
+    /// under <c>ConnectionStrings</c>.
+    /// </param>
+    /// <remarks>
+    /// The loader is keyed to the connection name rather than registered once for the container, so a
+    /// pipeline reading from one engine and writing to another gets the right fast path at each end.
+    /// </remarks>
+    public static IServiceCollection AddMySqlConnection(this IServiceCollection services, string name)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddDbConnection(name, OpenAsync);
+        services.AddKeyedSingleton<IBulkLoader, MySqlBulkLoader>(name);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers a named MySQL and MariaDB connection with the connection string given here rather than read
+    /// from configuration, and that engine's bulk-load fast path alongside it.
+    /// </summary>
+    /// <remarks>
+    /// For a database whose address is only known at run time — a throwaway container in a test.
+    /// </remarks>
+    public static IServiceCollection AddMySqlConnection(
+        this IServiceCollection services,
+        string name,
+        string connectionString)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddDbConnection(name, connectionString, OpenAsync);
+        services.AddKeyedSingleton<IBulkLoader, MySqlBulkLoader>(name);
+
+        return services;
+    }
+
+    private static async ValueTask<DbConnection> OpenAsync(
+        string connectionString,
+        CancellationToken cancellationToken)
+    {
+        var connection = new MySqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        return connection;
+    }
 }

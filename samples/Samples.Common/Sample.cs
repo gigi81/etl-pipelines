@@ -22,11 +22,24 @@ public abstract class Sample
     public abstract string Description { get; }
 
     /// <summary>
-    /// Registers the pipeline, along with anything it resolves from the container — a dead-letter
-    /// sink, a bulk loader, options.
+    /// Registers the pipeline, along with anything it resolves from the container — a database
+    /// connection, a dead-letter sink, options.
     /// </summary>
     /// <remarks>Runs while the host is being built, so nothing here should touch the filesystem.</remarks>
     public abstract void Register(IServiceCollection services, SampleWorkspace workspace);
+
+    /// <summary>
+    /// The connection strings this sample's databases are reached by, keyed by connection name.
+    /// </summary>
+    /// <remarks>
+    /// Added to the host's configuration under <c>ConnectionStrings</c>, which is where
+    /// <c>AddSqliteConnection("sales")</c> and its siblings look for them. A real application would
+    /// have them in <c>appsettings.json</c> or the environment; a sample writes into a throwaway
+    /// directory it is handed at run time, so it computes them here instead — the same key, from a
+    /// different configuration source, which is the whole point of reading them through
+    /// <c>IConfiguration</c>.
+    /// </remarks>
+    public virtual IEnumerable<KeyValuePair<string, string?>> ConnectionStrings(SampleWorkspace workspace) => [];
 
     /// <summary>
     /// Puts in place what the pipeline expects to find: the incoming file, the target table.

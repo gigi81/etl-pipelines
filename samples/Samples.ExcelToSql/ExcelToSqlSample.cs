@@ -28,9 +28,18 @@ public sealed class ExcelToSqlSample : Sample
 
     public override string Description => "A hand-filled workbook into a table, bad rows set aside";
 
+    /// <summary>The database the workbook is loaded into.</summary>
+    public const string Connection = "orders";
+
+    public override IEnumerable<KeyValuePair<string, string?>> ConnectionStrings(SampleWorkspace workspace) =>
+        [new(Connection, ConnectionString(workspace))];
+
     public override void Register(IServiceCollection services, SampleWorkspace workspace)
     {
         var workbook = workspace.File("submitted.xlsx");
+
+        // The connection string comes from configuration, under ConnectionStrings:orders.
+        services.AddSqliteConnection(Connection);
 
         // Registering the dead-letter sink is the whole of the configuration: FromExcel looks for one
         // in the container. Without it a row that will not convert fails the run.
@@ -40,10 +49,7 @@ public sealed class ExcelToSqlSample : Sample
         services.AddEtlPipeline(PipelineName, builder => builder
             .FromExcel<SubmittedOrder>(workbook)
             .Where(order => order.Amount > 0)
-            .ToSqlTable(
-                SqliteConnections.Open(ConnectionString(workspace)),
-                "orders",
-                options => options.Columns = ["Id", "Customer", "Amount"]));
+            .ToSqlTable(Connection, "orders", options => options.Columns = ["Id", "Customer", "Amount"]));
     }
 
     public async override Task PrepareAsync(SampleWorkspace workspace, CancellationToken cancellationToken)

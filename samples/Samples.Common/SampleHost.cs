@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using System.Runtime.ExceptionServices;
 using EtlPipelines.Abstractions.Execution;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -63,6 +64,14 @@ public static class SampleHost
     {
         var builder = Host.CreateApplicationBuilder(args);
         var state = new SampleRunState();
+
+        // Under ConnectionStrings, so a sample's AddSqliteConnection("sales") finds it through
+        // IConfiguration.GetConnectionString exactly as it would in an application with an
+        // appsettings.json. Added last, so a value passed on the command line still wins.
+        builder.Configuration.AddInMemoryCollection(
+            sample.ConnectionStrings(workspace)
+                .Select(entry => new KeyValuePair<string, string?>(
+                    $"ConnectionStrings:{entry.Key}", entry.Value)));
 
         // Console only. A sample that also logged to a file or an exporter would be teaching the
         // wrong lesson; the point is that the pipeline reports itself, not where the report goes.

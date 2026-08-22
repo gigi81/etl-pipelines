@@ -55,6 +55,21 @@ public sealed class SqlSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsync
         _bulkLoader = bulkLoader;
     }
 
+    /// <summary>Writes into the table named by <paramref name="options"/> over a named connection.</summary>
+    /// <param name="connections">The factory for the connection this sink writes to.</param>
+    /// <param name="options">The destination table, columns and transaction behaviour.</param>
+    /// <param name="bulkLoader">The provider's fast path, when one is available.</param>
+    public SqlSink(
+        IDbConnectionFactory connections,
+        SqlSinkOptions options,
+        IBulkLoader? bulkLoader = null)
+        : this(
+            (connections ?? throw new ArgumentNullException(nameof(connections))).OpenAsync,
+            options,
+            bulkLoader)
+    {
+    }
+
     private bool UseBulkLoader => _bulkLoader is not null && _options.UseBulkLoader;
 
     /// <inheritdoc />
