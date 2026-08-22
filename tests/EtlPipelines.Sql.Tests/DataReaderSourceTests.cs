@@ -1,10 +1,9 @@
 using System.Data;
 using System.Data.Common;
-using EtlPipelines.Abstractions.Ports;
-using EtlPipelines.Core.Sources;
-using EtlPipelines.Core.Tests.Fixtures;
+using EtlPipelines.Core;
+using EtlPipelines.Sql.Tests.Fixtures;
 
-namespace EtlPipelines.Core.Tests;
+namespace EtlPipelines.Sql.Tests;
 
 /// <summary>Bridging an ADO.NET reader into a pipeline.</summary>
 public class DataReaderSourceTests
@@ -36,7 +35,7 @@ public class DataReaderSourceTests
         // 250 rows against a 32-row batch: the cursor must be resumed across batch boundaries rather
         // than restarted or abandoned.
         using var table = PeopleTable(250);
-        var sink = new InMemorySink<Person>();
+        var sink = new CollectingSink<Person>();
 
         //act
         var result = await EtlPipeline.CreateBuilder(PipelineName)

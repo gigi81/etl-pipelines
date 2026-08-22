@@ -45,8 +45,24 @@ jobs:
       # shell: bash on every leg so that `|| true` means the same thing everywhere - under the
       # Windows default of pwsh there is no `true` command, so the step would fail anyway and the
       # reporter below would never get to render which test broke.
+      #
+      # Two invocations rather than one, split by whether the leg has a Docker engine. A filter that
+      # matches nothing in a project still writes that project's TRX, and a TRX with no test in it is
+      # one dorny/test-reporter cannot read.
       - name: Run tests
         shell: bash
+        if: runner.os != 'Linux'
+        run: >
+          dotnet test --configuration Release --no-build
+          --results-directory ./TestResults
+          --treenode-filter "/*/*/*/*[Category!=Docker]"
+          --report-trx --report-trx-filename "{asm}-test-results.trx"
+          --coverage --coverage-output-format cobertura
+          || true
+      # Only Linux has a Docker engine, so it is the leg that also runs the Testcontainers tests.
+      - name: Run tests and database tests
+        shell: bash
+        if: runner.os == 'Linux'
         run: >
           dotnet test --configuration Release --no-build
           --results-directory ./TestResults

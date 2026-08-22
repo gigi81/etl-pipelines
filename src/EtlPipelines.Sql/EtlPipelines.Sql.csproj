@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Provider-agnostic ADO.NET source and sink for EtlPipelines.</Description>
+  </PropertyGroup>
+
+  <!--
+    Deliberately references the abstractions only, not the EtlPipelines.Core runtime. Every type a
+    connector needs - the ports, the lifecycle interfaces, and the builder interfaces - lives in
+    Abstractions, so a connector never depends on the execution engine.
+
+    No driver package either: everything here works against System.Data.Common, and each
+    EtlPipelines.Sql.<Provider> package brings its own driver and bulk-load fast path.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\EtlPipelines.Abstractions\EtlPipelines.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Only for resolving an optional IBulkLoader out of the container in ToSqlTable. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+</Project>

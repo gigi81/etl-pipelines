@@ -1,7 +1,7 @@
 using System.Data;
 using System.Data.Common;
 
-namespace EtlPipelines.Core.Sources;
+namespace EtlPipelines.Sql;
 
 /// <summary>
 /// An <see cref="IDataSource{TRow}"/> that pulls rows from an ADO.NET <see cref="IDataReader"/>.
