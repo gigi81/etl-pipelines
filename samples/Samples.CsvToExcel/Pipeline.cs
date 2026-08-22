@@ -43,6 +43,9 @@ public static class SalesPipeline
         ArgumentNullException.ThrowIfNull(directory);
 
         return services.AddEtlPipeline(Name, builder => builder
+            // The file this job reads does not exist until something puts it there. A coarse
+            // stage ahead of the dataflow is where that belongs - a real job's would download it.
+            .AddStage<SalesData>()
             .FromCsv<SalesRow>(directory.File(InputFile))
             .Where(row => row.Amount > 0)
             .Select(row => new SalesReport

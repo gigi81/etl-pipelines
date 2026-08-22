@@ -72,8 +72,20 @@ public static class TradesPipeline
             services.AddSqliteConnection(Connection, ConnectionString(directory));
         }
 
-        return services.AddEtlPipeline(Name, builder => builder
-            .WithOptions(options => options.BatchSize = 1_000)
+        var ownsDatabase = configureConnection is null;
+
+        return services.AddEtlPipeline(Name, builder =>
+        {
+            builder.WithOptions(options => options.BatchSize = 1_000)
+                // The file this job loads does not exist until something fetches it.
+                .AddStage<TradesData>();
+
+            if (ownsDatabase)
+            {
+                builder.AddStage<TradesTable>();
+            }
+
+            builder
             .FromCsv<Trade>(directory.File(InputFile))
             .Where(trade => trade.Quantity > 0)
             .ToSqlTable(Connection, Table, options =>
@@ -82,6 +94,7 @@ public static class TradesPipeline
                 {
                     options.ParameterPrefix = parameterPrefix;
                 }
-            }));
+            });
+        });
     }
 }

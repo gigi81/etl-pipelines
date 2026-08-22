@@ -40,15 +40,15 @@ public class SampleCliTests
     }
 
     [Test]
-    [Arguments("sales")]
-    public async Task Csv_to_excel_runs_from_the_command_line(string verb)
+    [Arguments(SalesPipeline.Name)]
+    public async Task Csv_to_excel_runs_from_the_command_line(string pipeline)
     {
         var directory = Scratch("csv-excel");
 
         try
         {
             //act
-            var exitCode = await SalesCli.RunAsync([verb, "--work-dir", directory]);
+            var exitCode = await SalesCommand.RunAsync(["run", pipeline, "--work-dir", directory]);
 
             //assert
             exitCode.Should().Be(0);
@@ -67,7 +67,7 @@ public class SampleCliTests
 
         try
         {
-            var exitCode = await ReportCli.RunAsync([ReportPipeline.Name, "--work-dir", directory]);
+            var exitCode = await ReportCommand.RunAsync(["run", ReportPipeline.Name, "--work-dir", directory]);
 
             exitCode.Should().Be(0);
             File.Exists(Path.Combine(directory, ReportPipeline.OutputFile)).Should().BeTrue();
@@ -85,7 +85,7 @@ public class SampleCliTests
 
         try
         {
-            var exitCode = await ImportCli.RunAsync([ImportPipeline.Name, "--work-dir", directory]);
+            var exitCode = await ImportCommand.RunAsync(["run", ImportPipeline.Name, "--work-dir", directory]);
 
             exitCode.Should().Be(0);
             File.Exists(Path.Combine(directory, "orders.db")).Should().BeTrue();
@@ -103,7 +103,7 @@ public class SampleCliTests
 
         try
         {
-            var exitCode = await ReadingsCli.RunAsync([ReadingsPipeline.Name, "--work-dir", directory]);
+            var exitCode = await ReadingsCommand.RunAsync(["run", ReadingsPipeline.Name, "--work-dir", directory]);
 
             exitCode.Should().Be(0);
             File.Exists(Path.Combine(directory, ReadingsPipeline.ArchiveFile)).Should().BeTrue();
@@ -122,7 +122,7 @@ public class SampleCliTests
 
         try
         {
-            var exitCode = await TradesCli.RunAsync([TradesPipeline.Name, "--work-dir", directory]);
+            var exitCode = await TradesCommand.RunAsync(["run", TradesPipeline.Name, "--work-dir", directory]);
 
             exitCode.Should().Be(0);
             File.Exists(Path.Combine(directory, "trades.db")).Should().BeTrue();
@@ -142,7 +142,7 @@ public class SampleCliTests
         {
             //act
             // Nothing registers this verb: it comes from EtlPipelines.Hosting, which is the point.
-            var exitCode = await SalesCli.RunAsync(["list", "--work-dir", directory]);
+            var exitCode = await SalesCommand.RunAsync(["list", "--work-dir", directory]);
 
             //assert
             exitCode.Should().Be(0);
@@ -161,7 +161,7 @@ public class SampleCliTests
         try
         {
             //act
-            var exitCode = await SalesCli.RunAsync(["run", "nosuch", "--work-dir", directory]);
+            var exitCode = await SalesCommand.RunAsync(["run", "nosuch", "--work-dir", directory]);
 
             //assert
             exitCode.Should().Be(1);

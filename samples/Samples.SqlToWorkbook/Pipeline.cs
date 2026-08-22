@@ -68,6 +68,8 @@ public static class ReportPipeline
         // run one after another, which is the ordering a single workbook needs. No mapping delegates:
         // columns are matched to properties by name.
         return services.AddEtlPipeline(Name, builder => builder
+            // The database this job reports on is filled by a step ahead of the queries.
+            .AddStage<ReportData>()
             .FromSql<Order>(Connection, "SELECT Id, Customer, Amount FROM orders ORDER BY Id")
             .ToExcelSheet(report, "Orders")
             .FromSql<RegionTotal>(Connection, "SELECT Region, Total FROM region_totals ORDER BY Region")

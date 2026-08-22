@@ -261,6 +261,32 @@ public class DataflowRuntimeTests
     }
 
     [Test]
+    public async Task Reports_row_counts_from_the_stages_that_moved_rows()
+    {
+        //arrange
+        // A coarse stage moves no rows and reports none. Taking the run's totals from the first and
+        // last stage regardless would say this pipeline read nothing, because the download ran first.
+        var pipeline = EtlPipeline.CreateBuilder(PipelineName)
+            .AddStage("download", (_, _) => ValueTask.FromResult<ErrorOr<Success>>(Result.Success))
+            .From<FixedSource, int>()
+            .Select(x => x * 2)
+            .To<NullSink>()
+            .AddStage("swap", (_, _) => ValueTask.FromResult<ErrorOr<Success>>(Result.Success))
+            .Build();
+
+        //act
+        var result = await pipeline.RunAsync(CancellationToken.None);
+
+        //assert
+        result.IsError.Should().BeFalse();
+        result.Value.Stages.Select(s => s.Name).Should().Equal("download", "FixedSource -> NullSink", "swap");
+        result.Value.RowsRead.Should().BeGreaterThan(0, "the download stage is not what the pipeline read");
+        result.Value.RowsWritten.Should().BeGreaterThan(0, "nor is the swap stage what it wrote");
+        result.Value.RowsRead.Should().Be(result.Value.Stages[1].RowsIn);
+        result.Value.RowsWritten.Should().Be(result.Value.Stages[1].RowsOut);
+    }
+
+    [Test]
     public async Task Supports_concurrent_runs_of_the_same_pipeline()
     {
         //arrange

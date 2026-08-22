@@ -15,9 +15,13 @@ namespace EtlPipelines.Samples.Tests;
 /// </summary>
 /// <remarks>
 /// Samples are documentation that can rot without anybody noticing, because nothing compiles against
-/// their behaviour. Each is exercised twice here: once through its registration, so the row counts
-/// can be asserted on, and once through <c>Cli.RunAsync</c> — the same entry point a shell reaches —
-/// so the command wiring is covered too rather than only the pipeline underneath it.
+/// their behaviour. Each is exercised twice: once through its registration, here, so the row counts
+/// can be asserted on, and once through <c>Command.RunAsync</c> — the same entry point a shell
+/// reaches — so the wiring is covered too rather than only the pipeline underneath it.
+/// <para>
+/// Nothing seeds anything first. Putting the input in place is the pipeline's own opening stage, so
+/// running the pipeline is the whole of the arrangement.
+/// </para>
 /// </remarks>
 [Category("Samples")]
 public class SampleTests
@@ -27,9 +31,8 @@ public class SampleTests
     {
         //arrange
         await using var scratch = new SampleScratch("csv-excel", (services, directory) =>
-            services.AddSingleton<SalesData>().AddSalesPipeline(directory));
+            services.AddSalesPipeline(directory));
 
-        await scratch.GetRequiredService<SalesData>().WriteAsync(CancellationToken.None);
 
         //act
         var result = await scratch.RunAsync();
@@ -59,16 +62,16 @@ public class SampleTests
     {
         //arrange
         await using var scratch = new SampleScratch("sql-workbook", (services, directory) =>
-            services.AddSingleton<ReportData>().AddReportPipeline(directory));
+            services.AddReportPipeline(directory));
 
-        await scratch.GetRequiredService<ReportData>().SeedAsync(CancellationToken.None);
 
         //act
         var result = await scratch.RunAsync();
 
         //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-        result.Value.Stages.Should().HaveCount(3, "one stage per sheet");
+        result.Value.Stages.Should().HaveCount(4, "the seed step, then one stage per sheet");
+        result.Value.Stages[0].Name.Should().Be("seed", "the database is filled before the queries run");
 
         var report = scratch.File(ReportPipeline.OutputFile);
         report.Refresh();
@@ -87,10 +90,7 @@ public class SampleTests
     {
         //arrange
         await using var scratch = new SampleScratch("excel-sql", (services, directory) =>
-            services.AddSingleton<ImportData>().AddImportPipeline(directory));
-
-        var data = scratch.GetRequiredService<ImportData>();
-        await data.PrepareAsync(CancellationToken.None);
+            services.AddImportPipeline(directory));
 
         //act
         var result = await scratch.RunAsync();
@@ -101,7 +101,8 @@ public class SampleTests
         // 200 rows, every fortieth unreadable; the rest reach the table inside one transaction.
         result.Value.RowsRead.Should().Be(195);
         result.Value.RowsWritten.Should().Be(195);
-        (await data.CountAsync(CancellationToken.None)).Should().Be(195);
+        (await ImportPipeline.CountAsync(scratch.Directory, CancellationToken.None))
+            .Should().Be(195);
 
         scratch.GetRequiredService<RejectedRows>().Rows
             .Should().HaveCount(5, "the rows that were not numbers went to the dead-letter sink");
@@ -112,9 +113,8 @@ public class SampleTests
     {
         //arrange
         await using var scratch = new SampleScratch("branching", (services, directory) =>
-            services.AddSingleton<ReadingsData>().AddReadingsPipeline(directory));
+            services.AddReadingsPipeline(directory));
 
-        await scratch.GetRequiredService<ReadingsData>().WriteAsync(CancellationToken.None);
 
         //act
         var result = await scratch.RunAsync();
@@ -145,11 +145,7 @@ public class SampleTests
     {
         //arrange
         await using var scratch = new SampleScratch("csv-sqlite", (services, directory) =>
-            services.AddSingleton<TradesData>().AddTradesPipeline(directory));
-
-        var data = scratch.GetRequiredService<TradesData>();
-        await data.WriteAsync(CancellationToken.None);
-        await data.CreateSqliteTableAsync(CancellationToken.None);
+            services.AddTradesPipeline(directory));
 
         //act
         var result = await scratch.RunAsync();

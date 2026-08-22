@@ -406,19 +406,32 @@ Runnable programs in [`samples/`](samples):
 | `Samples.CsvToDatabase` | one pipeline, five engines — only the registered connection changes |
 | `Samples.Branching` | archiving the raw rows while the same pass builds a report |
 
-Each is a command line application. The verb named after the pipeline puts an input file in place and
-then runs it; `--work-dir` says where, and defaults to a new directory under the temp path:
+Each is a command line application, and none of them writes a command: `run` and `list` come from
+`EtlPipelines.Hosting`. `--work-dir` says where to work, and defaults to a new directory under the
+temp path:
 
 ```bash
-dotnet run --project samples/Samples.SqlToWorkbook -- report --work-dir ./out
+dotnet run --project samples/Samples.SqlToWorkbook -- run report --work-dir ./out
 ```
 
-`run` and `list` come from `EtlPipelines.Hosting` and are not written by the samples at all — see
-below. Each sample is also an integration test: `tests/EtlPipelines.Samples.Tests` runs the pipelines
-through their own registration and checks what they left behind, then runs each one again through its
-command line to prove the wiring holds. `Samples.CsvToDatabase` is run again against real SQL Server,
-PostgreSQL, MySQL and Oracle containers — the same registration, not a copy of it. Samples are
-documentation that nothing compiles against, so without that they rot quietly.
+A sample has no input until it makes one, and that is **a stage of the pipeline** rather than
+something done to it beforehand — which is what `AddStage` is for, and what a real job's download or
+staging-table step would be:
+
+```csharp
+services.AddEtlPipeline(Name, builder => builder
+    .AddStage<SalesData>()              // writes the file this job reads
+    .FromCsv<SalesRow>(directory.File(InputFile))
+    ...
+```
+
+Each sample is three files: `Pipeline.cs` registers it, `Data.cs` is the stage that puts the input in
+place, and `Command.cs` builds the host. Each is also an integration test:
+`tests/EtlPipelines.Samples.Tests` runs the pipelines through their own registration and checks what
+they left behind, then runs each one again through its command line to prove the wiring holds.
+`Samples.CsvToDatabase` is run again against real SQL Server, PostgreSQL, MySQL and Oracle containers
+— the same registration, not a copy of it. Samples are documentation that nothing compiles against,
+so without that they rot quietly.
 
 ## Running as a command line application
 
@@ -438,6 +451,19 @@ files against — and gives you two verbs:
 myapp list          # the pipelines this application registered
 myapp run orders    # run one, exit 0 on success and 1 on failure
 ```
+
+Steps that move no rows — fetching the file, swapping a staging table into place — are stages too, so
+a whole job stays one pipeline with one report:
+
+```csharp
+services.AddEtlPipeline("orders", builder => builder
+    .AddStage<DownloadOrders>()
+    .FromCsv<Order>(file)
+    .To<SqlSink>());
+```
+
+Such a stage reports no rows, and the run's `RowsRead` and `RowsWritten` skip past it to the stages
+that moved some — so opening a pipeline with one does not make it report that it read nothing.
 
 Runs report themselves through `Microsoft.Extensions.Logging`. The runtime's own traces are published
 to an `ActivitySource` rather than to a logger, so turning the level up surfaces per-stage timings
