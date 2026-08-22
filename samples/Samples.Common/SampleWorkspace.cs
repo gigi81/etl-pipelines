@@ -1,3 +1,4 @@
+using System.CommandLine;
 using System.IO.Abstractions;
 
 namespace EtlPipelines.Samples.Common;
@@ -7,38 +8,61 @@ namespace EtlPipelines.Samples.Common;
 /// </summary>
 /// <remarks>
 /// Every sample needs somewhere to put a file, and every sample would otherwise open with the same
-/// dozen lines of temp-directory bookkeeping before getting to the pipeline. It is also the seam the
-/// tests use: they hand a sample a directory they control and then look at what turned up in it.
+/// dozen lines of temp-directory bookkeeping before getting to the pipeline. Registered as a
+/// singleton and injected into everything that needs it — the seeder, the command, the pipeline's
+/// own registration — which is also what lets a test point a sample at a directory it controls and
+/// then look at what turned up in it.
 /// </remarks>
 public sealed class SampleWorkspace
 {
-    /// <summary>Uses a directory the caller already has. This is what the tests do.</summary>
-    public SampleWorkspace(IDirectoryInfo directory)
+    private readonly IFileSystem _fileSystem;
+
+    /// <summary>Uses a directory the caller already has, creating it if it is not there.</summary>
+    public SampleWorkspace(IFileSystem fileSystem, IDirectoryInfo directory)
     {
+        ArgumentNullException.ThrowIfNull(fileSystem);
         ArgumentNullException.ThrowIfNull(directory);
 
+        _fileSystem = fileSystem;
         Directory = directory;
         Directory.Create();
     }
 
-    /// <summary>A fresh directory under the system temp path, on the real filesystem.</summary>
-    /// <param name="name">Appears in the directory name, so a leftover can be traced to its sample.</param>
-    public static SampleWorkspace CreateTemporary(string name)
+    /// <summary>The option every sample takes, so its output can be put somewhere you can find it.</summary>
+    /// <remarks>
+    /// Recursive, so it applies to every verb rather than being repeated on each one. Read while the
+    /// container is being composed rather than injected from it: the pipeline's own registration
+    /// needs the file paths, and that runs before there is a provider to resolve anything from.
+    /// </remarks>
+    public static Option<string?> WorkDirOption { get; } = new("--work-dir")
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
-
-        var fileSystem = new FileSystem();
-
-        return new SampleWorkspace(fileSystem.DirectoryInfo.New(
-            Path.Combine(Path.GetTempPath(), $"etl-sample-{name}-{Guid.NewGuid():N}")));
-    }
+        Description = "Directory to read and write in. Defaults to a new directory under the temp path.",
+        Recursive = true,
+    };
 
     /// <summary>The directory itself.</summary>
     public IDirectoryInfo Directory { get; }
 
-    /// <summary>The filesystem the directory belongs to.</summary>
-    public IFileSystem FileSystem => Directory.FileSystem;
-
     /// <summary>A file in the workspace, whether or not it exists yet.</summary>
-    public IFileInfo File(string name) => Directory.File(name);
+    public IFileInfo File(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        return _fileSystem.FileInfo.New(_fileSystem.Path.Combine(Directory.FullName, name));
+    }
+
+    /// <summary>Builds the workspace a command line run should use.</summary>
+    /// <param name="result">The parsed command line, which may carry <c>--work-dir</c>.</param>
+    /// <param name="name">Appears in the default directory name, so a leftover can be traced back.</param>
+    public static SampleWorkspace ForCommandLine(ParseResult result, string name)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        var fileSystem = new FileSystem();
+        var path = result.GetValue(WorkDirOption)
+            ?? Path.Combine(Path.GetTempPath(), $"etl-sample-{name}-{Guid.NewGuid():N}");
+
+        return new SampleWorkspace(fileSystem, fileSystem.DirectoryInfo.New(path));
+    }
 }

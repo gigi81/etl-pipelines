@@ -1,5 +1,4 @@
-using EtlPipelines.Samples.Common;
 using EtlPipelines.Samples.CsvToExcel;
 
-// Everything a reader came here for is in CsvToExcelSample.cs. This starts a generic host around it.
-return await SampleHost.RunAsync<CsvToExcelSample>(args);
+// The application itself is in SalesCommand.cs, where the tests can reach it too.
+return await SalesCli.RunAsync(args);

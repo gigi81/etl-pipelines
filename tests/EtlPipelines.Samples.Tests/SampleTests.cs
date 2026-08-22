@@ -1,5 +1,9 @@
 using System.IO.Abstractions;
-using EtlPipelines.Samples.Common;
+using EtlPipelines.Samples.Branching;
+using EtlPipelines.Samples.CsvToDatabase;
+using EtlPipelines.Samples.CsvToExcel;
+using EtlPipelines.Samples.ExcelToSql;
+using EtlPipelines.Samples.SqlToWorkbook;
 using Microsoft.Extensions.DependencyInjection;
 using MiniExcelLib;
 using MiniExcelLib.OpenXml;
@@ -11,9 +15,9 @@ namespace EtlPipelines.Samples.Tests;
 /// </summary>
 /// <remarks>
 /// Samples are documentation that can rot without anybody noticing, because nothing compiles against
-/// their behaviour. Running them here and asserting on the files they leave behind is what keeps the
-/// README's claims and the code in step. They are run through <see cref="SampleHost"/>, the same host
-/// their <c>Program.cs</c> starts, so what passes here is true of the sample as somebody would run it.
+/// their behaviour. Each is exercised twice here: once through its registration, so the row counts
+/// can be asserted on, and once through <c>Cli.RunAsync</c> — the same entry point a shell reaches —
+/// so the command wiring is covered too rather than only the pipeline underneath it.
 /// </remarks>
 [Category("Samples")]
 public class SampleTests
@@ -22,22 +26,27 @@ public class SampleTests
     public async Task Csv_to_excel_filters_and_reshapes_into_a_workbook()
     {
         //arrange
-        using var scratch = new SampleScratch("csv-excel");
+        await using var scratch = new SampleScratch("csv-excel", (services, workspace) =>
+            services.AddSingleton<SalesData>().AddSalesPipeline(workspace));
+
+        await scratch.GetRequiredService<SalesData>().WriteAsync(CancellationToken.None);
 
         //act
-        await using var run = await SampleHost.RunAsync(new CsvToExcel.CsvToExcelSample(), scratch.Workspace);
+        var result = await scratch.RunAsync();
 
         //assert
-        // 500 rows in, every tenth a refund the pipeline drops.
-        run.Result.RowsRead.Should().Be(500);
-        run.Result.RowsWritten.Should().Be(450);
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
 
-        var workbook = run.File("sales.xlsx");
+        // 500 rows in, every tenth a refund the pipeline drops.
+        result.Value.RowsRead.Should().Be(500);
+        result.Value.RowsWritten.Should().Be(450);
+
+        var workbook = scratch.File(SalesPipeline.OutputFile);
         workbook.Refresh();
         workbook.Exists.Should().BeTrue();
 
         var rows = MiniExcel.Importers.GetOpenXmlImporter()
-            .Query<CsvToExcel.SalesReport>(workbook.OpenRead())
+            .Query<SalesReport>(workbook.OpenRead())
             .ToList();
 
         rows.Should().HaveCount(450);
@@ -49,15 +58,19 @@ public class SampleTests
     public async Task Sql_to_workbook_writes_one_sheet_per_query()
     {
         //arrange
-        using var scratch = new SampleScratch("sql-workbook");
+        await using var scratch = new SampleScratch("sql-workbook", (services, workspace) =>
+            services.AddSingleton<ReportData>().AddReportPipeline(workspace));
+
+        await scratch.GetRequiredService<ReportData>().SeedAsync(CancellationToken.None);
 
         //act
-        await using var run = await SampleHost.RunAsync(new SqlToWorkbook.SqlToWorkbookSample(), scratch.Workspace);
+        var result = await scratch.RunAsync();
 
         //assert
-        run.Result.Stages.Should().HaveCount(3, "one stage per sheet");
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
+        result.Value.Stages.Should().HaveCount(3, "one stage per sheet");
 
-        var report = run.File("report.xlsx");
+        var report = scratch.File(ReportPipeline.OutputFile);
         report.Refresh();
         report.Exists.Should().BeTrue();
 
@@ -65,45 +78,53 @@ public class SampleTests
         importer.GetSheetNames(report.OpenRead())
             .Should().Equal(["Orders", "By region", "Customers"], "sheets keep the order they were declared");
 
-        importer.Query<SqlToWorkbook.Order>(report.OpenRead(), sheetName: "Orders")
-            .Should().HaveCount(200);
-        importer.Query<SqlToWorkbook.Customer>(report.OpenRead(), sheetName: "Customers")
-            .Should().HaveCount(200);
+        importer.Query<Order>(report.OpenRead(), sheetName: "Orders").Should().HaveCount(ReportData.Rows);
+        importer.Query<Customer>(report.OpenRead(), sheetName: "Customers").Should().HaveCount(ReportData.Rows);
     }
 
     [Test]
     public async Task Excel_to_sql_loads_what_it_can_and_sets_the_rest_aside()
     {
         //arrange
-        using var scratch = new SampleScratch("excel-sql");
+        await using var scratch = new SampleScratch("excel-sql", (services, workspace) =>
+            services.AddSingleton<ImportData>().AddImportPipeline(workspace));
+
+        var data = scratch.GetRequiredService<ImportData>();
+        await data.PrepareAsync(CancellationToken.None);
 
         //act
-        await using var run = await SampleHost.RunAsync(new ExcelToSql.ExcelToSqlSample(), scratch.Workspace);
+        var result = await scratch.RunAsync();
 
         //assert
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
+
         // 200 rows, every fortieth unreadable; the rest reach the table inside one transaction.
-        // The dead-letter sink is resolved from the host the sample ran in, which is the only place
-        // that knows what the run set aside.
-        run.Services.GetRequiredService<ExcelToSql.RejectedRows>().Rows
+        result.Value.RowsRead.Should().Be(195);
+        result.Value.RowsWritten.Should().Be(195);
+        (await data.CountAsync(CancellationToken.None)).Should().Be(195);
+
+        scratch.GetRequiredService<RejectedRows>().Rows
             .Should().HaveCount(5, "the rows that were not numbers went to the dead-letter sink");
-        run.Result.RowsRead.Should().Be(195);
-        run.Result.RowsWritten.Should().Be(195);
     }
 
     [Test]
     public async Task Branching_reads_once_and_writes_to_both_destinations()
     {
         //arrange
-        using var scratch = new SampleScratch("branching");
+        await using var scratch = new SampleScratch("branching", (services, workspace) =>
+            services.AddSingleton<ReadingsData>().AddReadingsPipeline(workspace));
+
+        await scratch.GetRequiredService<ReadingsData>().WriteAsync(CancellationToken.None);
 
         //act
-        await using var run = await SampleHost.RunAsync(new Branching.BranchingSample(), scratch.Workspace);
+        var result = await scratch.RunAsync();
 
         //assert
-        run.Result.RowsRead.Should().Be(2_000, "the source is read once however many branches there are");
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
+        result.Value.RowsRead.Should().Be(ReadingsData.Rows, "the source is read once however many branches there are");
 
-        var archive = run.File("archive.csv");
-        var report = run.File("report.xlsx");
+        var archive = scratch.File(ReadingsPipeline.ArchiveFile);
+        var report = scratch.File(ReadingsPipeline.ReportFile);
         archive.Refresh();
         report.Refresh();
         archive.Exists.Should().BeTrue();
@@ -112,26 +133,30 @@ public class SampleTests
         // The archive keeps every row; the report only the warm ones, so it is strictly smaller.
         var archived = (await archive.ReadAllLinesAsync(CancellationToken.None)).Length - 1;
         var reported = MiniExcel.Importers.GetOpenXmlImporter()
-            .Query<Branching.ReadingReport>(report.OpenRead()).Count();
+            .Query<ReadingReport>(report.OpenRead()).Count();
 
-        archived.Should().Be(2_000);
+        archived.Should().Be(ReadingsData.Rows);
         reported.Should().BeLessThan(archived).And.BeGreaterThan(0);
-        run.Result.RowsWritten.Should().Be(archived + reported);
+        result.Value.RowsWritten.Should().Be(archived + reported);
     }
 
     [Test]
     public async Task Csv_to_database_loads_a_file_into_sqlite()
     {
         //arrange
-        using var scratch = new SampleScratch("csv-sqlite");
+        await using var scratch = new SampleScratch("csv-sqlite", (services, workspace) =>
+            services.AddSingleton<TradesData>().AddTradesPipeline(workspace));
+
+        var data = scratch.GetRequiredService<TradesData>();
+        await data.WriteAsync(CancellationToken.None);
+        await data.CreateSqliteTableAsync(CancellationToken.None);
 
         //act
-        // No connection supplied, so the sample brings its own SQLite file and creates the table.
-        await using var run = await SampleHost.RunAsync(
-            new CsvToDatabase.CsvToDatabaseSample(), scratch.Workspace);
+        var result = await scratch.RunAsync();
 
         //assert
-        run.Result.RowsRead.Should().Be(10_000);
-        run.Result.RowsWritten.Should().Be(CsvToDatabase.CsvToDatabaseSample.ExpectedRows);
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
+        result.Value.RowsRead.Should().Be(TradesData.Rows);
+        result.Value.RowsWritten.Should().Be(TradesPipeline.ExpectedRows);
     }
 }

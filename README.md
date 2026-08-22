@@ -14,6 +14,7 @@ overlap rather than run one after another.
 | `EtlPipelines.Core` | The runtime and the builder. Start here. |
 | `EtlPipelines.Csv` | CSV source and sink, built on CsvHelper. |
 | `EtlPipelines.Excel` | Excel (`.xlsx`) source and sink, built on MiniExcel. |
+| `EtlPipelines.Hosting` | Runs your pipelines as a command line application. |
 | `EtlPipelines.Sql` | Source and sink for any ADO.NET provider. |
 | `EtlPipelines.Sql.Sqlite` .`SqlServer` .`PostgreSql` .`MySql` .`Oracle` | One per engine: the driver, and that engine's bulk-load fast path. |
 | `EtlPipelines.Abstractions` | The contracts alone, for a library that defines ports without referencing the engine. Pulled in by the others. |
@@ -402,32 +403,86 @@ Runnable programs in [`samples/`](samples):
 | `Samples.CsvToExcel` | CSV in, filter and reshape, workbook out — the ordinary job |
 | `Samples.SqlToWorkbook` | three queries becoming three sheets of one workbook |
 | `Samples.ExcelToSql` | a hand-filled spreadsheet loaded into a table, bad rows set aside |
-| `Samples.CsvToDatabase` | one pipeline, five engines — only the connection and bulk loader change |
+| `Samples.CsvToDatabase` | one pipeline, five engines — only the registered connection changes |
 | `Samples.Branching` | archiving the raw rows while the same pass builds a report |
 
-```bash
-dotnet run --project samples/Samples.SqlToWorkbook
-```
-
-Each runs on the [.NET generic host](https://learn.microsoft.com/dotnet/core/extensions/generic-host),
-so the pipeline is registered into the same container everything else uses and run by a hosted
-service — which is where a pipeline belongs in an application, and not something a `Main` body full
-of setup would show you. `Program.cs` is one line; the pipeline is in `<Name>Sample.cs`; the code
-that fabricates the input file or seeds the table is in `SampleData.cs`, out of the way.
-`samples/Samples.Common` holds the host, the workspace directory and the run reporting, so no sample
-repeats any of it.
-
-Runs log to the console through `Microsoft.Extensions.Logging`. Turn the level up to see the
-library's own traces, which the samples subscribe to and log:
+Each is a command line application. The verb named after the pipeline puts an input file in place and
+then runs it; `--work-dir` says where, and defaults to a new directory under the temp path:
 
 ```bash
-dotnet run --project samples/Samples.CsvToExcel -- --Logging:LogLevel:Default=Debug
+dotnet run --project samples/Samples.SqlToWorkbook -- report --work-dir ./out
 ```
 
-Each sample is also an integration test. `tests/EtlPipelines.Samples.Tests` runs them through that
-same host and checks what they left behind, and `Samples.CsvToDatabase` is run again against real
-SQL Server, PostgreSQL, MySQL and Oracle containers — the same class, not a copy of it. Samples are
+`run` and `list` come from `EtlPipelines.Hosting` and are not written by the samples at all — see
+below. Each sample is also an integration test: `tests/EtlPipelines.Samples.Tests` runs the pipelines
+through their own registration and checks what they left behind, then runs each one again through its
+command line to prove the wiring holds. `Samples.CsvToDatabase` is run again against real SQL Server,
+PostgreSQL, MySQL and Oracle containers — the same registration, not a copy of it. Samples are
 documentation that nothing compiles against, so without that they rot quietly.
+
+## Running as a command line application
+
+`EtlPipelines.Hosting` turns an application that registers pipelines into one you can run:
+
+```csharp
+return await new EtlPipelinesHost("Loads the nightly orders file.")
+    .ConfigureServices(services => services.AddEtlPipeline("orders", builder => ...))
+    .RunAsync(args);
+```
+
+That is the whole program. It builds a [.NET generic host](https://learn.microsoft.com/dotnet/core/extensions/generic-host)
+— configuration, logging and DI as usual — and gives you two verbs:
+
+```bash
+myapp list          # the pipelines this application registered
+myapp run orders    # run one, exit 0 on success and 1 on failure
+```
+
+Runs report themselves through `Microsoft.Extensions.Logging`. The runtime's own traces are published
+to an `ActivitySource` rather than to a logger, so turning the level up surfaces per-stage timings
+without an exporter:
+
+```bash
+myapp run orders --Logging:LogLevel:Default=Debug
+```
+
+Commands of your own go in alongside the built-in ones — the command line is
+[Albatross.CommandLine](https://rushuiguan.github.io/commandline/) over `System.CommandLine`, so a
+verb is a parameters class and a handler, and the handler is resolved from the container:
+
+```csharp
+[Verb<LoadHandler>("load", Description = "Fetches today's file, then loads it.")]
+public class LoadParams { }
+
+public class LoadHandler : BaseHandler<LoadParams>
+{
+    private readonly Downloader _downloader;
+    private readonly PipelineRunner _runner;
+
+    public LoadHandler(ParseResult result, LoadParams parameters, Downloader downloader, PipelineRunner runner)
+        : base(result, parameters)
+    {
+        _downloader = downloader;
+        _runner = runner;
+    }
+
+    public override async Task<int> InvokeAsync(CancellationToken cancellationToken)
+    {
+        await _downloader.FetchAsync(cancellationToken);
+        return await _runner.RunAsync("orders", cancellationToken);
+    }
+}
+```
+
+`PipelineRunner` is the same service the built-in `run` uses. Hand the host the two methods the
+source generator wrote into your assembly's `AutoGenerated` namespace and the verb is live:
+
+```csharp
+return await new EtlPipelinesHost("Loads the nightly orders file.")
+    .AddCommands(host => host.AddCommands())
+    .ConfigureServices(services => services.RegisterCommands().AddEtlPipeline("orders", ...))
+    .RunAsync(args);
+```
 
 ## Observability
 

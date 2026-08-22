@@ -1,24 +1,42 @@
 using System.IO.Abstractions;
+using EtlPipelines.Abstractions.Execution;
+using EtlPipelines.Hosting;
 using EtlPipelines.Samples.Common;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace EtlPipelines.Samples.Tests;
 
-/// <summary>A real directory on a real disk for a sample to write into, deleted afterwards.</summary>
+/// <summary>
+/// A real directory on a real disk for a sample to write into, and a container wired the way the
+/// sample's own command line wires one.
+/// </summary>
 /// <remarks>
 /// Deliberately the real filesystem. These tests exist to prove the samples work as written, and a
 /// sample that only ran against an in-memory filesystem would not be evidence of that.
 /// </remarks>
-public sealed class SampleScratch : IDisposable
+public sealed class SampleScratch : IAsyncDisposable
 {
     private readonly IFileSystem _fileSystem = new FileSystem();
+    private readonly ServiceProvider _provider;
 
-    public SampleScratch(string name)
+    public SampleScratch(string name, Action<IServiceCollection, SampleWorkspace> configure)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(configure);
+
         Directory = _fileSystem.DirectoryInfo.New(
             Path.Combine(Path.GetTempPath(), $"etl-samples-{name}-{Guid.NewGuid():N}"));
-        Directory.Create();
 
-        Workspace = new SampleWorkspace(Directory);
+        Workspace = new SampleWorkspace(_fileSystem, Directory);
+
+        var services = new ServiceCollection();
+        services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Warning));
+        services.AddSingleton(Workspace);
+        services.AddSingleton<PipelineRunner>();
+        configure(services, Workspace);
+
+        _provider = services.BuildServiceProvider();
     }
 
     public IDirectoryInfo Directory { get; }
@@ -26,10 +44,28 @@ public sealed class SampleScratch : IDisposable
     /// <summary>The scratch directory as a sample sees it.</summary>
     public SampleWorkspace Workspace { get; }
 
+    /// <summary>The container the sample's services were registered into.</summary>
+    public IServiceProvider Services => _provider;
+
     public IFileInfo File(string name) => Workspace.File(name);
 
-    public void Dispose()
+    public T GetRequiredService<T>() where T : notnull => _provider.GetRequiredService<T>();
+
+    /// <summary>
+    /// Runs the one pipeline the sample registered, and hands back what it did.
+    /// </summary>
+    /// <remarks>
+    /// Resolved as <see cref="IPipeline"/> rather than through the runner, which reports an exit code
+    /// and nothing else — these tests want the row counts. That the resolution works at all is worth
+    /// something too: it is what lets a host discover an application's pipelines.
+    /// </remarks>
+    public Task<ErrorOr<PipelineResult>> RunAsync(CancellationToken cancellationToken = default) =>
+        _provider.GetServices<IPipeline>().Single().RunAsync(cancellationToken);
+
+    public async ValueTask DisposeAsync()
     {
+        await _provider.DisposeAsync();
+
         try
         {
             Directory.Delete(recursive: true);
