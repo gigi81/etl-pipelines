@@ -360,6 +360,27 @@ Rejected rows go to a registered `IDeadLetterSink<TRow>`. Expected data-level fa
 - `BatchSize` (default 10,000) and `ChannelCapacity` (default 4) are the two knobs on `PipelineOptions`
   that trade memory for throughput.
 
+## Samples
+
+Runnable programs in [`samples/`](samples), each a single file you can read top to bottom:
+
+| Sample | Shows |
+|---|---|
+| `Samples.CsvToExcel` | CSV in, filter and reshape, workbook out — the ordinary job |
+| `Samples.SqlToWorkbook` | three queries becoming three sheets of one workbook |
+| `Samples.ExcelToSql` | a hand-filled spreadsheet loaded into a table, bad rows set aside |
+| `Samples.CsvToDatabase` | one pipeline, five engines — only the connection and bulk loader change |
+| `Samples.Branching` | archiving the raw rows while the same pass builds a report |
+
+```bash
+dotnet run --project samples/Samples.SqlToWorkbook
+```
+
+Each one is also an integration test. `tests/EtlPipelines.Samples.Tests` runs them end to end and
+checks what they left behind, and `Samples.CsvToDatabase` is run again against real SQL Server,
+PostgreSQL, MySQL and Oracle containers — the same method, not a copy of it. Samples are
+documentation that nothing compiles against, so without that they rot quietly.
+
 ## Observability
 
 Traces and metrics are published through `ActivitySource` and `Meter` named `EtlPipelines`, so any

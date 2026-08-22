@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\EtlPipelines.Core\EtlPipelines.Core.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Csv\EtlPipelines.Csv.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Sql\EtlPipelines.Sql.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Sql.Sqlite\EtlPipelines.Sql.Sqlite.csproj" />
+  </ItemGroup>
+
+</Project>
