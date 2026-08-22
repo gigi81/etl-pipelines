@@ -14,14 +14,14 @@ namespace EtlPipelines.Samples.ExcelToSql;
 /// <summary>
 /// The workbook somebody filled in, and the table it is loaded into.
 /// </summary>
-public sealed class ImportData : IPipelineStage
+public sealed class SeedStage : IPipelineStage
 {
     private readonly IDirectoryInfo _directory;
-    private readonly ILogger<ImportData> _logger;
+    private readonly ILogger<SeedStage> _logger;
 
-    public ImportData(
+    public SeedStage(
         [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
-        ILogger<ImportData> logger)
+        ILogger<SeedStage> logger)
     {
         _directory = directory;
         _logger = logger;
@@ -59,7 +59,7 @@ public sealed class ImportData : IPipelineStage
     /// <summary>A workbook with a few rows nobody could load, because that is what hand-filled files are like.</summary>
     private async Task WriteWorkbookAsync(CancellationToken cancellationToken)
     {
-        var file = _directory.File(ImportPipeline.InputFile);
+        var file = _directory.File(Pipeline.InputFile);
 
         var rows = Enumerable.Range(1, Rows)
             .Select(i => new TypedInByHand
@@ -85,13 +85,13 @@ public sealed class ImportData : IPipelineStage
 
     private async Task CreateTableAsync(CancellationToken cancellationToken)
     {
-        await using var connection = new SqliteConnection(ImportPipeline.ConnectionString(_directory));
+        await using var connection = new SqliteConnection(Pipeline.ConnectionString(_directory));
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"DROP TABLE IF EXISTS {ImportPipeline.Table}; " +
-            $"CREATE TABLE {ImportPipeline.Table} (Id INTEGER, Customer TEXT, Amount NUMERIC)";
+            $"DROP TABLE IF EXISTS {Pipeline.Table}; " +
+            $"CREATE TABLE {Pipeline.Table} (Id INTEGER, Customer TEXT, Amount NUMERIC)";
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

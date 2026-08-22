@@ -1,5 +1,4 @@
 using System.Data.Common;
-using EtlPipelines.Samples.CsvToDatabase;
 using EtlPipelines.Sql.MySql;
 using EtlPipelines.Sql.Oracle;
 using EtlPipelines.Sql.PostgreSql;
@@ -47,7 +46,7 @@ public abstract class CsvToDatabaseOnRealEnginesTests<TFixture>
         // The engine is the only thing that changes: the same registration the sample's own command
         // line uses, handed a different Add...Connection.
         await using var scratch = new SampleScratch("csv-db", (services, directory) =>
-            services.AddTradesPipeline(directory, Register, ParameterPrefix));
+            CsvToDatabase.Pipeline.AddPipeline(services, directory, Register, ParameterPrefix));
 
         // The table, in this engine's own dialect. Handing the pipeline a connection is what tells it
         // not to create one itself, so this is the whole of the arrangement - the file it loads is put
@@ -64,14 +63,14 @@ public abstract class CsvToDatabaseOnRealEnginesTests<TFixture>
 
         //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-        result.Value.RowsRead.Should().Be(TradesData.Rows);
-        result.Value.RowsWritten.Should().Be(TradesPipeline.ExpectedRows);
+        result.Value.RowsRead.Should().Be(CsvToDatabase.SeedStage.Rows);
+        result.Value.RowsWritten.Should().Be(CsvToDatabase.Pipeline.ExpectedRows);
 
         await using var check = await Open()(CancellationToken.None);
         await using var count = check.CreateCommand();
-        count.CommandText = $"SELECT COUNT(*) FROM {TradesPipeline.Table}";
+        count.CommandText = $"SELECT COUNT(*) FROM {CsvToDatabase.Pipeline.Table}";
         Convert.ToInt64(await count.ExecuteScalarAsync())
-            .Should().Be(TradesPipeline.ExpectedRows, "every filtered row reached the table");
+            .Should().Be(CsvToDatabase.Pipeline.ExpectedRows, "every filtered row reached the table");
     }
 }
 
@@ -93,7 +92,7 @@ public sealed class SqlServerSampleTests(SqlServerFixture fixture)
         (services, name) => services.AddSqlServerConnection(name, Fixture.ConnectionString);
 
     protected override string CreateTableSql =>
-        $"CREATE TABLE {TradesPipeline.Table} (Id INT, Symbol NVARCHAR(10), Price DECIMAL(18,2), Quantity INT)";
+        $"CREATE TABLE {CsvToDatabase.Pipeline.Table} (Id INT, Symbol NVARCHAR(10), Price DECIMAL(18,2), Quantity INT)";
 }
 
 public sealed class PostgreSqlFixture : DatabaseFixture<PostgreSqlContainer>
@@ -114,7 +113,7 @@ public sealed class PostgreSqlSampleTests(PostgreSqlFixture fixture)
         (services, name) => services.AddPostgreSqlConnection(name, Fixture.ConnectionString);
 
     protected override string CreateTableSql =>
-        $"CREATE TABLE {TradesPipeline.Table} (Id INT, Symbol TEXT, Price NUMERIC(18,2), Quantity INT)";
+        $"CREATE TABLE {CsvToDatabase.Pipeline.Table} (Id INT, Symbol TEXT, Price NUMERIC(18,2), Quantity INT)";
 }
 
 public sealed class MySqlFixture : DatabaseFixture<MySqlContainer>
@@ -137,7 +136,7 @@ public sealed class MySqlSampleTests(MySqlFixture fixture)
         (services, name) => services.AddMySqlConnection(name, Fixture.ConnectionString);
 
     protected override string CreateTableSql =>
-        $"CREATE TABLE {TradesPipeline.Table} (Id INT, Symbol VARCHAR(10), Price DECIMAL(18,2), Quantity INT)";
+        $"CREATE TABLE {CsvToDatabase.Pipeline.Table} (Id INT, Symbol VARCHAR(10), Price DECIMAL(18,2), Quantity INT)";
 }
 
 public sealed class OracleFixture : DatabaseFixture<OracleContainer>
@@ -161,5 +160,5 @@ public sealed class OracleSampleTests(OracleFixture fixture)
     protected override string? ParameterPrefix => ":";
 
     protected override string CreateTableSql =>
-        $"CREATE TABLE {TradesPipeline.Table} (Id NUMBER(10), Symbol VARCHAR2(10), Price NUMBER(18,2), Quantity NUMBER(10))";
+        $"CREATE TABLE {CsvToDatabase.Pipeline.Table} (Id NUMBER(10), Symbol VARCHAR2(10), Price NUMBER(18,2), Quantity NUMBER(10))";
 }

@@ -425,8 +425,8 @@ services.AddEtlPipeline(Name, builder => builder
     ...
 ```
 
-Each sample is three files: `Pipeline.cs` registers it, `Data.cs` is the stage that puts the input in
-place, and `Command.cs` builds the host. Each is also an integration test:
+Each sample is three files: `Pipeline.cs` registers it, `SeedStage.cs` is the stage that puts the
+input in place, and `Program.cs` builds the host. Each is also an integration test:
 `tests/EtlPipelines.Samples.Tests` runs the pipelines through their own registration and checks what
 they left behind, then runs each one again through its command line to prove the wiring holds.
 `Samples.CsvToDatabase` is run again against real SQL Server, PostgreSQL, MySQL and Oracle containers

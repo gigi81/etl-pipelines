@@ -15,14 +15,14 @@ namespace EtlPipelines.Samples.CsvToExcel;
 /// A service rather than a static helper, so it takes the workspace and its logger the same way
 /// everything else does — and so a test can leave it out and put its own file in place instead.
 /// </remarks>
-public sealed class SalesData : IPipelineStage
+public sealed class SeedStage : IPipelineStage
 {
     private readonly IDirectoryInfo _directory;
-    private readonly ILogger<SalesData> _logger;
+    private readonly ILogger<SeedStage> _logger;
 
-    public SalesData(
+    public SeedStage(
         [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
-        ILogger<SalesData> logger)
+        ILogger<SeedStage> logger)
     {
         _directory = directory;
         _logger = logger;
@@ -41,7 +41,7 @@ public sealed class SalesData : IPipelineStage
     {
         var started = Stopwatch.StartNew();
 
-        var file = _directory.File(SalesPipeline.InputFile);
+        var file = _directory.File(Pipeline.InputFile);
         var lines = new List<string> { "Id,Region,Product,Amount" };
 
         for (var i = 1; i <= Rows; i++)

@@ -1,9 +1,4 @@
 using System.IO.Abstractions;
-using EtlPipelines.Samples.Branching;
-using EtlPipelines.Samples.CsvToDatabase;
-using EtlPipelines.Samples.CsvToExcel;
-using EtlPipelines.Samples.ExcelToSql;
-using EtlPipelines.Samples.SqlToWorkbook;
 
 namespace EtlPipelines.Samples.Tests;
 
@@ -40,7 +35,7 @@ public class SampleCliTests
     }
 
     [Test]
-    [Arguments(SalesPipeline.Name)]
+    [Arguments(CsvToExcel.Pipeline.Name)]
     public async Task Csv_to_excel_runs_from_the_command_line(string pipeline)
     {
         var directory = Scratch("csv-excel");
@@ -48,11 +43,11 @@ public class SampleCliTests
         try
         {
             //act
-            var exitCode = await SalesCommand.RunAsync(["run", pipeline, "--work-dir", directory]);
+            var exitCode = await CsvToExcel.Program.RunAsync(["run", pipeline, "--work-dir", directory]);
 
             //assert
             exitCode.Should().Be(0);
-            File.Exists(Path.Combine(directory, SalesPipeline.OutputFile)).Should().BeTrue();
+            File.Exists(Path.Combine(directory, CsvToExcel.Pipeline.OutputFile)).Should().BeTrue();
         }
         finally
         {
@@ -67,10 +62,10 @@ public class SampleCliTests
 
         try
         {
-            var exitCode = await ReportCommand.RunAsync(["run", ReportPipeline.Name, "--work-dir", directory]);
+            var exitCode = await SqlToWorkbook.Program.RunAsync(["run", SqlToWorkbook.Pipeline.Name, "--work-dir", directory]);
 
             exitCode.Should().Be(0);
-            File.Exists(Path.Combine(directory, ReportPipeline.OutputFile)).Should().BeTrue();
+            File.Exists(Path.Combine(directory, SqlToWorkbook.Pipeline.OutputFile)).Should().BeTrue();
         }
         finally
         {
@@ -85,7 +80,7 @@ public class SampleCliTests
 
         try
         {
-            var exitCode = await ImportCommand.RunAsync(["run", ImportPipeline.Name, "--work-dir", directory]);
+            var exitCode = await ExcelToSql.Program.RunAsync(["run", ExcelToSql.Pipeline.Name, "--work-dir", directory]);
 
             exitCode.Should().Be(0);
             File.Exists(Path.Combine(directory, "orders.db")).Should().BeTrue();
@@ -103,11 +98,11 @@ public class SampleCliTests
 
         try
         {
-            var exitCode = await ReadingsCommand.RunAsync(["run", ReadingsPipeline.Name, "--work-dir", directory]);
+            var exitCode = await Branching.Program.RunAsync(["run", Branching.Pipeline.Name, "--work-dir", directory]);
 
             exitCode.Should().Be(0);
-            File.Exists(Path.Combine(directory, ReadingsPipeline.ArchiveFile)).Should().BeTrue();
-            File.Exists(Path.Combine(directory, ReadingsPipeline.ReportFile)).Should().BeTrue();
+            File.Exists(Path.Combine(directory, Branching.Pipeline.ArchiveFile)).Should().BeTrue();
+            File.Exists(Path.Combine(directory, Branching.Pipeline.ReportFile)).Should().BeTrue();
         }
         finally
         {
@@ -122,7 +117,7 @@ public class SampleCliTests
 
         try
         {
-            var exitCode = await TradesCommand.RunAsync(["run", TradesPipeline.Name, "--work-dir", directory]);
+            var exitCode = await CsvToDatabase.Program.RunAsync(["run", CsvToDatabase.Pipeline.Name, "--work-dir", directory]);
 
             exitCode.Should().Be(0);
             File.Exists(Path.Combine(directory, "trades.db")).Should().BeTrue();
@@ -142,7 +137,7 @@ public class SampleCliTests
         {
             //act
             // Nothing registers this verb: it comes from EtlPipelines.Hosting, which is the point.
-            var exitCode = await SalesCommand.RunAsync(["list", "--work-dir", directory]);
+            var exitCode = await CsvToExcel.Program.RunAsync(["list", "--work-dir", directory]);
 
             //assert
             exitCode.Should().Be(0);
@@ -161,7 +156,7 @@ public class SampleCliTests
         try
         {
             //act
-            var exitCode = await SalesCommand.RunAsync(["run", "nosuch", "--work-dir", directory]);
+            var exitCode = await CsvToExcel.Program.RunAsync(["run", "nosuch", "--work-dir", directory]);
 
             //assert
             exitCode.Should().Be(1);

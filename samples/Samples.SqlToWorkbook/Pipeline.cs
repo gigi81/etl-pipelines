@@ -30,7 +30,7 @@ public sealed class Customer
 /// The reporting job: several queries against one database, each becoming a sheet of a single
 /// workbook that only appears once every sheet has been written.
 /// </summary>
-public static class ReportPipeline
+public static class Pipeline
 {
     /// <summary>The name the pipeline is registered under.</summary>
     public const string Name = "report";
@@ -48,7 +48,7 @@ public static class ReportPipeline
     }
 
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
-    public static IServiceCollection AddReportPipeline(this IServiceCollection services, IDirectoryInfo directory)
+    public static IServiceCollection AddPipeline(this IServiceCollection services, IDirectoryInfo directory)
     {
         // The overload taking the connection string, because this database is a file in a directory
         // chosen when the command ran. An application whose database has a fixed address would call
@@ -64,7 +64,7 @@ public static class ReportPipeline
         // columns are matched to properties by name.
         return services.AddEtlPipeline(Name, builder => builder
             // The database this job reports on is filled by a step ahead of the queries.
-            .AddStage<ReportData>()
+            .AddStage<SeedStage>()
             .FromSql<Order>(Connection, "SELECT Id, Customer, Amount FROM orders ORDER BY Id")
             .ToExcelSheet(report, "Orders")
             .FromSql<RegionTotal>(Connection, "SELECT Region, Total FROM region_totals ORDER BY Region")

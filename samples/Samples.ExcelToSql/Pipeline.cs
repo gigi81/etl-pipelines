@@ -40,7 +40,7 @@ public sealed class RejectedRows : IDeadLetterSink<string>
 /// The load half of the job: a spreadsheet someone filled in by hand goes into a table, in one
 /// transaction, with the rows that would not convert kept aside rather than failing the load.
 /// </summary>
-public static class ImportPipeline
+public static class Pipeline
 {
     /// <summary>The name the pipeline is registered under.</summary>
     public const string Name = "import";
@@ -73,7 +73,7 @@ public static class ImportPipeline
     }
 
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
-    public static IServiceCollection AddImportPipeline(this IServiceCollection services, IDirectoryInfo directory)
+    public static IServiceCollection AddPipeline(this IServiceCollection services, IDirectoryInfo directory)
     {
         services.AddSqliteConnection(Connection, ConnectionString(directory));
 
@@ -85,48 +85,12 @@ public static class ImportPipeline
 
         return services.AddEtlPipeline(Name, builder => builder
             // The workbook arrives, and the table it lands in is created, before any row moves.
-            .AddStage<ImportData>()
+            .AddStage<SeedStage>()
             .FromExcel<SubmittedOrder>(directory.File(InputFile))
             .Where(order => order.Amount > 0)
             .ToSqlTable(Connection, Table, options => options.Columns = ["Id", "Customer", "Amount"])
             // And a step after it, to say what the row counts cannot: how much of the workbook
             // nobody could read.
-            .AddStage<ImportCheck>());
-    }
-}
-
-/// <summary>Reports what the load left behind, once every row has been through.</summary>
-public sealed class ImportCheck : IPipelineStage
-{
-    private readonly IDirectoryInfo _directory;
-    private readonly RejectedRows _rejected;
-    private readonly ILogger<ImportCheck> _logger;
-
-    public ImportCheck(
-        [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
-        RejectedRows rejected,
-        ILogger<ImportCheck> logger)
-    {
-        _directory = directory;
-        _rejected = rejected;
-        _logger = logger;
-    }
-
-    /// <summary>The name this step appears under in the run's report.</summary>
-    public string Name => "check";
-
-    /// <inheritdoc />
-    public async ValueTask<ErrorOr<StageResult>> ExecuteAsync(
-        PipelineContext context,
-        CancellationToken cancellationToken)
-    {
-        var started = Stopwatch.StartNew();
-
-        _logger.LogInformation(
-            "loaded {Loaded} rows, set aside {Rejected} that could not be read",
-            await ImportPipeline.CountAsync(_directory, cancellationToken),
-            _rejected.Rows.Count);
-
-        return new StageResult(Name, 0, 0, 0, started.Elapsed);
+            .AddStage<CheckStage>());
     }
 }

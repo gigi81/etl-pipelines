@@ -1,9 +1,4 @@
 using System.IO.Abstractions;
-using EtlPipelines.Samples.Branching;
-using EtlPipelines.Samples.CsvToDatabase;
-using EtlPipelines.Samples.CsvToExcel;
-using EtlPipelines.Samples.ExcelToSql;
-using EtlPipelines.Samples.SqlToWorkbook;
 using Microsoft.Extensions.DependencyInjection;
 using MiniExcelLib;
 using MiniExcelLib.OpenXml;
@@ -31,8 +26,7 @@ public class SampleTests
     {
         //arrange
         await using var scratch = new SampleScratch("csv-excel", (services, directory) =>
-            services.AddSalesPipeline(directory));
-
+            CsvToExcel.Pipeline.AddPipeline(services, directory));
 
         //act
         var result = await scratch.RunAsync();
@@ -44,12 +38,12 @@ public class SampleTests
         result.Value.RowsRead.Should().Be(500);
         result.Value.RowsWritten.Should().Be(450);
 
-        var workbook = scratch.File(SalesPipeline.OutputFile);
+        var workbook = scratch.File(CsvToExcel.Pipeline.OutputFile);
         workbook.Refresh();
         workbook.Exists.Should().BeTrue();
 
         var rows = MiniExcel.Importers.GetOpenXmlImporter()
-            .Query<SalesReport>(workbook.OpenRead())
+            .Query<CsvToExcel.SalesReport>(workbook.OpenRead())
             .ToList();
 
         rows.Should().HaveCount(450);
@@ -62,8 +56,7 @@ public class SampleTests
     {
         //arrange
         await using var scratch = new SampleScratch("sql-workbook", (services, directory) =>
-            services.AddReportPipeline(directory));
-
+            SqlToWorkbook.Pipeline.AddPipeline(services, directory));
 
         //act
         var result = await scratch.RunAsync();
@@ -73,7 +66,7 @@ public class SampleTests
         result.Value.Stages.Should().HaveCount(4, "the seed step, then one stage per sheet");
         result.Value.Stages[0].Name.Should().Be("seed", "the database is filled before the queries run");
 
-        var report = scratch.File(ReportPipeline.OutputFile);
+        var report = scratch.File(SqlToWorkbook.Pipeline.OutputFile);
         report.Refresh();
         report.Exists.Should().BeTrue();
 
@@ -81,8 +74,8 @@ public class SampleTests
         importer.GetSheetNames(report.OpenRead())
             .Should().Equal(["Orders", "By region", "Customers"], "sheets keep the order they were declared");
 
-        importer.Query<Order>(report.OpenRead(), sheetName: "Orders").Should().HaveCount(ReportData.Rows);
-        importer.Query<Customer>(report.OpenRead(), sheetName: "Customers").Should().HaveCount(ReportData.Rows);
+        importer.Query<SqlToWorkbook.Order>(report.OpenRead(), sheetName: "Orders").Should().HaveCount(SqlToWorkbook.SeedStage.Rows);
+        importer.Query<SqlToWorkbook.Customer>(report.OpenRead(), sheetName: "Customers").Should().HaveCount(SqlToWorkbook.SeedStage.Rows);
     }
 
     [Test]
@@ -90,7 +83,7 @@ public class SampleTests
     {
         //arrange
         await using var scratch = new SampleScratch("excel-sql", (services, directory) =>
-            services.AddImportPipeline(directory));
+            ExcelToSql.Pipeline.AddPipeline(services, directory));
 
         //act
         var result = await scratch.RunAsync();
@@ -101,10 +94,10 @@ public class SampleTests
         // 200 rows, every fortieth unreadable; the rest reach the table inside one transaction.
         result.Value.RowsRead.Should().Be(195);
         result.Value.RowsWritten.Should().Be(195);
-        (await ImportPipeline.CountAsync(scratch.Directory, CancellationToken.None))
+        (await ExcelToSql.Pipeline.CountAsync(scratch.Directory, CancellationToken.None))
             .Should().Be(195);
 
-        scratch.GetRequiredService<RejectedRows>().Rows
+        scratch.GetRequiredService<ExcelToSql.RejectedRows>().Rows
             .Should().HaveCount(5, "the rows that were not numbers went to the dead-letter sink");
     }
 
@@ -113,18 +106,17 @@ public class SampleTests
     {
         //arrange
         await using var scratch = new SampleScratch("branching", (services, directory) =>
-            services.AddReadingsPipeline(directory));
-
+            Branching.Pipeline.AddPipeline(services, directory));
 
         //act
         var result = await scratch.RunAsync();
 
         //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-        result.Value.RowsRead.Should().Be(ReadingsData.Rows, "the source is read once however many branches there are");
+        result.Value.RowsRead.Should().Be(Branching.SeedStage.Rows, "the source is read once however many branches there are");
 
-        var archive = scratch.File(ReadingsPipeline.ArchiveFile);
-        var report = scratch.File(ReadingsPipeline.ReportFile);
+        var archive = scratch.File(Branching.Pipeline.ArchiveFile);
+        var report = scratch.File(Branching.Pipeline.ReportFile);
         archive.Refresh();
         report.Refresh();
         archive.Exists.Should().BeTrue();
@@ -133,9 +125,9 @@ public class SampleTests
         // The archive keeps every row; the report only the warm ones, so it is strictly smaller.
         var archived = (await archive.ReadAllLinesAsync(CancellationToken.None)).Length - 1;
         var reported = MiniExcel.Importers.GetOpenXmlImporter()
-            .Query<ReadingReport>(report.OpenRead()).Count();
+            .Query<Branching.ReadingReport>(report.OpenRead()).Count();
 
-        archived.Should().Be(ReadingsData.Rows);
+        archived.Should().Be(Branching.SeedStage.Rows);
         reported.Should().BeLessThan(archived).And.BeGreaterThan(0);
         result.Value.RowsWritten.Should().Be(archived + reported);
     }
@@ -145,14 +137,14 @@ public class SampleTests
     {
         //arrange
         await using var scratch = new SampleScratch("csv-sqlite", (services, directory) =>
-            services.AddTradesPipeline(directory));
+            CsvToDatabase.Pipeline.AddPipeline(services, directory));
 
         //act
         var result = await scratch.RunAsync();
 
         //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-        result.Value.RowsRead.Should().Be(TradesData.Rows);
-        result.Value.RowsWritten.Should().Be(TradesPipeline.ExpectedRows);
+        result.Value.RowsRead.Should().Be(CsvToDatabase.SeedStage.Rows);
+        result.Value.RowsWritten.Should().Be(CsvToDatabase.Pipeline.ExpectedRows);
     }
 }
