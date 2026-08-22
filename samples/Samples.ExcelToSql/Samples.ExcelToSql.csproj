@@ -1,9 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\EtlPipelines.Core\EtlPipelines.Core.csproj" />
+    <ProjectReference Include="..\Samples.Common\Samples.Common.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Excel\EtlPipelines.Excel.csproj" />
-    <ProjectReference Include="..\..\src\EtlPipelines.Sql\EtlPipelines.Sql.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Sql.Sqlite\EtlPipelines.Sql.Sqlite.csproj" />
   </ItemGroup>
 

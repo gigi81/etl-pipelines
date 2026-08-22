@@ -11,11 +11,15 @@ permissions:
   actions: read
   checks: write
 jobs:
-  samples:
-    name: Samples
-    # Linux only: the samples are run against real SQL Server, PostgreSQL, MySQL and Oracle through
+  databases:
+    name: Databases
+    # Linux only: these tests run against real SQL Server, PostgreSQL, MySQL and Oracle through
     # Testcontainers, and a Docker engine is only available on the Linux runners. Testcontainers talks
     # to the runner's own daemon, so no service containers are declared here.
+    #
+    # This workflow owns every Docker-backed test in the repository. The CI workflow filters them out
+    # on all three of its legs, so a commit never has two runners - or worse, two test assemblies on
+    # one runner - starting the same four database engines at once.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
@@ -32,21 +36,44 @@ jobs:
         run: dotnet restore
       - name: Build
         run: dotnet build --configuration Release --no-restore
+      # One project at a time, deliberately. Both projects start their own Oracle, SQL Server,
+      # PostgreSQL and MySQL, and `dotnet test` runs test assemblies in parallel: run together, the
+      # runner ends up hosting two of each engine and the second Oracle never finishes opening its
+      # database (ORA-01109: database not open). Sequential steps mean at most one set is ever up.
+      - name: Bulk loaders against every engine
+        shell: bash
+        run: >
+          dotnet test tests/EtlPipelines.Sql.Databases.Tests/EtlPipelines.Sql.Databases.Tests.csproj
+          --configuration Release --no-build
+          --results-directory ./TestResults
+          --report-trx --report-trx-filename "{asm}-integration.trx"
+          --coverage --coverage-output-format cobertura
+          || true
       # Every sample is executed end to end and checked against what it claims to produce. Samples are
-      # documentation nothing compiles against, so without this they rot quietly.
-      - name: Run the samples
+      # documentation nothing compiles against, so without this they rot quietly. Here they are run
+      # against the real engines; the CI workflow runs the same samples against SQLite.
+      - name: Samples against every engine
         shell: bash
         run: >
           dotnet test tests/EtlPipelines.Samples.Tests/EtlPipelines.Samples.Tests.csproj
           --configuration Release --no-build
           --results-directory ./TestResults
-          --report-trx --report-trx-filename "{asm}-samples.trx"
+          --report-trx --report-trx-filename "{asm}-integration.trx"
+          --coverage --coverage-output-format cobertura
           || true
+      # Codecov merges every report it receives for a commit, so this half - the code only the
+      # container-backed tests reach - lands alongside what the CI workflow uploads.
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        if: always()
+        with:
+          files: "./TestResults/*.cobertura.xml"
+          token: ${{ secrets.CODECOV_TOKEN }}
       - name: Test report
         uses: dorny/test-reporter@v3.0.0
         if: always()
         with:
-          name: sample-results
-          path: "./TestResults/*-samples.trx"
+          name: integration-results
+          path: "./TestResults/*-integration.trx"
           reporter: dotnet-trx
           fail-on-error: true

@@ -1,4 +1,6 @@
 using System.IO.Abstractions;
+using EtlPipelines.Samples.Common;
+using Microsoft.Extensions.DependencyInjection;
 using MiniExcelLib;
 using MiniExcelLib.OpenXml;
 
@@ -10,7 +12,8 @@ namespace EtlPipelines.Samples.Tests;
 /// <remarks>
 /// Samples are documentation that can rot without anybody noticing, because nothing compiles against
 /// their behaviour. Running them here and asserting on the files they leave behind is what keeps the
-/// README's claims and the code in step.
+/// README's claims and the code in step. They are run through <see cref="SampleHost"/>, the same host
+/// their <c>Program.cs</c> starts, so what passes here is true of the sample as somebody would run it.
 /// </remarks>
 [Category("Samples")]
 public class SampleTests
@@ -22,14 +25,14 @@ public class SampleTests
         using var scratch = new SampleScratch("csv-excel");
 
         //act
-        var result = await CsvToExcel.Sample.RunAsync(scratch.Directory);
+        await using var run = await SampleHost.RunAsync(new CsvToExcel.CsvToExcelSample(), scratch.Workspace);
 
         //assert
         // 500 rows in, every tenth a refund the pipeline drops.
-        result.RowsRead.Should().Be(500);
-        result.RowsWritten.Should().Be(450);
+        run.Result.RowsRead.Should().Be(500);
+        run.Result.RowsWritten.Should().Be(450);
 
-        var workbook = scratch.File("sales.xlsx");
+        var workbook = run.File("sales.xlsx");
         workbook.Refresh();
         workbook.Exists.Should().BeTrue();
 
@@ -49,12 +52,12 @@ public class SampleTests
         using var scratch = new SampleScratch("sql-workbook");
 
         //act
-        var result = await SqlToWorkbook.Sample.RunAsync(scratch.Directory);
+        await using var run = await SampleHost.RunAsync(new SqlToWorkbook.SqlToWorkbookSample(), scratch.Workspace);
 
         //assert
-        result.Stages.Should().HaveCount(3, "one stage per sheet");
+        run.Result.Stages.Should().HaveCount(3, "one stage per sheet");
 
-        var report = scratch.File("report.xlsx");
+        var report = run.File("report.xlsx");
         report.Refresh();
         report.Exists.Should().BeTrue();
 
@@ -75,13 +78,16 @@ public class SampleTests
         using var scratch = new SampleScratch("excel-sql");
 
         //act
-        var (result, rejected, loaded) = await ExcelToSql.Sample.RunAsync(scratch.Directory);
+        await using var run = await SampleHost.RunAsync(new ExcelToSql.ExcelToSqlSample(), scratch.Workspace);
 
         //assert
         // 200 rows, every fortieth unreadable; the rest reach the table inside one transaction.
-        rejected.Should().Be(5, "the rows that were not numbers went to the dead-letter sink");
-        result.RowsRead.Should().Be(195);
-        loaded.Should().Be(195);
+        // The dead-letter sink is resolved from the host the sample ran in, which is the only place
+        // that knows what the run set aside.
+        run.Services.GetRequiredService<ExcelToSql.RejectedRows>().Rows
+            .Should().HaveCount(5, "the rows that were not numbers went to the dead-letter sink");
+        run.Result.RowsRead.Should().Be(195);
+        run.Result.RowsWritten.Should().Be(195);
     }
 
     [Test]
@@ -91,13 +97,13 @@ public class SampleTests
         using var scratch = new SampleScratch("branching");
 
         //act
-        var result = await Branching.Sample.RunAsync(scratch.Directory);
+        await using var run = await SampleHost.RunAsync(new Branching.BranchingSample(), scratch.Workspace);
 
         //assert
-        result.RowsRead.Should().Be(2_000, "the source is read once however many branches there are");
+        run.Result.RowsRead.Should().Be(2_000, "the source is read once however many branches there are");
 
-        var archive = scratch.File("archive.csv");
-        var report = scratch.File("report.xlsx");
+        var archive = run.File("archive.csv");
+        var report = run.File("report.xlsx");
         archive.Refresh();
         report.Refresh();
         archive.Exists.Should().BeTrue();
@@ -110,7 +116,7 @@ public class SampleTests
 
         archived.Should().Be(2_000);
         reported.Should().BeLessThan(archived).And.BeGreaterThan(0);
-        result.RowsWritten.Should().Be(archived + reported);
+        run.Result.RowsWritten.Should().Be(archived + reported);
     }
 
     [Test]
@@ -118,24 +124,14 @@ public class SampleTests
     {
         //arrange
         using var scratch = new SampleScratch("csv-sqlite");
-        var connectionString = $"Data Source={scratch.File("trades.db").FullName}";
-
-        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString))
-        {
-            await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText =
-                $"CREATE TABLE {CsvToDatabase.Sample.TableName} (Id INTEGER, Symbol TEXT, Price NUMERIC, Quantity INTEGER)";
-            await command.ExecuteNonQueryAsync();
-        }
 
         //act
-        var result = await CsvToDatabase.Sample.RunAsync(
-            scratch.Directory,
-            EtlPipelines.Sql.Sqlite.SqliteConnections.Open(connectionString));
+        // No connection supplied, so the sample brings its own SQLite file and creates the table.
+        await using var run = await SampleHost.RunAsync(
+            new CsvToDatabase.CsvToDatabaseSample(), scratch.Workspace);
 
         //assert
-        result.RowsRead.Should().Be(10_000);
-        result.RowsWritten.Should().Be(CsvToDatabase.Sample.ExpectedRows);
+        run.Result.RowsRead.Should().Be(10_000);
+        run.Result.RowsWritten.Should().Be(CsvToDatabase.CsvToDatabaseSample.ExpectedRows);
     }
 }

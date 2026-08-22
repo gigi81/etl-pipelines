@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The one project here that is not a sample you run: it is what the samples are built on. -->
+    <OutputType>Library</OutputType>
+    <RootNamespace>EtlPipelines.Samples.Common</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\EtlPipelines.Core\EtlPipelines.Core.csproj" />
+  </ItemGroup>
+
+</Project>

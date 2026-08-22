@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\EtlPipelines.Core\EtlPipelines.Core.csproj" />
+    <ProjectReference Include="..\Samples.Common\Samples.Common.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Csv\EtlPipelines.Csv.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Excel\EtlPipelines.Excel.csproj" />
   </ItemGroup>
