@@ -1,4 +1,6 @@
 using System.Data.Common;
+using EtlPipelines.Samples.Common;
+using EtlPipelines.Samples.CsvToDatabase;
 using EtlPipelines.Sql;
 using EtlPipelines.Sql.MySql;
 using EtlPipelines.Sql.Oracle;
@@ -50,18 +52,26 @@ public abstract class CsvToDatabaseOnRealEnginesTests<TFixture>
         }
 
         //act
-        var result = await CsvToDatabase.Sample.RunAsync(
-            scratch.Directory, Open(), BulkLoader, ParameterPrefix);
+        // The engine is the only thing that changes: the same sample class, given a connection, a
+        // bulk loader and a bind marker, and run through the same host its Program.cs starts.
+        await using var run = await SampleHost.RunAsync(
+            new CsvToDatabaseSample
+            {
+                OpenConnection = Open(),
+                BulkLoader = BulkLoader,
+                ParameterPrefix = ParameterPrefix,
+            },
+            scratch.Workspace);
 
         //assert
-        result.RowsRead.Should().Be(10_000);
-        result.RowsWritten.Should().Be(CsvToDatabase.Sample.ExpectedRows);
+        run.Result.RowsRead.Should().Be(10_000);
+        run.Result.RowsWritten.Should().Be(CsvToDatabaseSample.ExpectedRows);
 
         await using var check = await Open()(CancellationToken.None);
         await using var count = check.CreateCommand();
-        count.CommandText = $"SELECT COUNT(*) FROM {CsvToDatabase.Sample.TableName}";
+        count.CommandText = $"SELECT COUNT(*) FROM {CsvToDatabaseSample.TableName}";
         Convert.ToInt64(await count.ExecuteScalarAsync())
-            .Should().Be(CsvToDatabase.Sample.ExpectedRows, "every filtered row reached the table");
+            .Should().Be(CsvToDatabaseSample.ExpectedRows, "every filtered row reached the table");
     }
 }
 
@@ -82,7 +92,7 @@ public sealed class SqlServerSampleTests(SqlServerFixture fixture)
     protected override IBulkLoader BulkLoader => new SqlServerBulkLoader();
 
     protected override string CreateTableSql =>
-        $"CREATE TABLE {CsvToDatabase.Sample.TableName} (Id INT, Symbol NVARCHAR(10), Price DECIMAL(18,2), Quantity INT)";
+        $"CREATE TABLE {CsvToDatabaseSample.TableName} (Id INT, Symbol NVARCHAR(10), Price DECIMAL(18,2), Quantity INT)";
 }
 
 public sealed class PostgreSqlFixture : DatabaseFixture<PostgreSqlContainer>
@@ -102,7 +112,7 @@ public sealed class PostgreSqlSampleTests(PostgreSqlFixture fixture)
     protected override IBulkLoader BulkLoader => new PostgreSqlBulkLoader();
 
     protected override string CreateTableSql =>
-        $"CREATE TABLE {CsvToDatabase.Sample.TableName} (Id INT, Symbol TEXT, Price NUMERIC(18,2), Quantity INT)";
+        $"CREATE TABLE {CsvToDatabaseSample.TableName} (Id INT, Symbol TEXT, Price NUMERIC(18,2), Quantity INT)";
 }
 
 public sealed class MySqlFixture : DatabaseFixture<MySqlContainer>
@@ -124,7 +134,7 @@ public sealed class MySqlSampleTests(MySqlFixture fixture)
     protected override IBulkLoader BulkLoader => new MySqlBulkLoader();
 
     protected override string CreateTableSql =>
-        $"CREATE TABLE {CsvToDatabase.Sample.TableName} (Id INT, Symbol VARCHAR(10), Price DECIMAL(18,2), Quantity INT)";
+        $"CREATE TABLE {CsvToDatabaseSample.TableName} (Id INT, Symbol VARCHAR(10), Price DECIMAL(18,2), Quantity INT)";
 }
 
 public sealed class OracleFixture : DatabaseFixture<OracleContainer>
@@ -147,5 +157,5 @@ public sealed class OracleSampleTests(OracleFixture fixture)
     protected override string? ParameterPrefix => ":";
 
     protected override string CreateTableSql =>
-        $"CREATE TABLE {CsvToDatabase.Sample.TableName} (Id NUMBER(10), Symbol VARCHAR2(10), Price NUMBER(18,2), Quantity NUMBER(10))";
+        $"CREATE TABLE {CsvToDatabaseSample.TableName} (Id NUMBER(10), Symbol VARCHAR2(10), Price NUMBER(18,2), Quantity NUMBER(10))";
 }

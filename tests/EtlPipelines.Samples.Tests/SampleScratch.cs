@@ -1,4 +1,5 @@
 using System.IO.Abstractions;
+using EtlPipelines.Samples.Common;
 
 namespace EtlPipelines.Samples.Tests;
 
@@ -16,11 +17,16 @@ public sealed class SampleScratch : IDisposable
         Directory = _fileSystem.DirectoryInfo.New(
             Path.Combine(Path.GetTempPath(), $"etl-samples-{name}-{Guid.NewGuid():N}"));
         Directory.Create();
+
+        Workspace = new SampleWorkspace(Directory);
     }
 
     public IDirectoryInfo Directory { get; }
 
-    public IFileInfo File(string name) => Directory.File(name);
+    /// <summary>The scratch directory as a sample sees it.</summary>
+    public SampleWorkspace Workspace { get; }
+
+    public IFileInfo File(string name) => Workspace.File(name);
 
     public void Dispose()
     {

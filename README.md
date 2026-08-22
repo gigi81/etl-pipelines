@@ -366,7 +366,7 @@ Rejected rows go to a registered `IDeadLetterSink<TRow>`. Expected data-level fa
 
 ## Samples
 
-Runnable programs in [`samples/`](samples), each a single file you can read top to bottom:
+Runnable programs in [`samples/`](samples):
 
 | Sample | Shows |
 |---|---|
@@ -380,9 +380,24 @@ Runnable programs in [`samples/`](samples), each a single file you can read top 
 dotnet run --project samples/Samples.SqlToWorkbook
 ```
 
-Each one is also an integration test. `tests/EtlPipelines.Samples.Tests` runs them end to end and
-checks what they left behind, and `Samples.CsvToDatabase` is run again against real SQL Server,
-PostgreSQL, MySQL and Oracle containers — the same method, not a copy of it. Samples are
+Each runs on the [.NET generic host](https://learn.microsoft.com/dotnet/core/extensions/generic-host),
+so the pipeline is registered into the same container everything else uses and run by a hosted
+service — which is where a pipeline belongs in an application, and not something a `Main` body full
+of setup would show you. `Program.cs` is one line; the pipeline is in `<Name>Sample.cs`; the code
+that fabricates the input file or seeds the table is in `SampleData.cs`, out of the way.
+`samples/Samples.Common` holds the host, the workspace directory and the run reporting, so no sample
+repeats any of it.
+
+Runs log to the console through `Microsoft.Extensions.Logging`. Turn the level up to see the
+library's own traces, which the samples subscribe to and log:
+
+```bash
+dotnet run --project samples/Samples.CsvToExcel -- --Logging:LogLevel:Default=Debug
+```
+
+Each sample is also an integration test. `tests/EtlPipelines.Samples.Tests` runs them through that
+same host and checks what they left behind, and `Samples.CsvToDatabase` is run again against real
+SQL Server, PostgreSQL, MySQL and Oracle containers — the same class, not a copy of it. Samples are
 documentation that nothing compiles against, so without that they rot quietly.
 
 ## Observability
