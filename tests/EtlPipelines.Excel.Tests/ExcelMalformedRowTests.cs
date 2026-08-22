@@ -1,6 +1,5 @@
 using System.IO.Abstractions;
 using EtlPipelines.Abstractions.Configuration;
-using EtlPipelines.Core;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Excel.Tests;

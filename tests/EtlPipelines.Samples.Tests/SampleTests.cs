@@ -1,5 +1,4 @@
 using System.IO.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
 using MiniExcelLib;
 using MiniExcelLib.OpenXml;
 
@@ -71,7 +70,7 @@ public class SampleTests
         report.Exists.Should().BeTrue();
 
         var importer = MiniExcel.Importers.GetOpenXmlImporter();
-        importer.GetSheetNames(report.OpenRead())
+        (await importer.GetSheetNamesAsync(report.OpenRead()))
             .Should().Equal(["Orders", "By region", "Customers"], "sheets keep the order they were declared");
 
         importer.Query<SqlToWorkbook.Order>(report.OpenRead(), sheetName: "Orders").Should().HaveCount(SqlToWorkbook.SeedStage.Rows);

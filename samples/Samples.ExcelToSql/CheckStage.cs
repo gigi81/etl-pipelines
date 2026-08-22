@@ -1,6 +1,6 @@
-using ErrorOr;
 using System.Diagnostics;
 using System.IO.Abstractions;
+using ErrorOr;
 using EtlPipelines.Abstractions.Execution;
 using EtlPipelines.Samples.Common;
 using Microsoft.Extensions.DependencyInjection;

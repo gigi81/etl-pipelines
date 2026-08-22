@@ -1,5 +1,3 @@
-using System.IO.Abstractions;
-
 namespace EtlPipelines.Samples.Tests;
 
 /// <summary>

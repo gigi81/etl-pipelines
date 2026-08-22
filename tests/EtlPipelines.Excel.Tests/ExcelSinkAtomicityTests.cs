@@ -1,5 +1,4 @@
 using System.IO.Abstractions;
-using EtlPipelines.Core;
 
 namespace EtlPipelines.Excel.Tests;
 

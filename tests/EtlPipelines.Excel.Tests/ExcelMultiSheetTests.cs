@@ -1,5 +1,3 @@
-using System.IO.Abstractions;
-using EtlPipelines.Core;
 using MiniExcelLib.OpenXml;
 
 namespace EtlPipelines.Excel.Tests;

@@ -1,5 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-
 namespace EtlPipelines.Core;
 
 /// <summary>Resolves pipelines straight from a service provider.</summary>

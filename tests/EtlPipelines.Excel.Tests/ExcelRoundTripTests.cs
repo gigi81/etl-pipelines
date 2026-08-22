@@ -1,5 +1,4 @@
 using System.Globalization;
-using EtlPipelines.Core;
 
 namespace EtlPipelines.Excel.Tests;
 

@@ -1,16 +1,12 @@
 using System.IO.Abstractions;
 using ErrorOr;
 using EtlPipelines.Abstractions.Configuration;
-using System.Diagnostics;
-using EtlPipelines.Abstractions.Execution;
 using EtlPipelines.Core;
-using EtlPipelines.Samples.Common;
-using Microsoft.Data.Sqlite;
 using EtlPipelines.Excel;
 using EtlPipelines.Sql;
 using EtlPipelines.Sql.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace EtlPipelines.Samples.ExcelToSql;
 

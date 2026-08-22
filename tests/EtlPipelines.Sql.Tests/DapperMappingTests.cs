@@ -1,5 +1,3 @@
-using EtlPipelines.Core;
-
 namespace EtlPipelines.Sql.Tests;
 
 /// <summary>

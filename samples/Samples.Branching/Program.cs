@@ -1,6 +1,5 @@
 using EtlPipelines.Hosting;
 using EtlPipelines.Samples.Common;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Samples.Branching;
 
