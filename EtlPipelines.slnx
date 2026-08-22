@@ -23,11 +23,20 @@
     <Project Path="src/EtlPipelines.Sql.Sqlite/EtlPipelines.Sql.Sqlite.csproj" />
     <Project Path="src/EtlPipelines.Sql.SqlServer/EtlPipelines.Sql.SqlServer.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <File Path="samples/Directory.Build.props" />
+    <Project Path="samples/Samples.Branching/Samples.Branching.csproj" />
+    <Project Path="samples/Samples.CsvToDatabase/Samples.CsvToDatabase.csproj" />
+    <Project Path="samples/Samples.CsvToExcel/Samples.CsvToExcel.csproj" />
+    <Project Path="samples/Samples.ExcelToSql/Samples.ExcelToSql.csproj" />
+    <Project Path="samples/Samples.SqlToWorkbook/Samples.SqlToWorkbook.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <File Path="tests/Directory.Build.props" />
     <Project Path="tests/EtlPipelines.Core.Tests/EtlPipelines.Core.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Csv.Tests/EtlPipelines.Csv.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Excel.Tests/EtlPipelines.Excel.Tests.csproj" />
+    <Project Path="tests/EtlPipelines.Samples.Tests/EtlPipelines.Samples.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Sql.Databases.Tests/EtlPipelines.Sql.Databases.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Sql.Tests/EtlPipelines.Sql.Tests.csproj" />
   </Folder>
