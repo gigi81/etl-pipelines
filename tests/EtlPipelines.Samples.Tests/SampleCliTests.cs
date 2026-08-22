@@ -164,4 +164,74 @@ public class SampleCliTests
             Cleanup(directory);
         }
     }
+
+    [Test]
+    public async Task Run_without_a_name_runs_every_registered_pipeline()
+    {
+        var directory = Scratch("run-all");
+
+        try
+        {
+            //act
+            // No pipeline named, so the run verb takes that as all of them.
+            var exitCode = await CsvToExcel.Program.RunAsync(["run", "--work-dir", directory]);
+
+            //assert
+            exitCode.Should().Be(0);
+            File.Exists(Path.Combine(directory, CsvToExcel.Pipeline.OutputFile)).Should().BeTrue();
+        }
+        finally
+        {
+            Cleanup(directory);
+        }
+    }
+
+    [Test]
+    public async Task No_arguments_at_all_runs_every_registered_pipeline()
+    {
+        // Nothing to point --work-dir at, because the whole point is passing no arguments: the
+        // sample falls back to a directory of its own under the temp path, which is found and
+        // removed afterwards rather than left behind.
+        var before = Directory.GetDirectories(Path.GetTempPath(), "etl-sample-sales-*");
+
+        try
+        {
+            //act
+            var exitCode = await CsvToExcel.Program.RunAsync([]);
+
+            //assert
+            exitCode.Should().Be(0, "an application asked for nothing in particular runs its pipelines");
+        }
+        finally
+        {
+            foreach (var left in Directory.GetDirectories(Path.GetTempPath(), "etl-sample-sales-*").Except(before))
+            {
+                Cleanup(left);
+            }
+        }
+    }
+
+    [Test]
+    public async Task Verbose_is_accepted_wherever_it_is_put()
+    {
+        var directory = Scratch("verbose");
+
+        try
+        {
+            //act
+            // Recursive on the root command, so it parses before the verb as readily as after it.
+            var trailing = await CsvToExcel.Program.RunAsync(
+                ["run", CsvToExcel.Pipeline.Name, "--work-dir", directory, "--verbose"]);
+            var leading = await CsvToExcel.Program.RunAsync(
+                ["-v", "run", CsvToExcel.Pipeline.Name, "--work-dir", directory]);
+
+            //assert
+            trailing.Should().Be(0);
+            leading.Should().Be(0);
+        }
+        finally
+        {
+            Cleanup(directory);
+        }
+    }
 }

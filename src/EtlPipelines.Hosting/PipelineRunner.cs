@@ -57,6 +57,41 @@ public class PipelineRunner
         return await RunAsync(pipeline, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Runs every registered pipeline, in the order they were registered.
+    /// </summary>
+    /// <remarks>
+    /// Stops at the first failure rather than carrying on. Registration order is the only order there
+    /// is, and a later pipeline may well be reading what an earlier one wrote — so running the rest
+    /// after one has failed risks compounding the damage rather than getting more work done.
+    /// </remarks>
+    /// <returns>A process exit code: <c>0</c> when every run succeeded, <c>1</c> as soon as one did not.</returns>
+    public async Task<int> RunAllAsync(CancellationToken cancellationToken)
+    {
+        var pipelines = _pipelines.ToArray();
+
+        if (pipelines.Length == 0)
+        {
+            _logger.LogError("This application registered no pipelines, so there is nothing to run.");
+            return 1;
+        }
+
+        _logger.LogInformation("Running every registered pipeline: {Registered}", Names());
+
+        foreach (var pipeline in pipelines)
+        {
+            var exitCode = await RunAsync(pipeline, cancellationToken).ConfigureAwait(false);
+
+            if (exitCode != 0)
+            {
+                _logger.LogError("Stopped after {Pipeline} failed.", pipeline.Name);
+                return exitCode;
+            }
+        }
+
+        return 0;
+    }
+
     /// <summary>Runs a pipeline that has already been resolved.</summary>
     /// <returns>A process exit code: <c>0</c> when the run succeeded, <c>1</c> when it did not.</returns>
     public async Task<int> RunAsync(IPipeline pipeline, CancellationToken cancellationToken)
