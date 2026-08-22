@@ -1,5 +1,7 @@
+using System.IO.Abstractions;
 using EtlPipelines.Samples.Common;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace EtlPipelines.Samples.SqlToWorkbook;
@@ -10,15 +12,17 @@ namespace EtlPipelines.Samples.SqlToWorkbook;
 /// <remarks>Stands in for the database a real job would already be pointed at.</remarks>
 public sealed class ReportData
 {
-    private readonly SampleWorkspace _workspace;
+    private readonly IDirectoryInfo _directory;
     private readonly ILogger<ReportData> _logger;
 
-    public ReportData(SampleWorkspace workspace, ILogger<ReportData> logger)
+    public ReportData(
+        [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
+        ILogger<ReportData> logger)
     {
-        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(directory);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _workspace = workspace;
+        _directory = directory;
         _logger = logger;
     }
 
@@ -31,7 +35,7 @@ public sealed class ReportData
 
     public async Task SeedAsync(CancellationToken cancellationToken)
     {
-        await using var connection = new SqliteConnection(ReportPipeline.ConnectionString(_workspace));
+        await using var connection = new SqliteConnection(ReportPipeline.ConnectionString(_directory));
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();

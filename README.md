@@ -431,7 +431,8 @@ return await new EtlPipelinesHost("Loads the nightly orders file.")
 ```
 
 That is the whole program. It builds a [.NET generic host](https://learn.microsoft.com/dotnet/core/extensions/generic-host)
-— configuration, logging and DI as usual — and gives you two verbs:
+— configuration, logging and DI as usual, plus an `IFileSystem` for the file connectors to name their
+files against — and gives you two verbs:
 
 ```bash
 myapp list          # the pipelines this application registered

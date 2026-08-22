@@ -49,19 +49,10 @@ public static class ReadingsCli
     /// <summary>Runs the application and returns its exit code.</summary>
     public static Task<int> RunAsync(string[] args) =>
         new EtlPipelinesHost("One read of a source, an archive and a report out of it.")
-            .UseSampleWorkspace()
             .AddCommands(host => host.AddCommands())
-            .ConfigureServices((result, services) =>
-            {
-                // Built here rather than resolved: registering the pipeline needs the file paths, and
-                // that happens while the container is still being composed. Everything else takes it
-                // by injection.
-                var workspace = SampleWorkspace.ForCommandLine(result, ReadingsPipeline.Name);
-
+            .UseSampleWorkspace(ReadingsPipeline.Name, (services, directory) =>
                 services.RegisterCommands()
-                    .AddSingleton(workspace)
                     .AddSingleton<ReadingsData>()
-                    .AddReadingsPipeline(workspace);
-            })
+                    .AddReadingsPipeline(directory))
             .RunAsync(args);
 }

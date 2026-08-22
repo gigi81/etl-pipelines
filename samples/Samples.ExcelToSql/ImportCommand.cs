@@ -71,19 +71,10 @@ public static class ImportCli
     /// <summary>Runs the application and returns its exit code.</summary>
     public static Task<int> RunAsync(string[] args) =>
         new EtlPipelinesHost("A hand-filled workbook loaded into a table, bad rows set aside.")
-            .UseSampleWorkspace()
             .AddCommands(host => host.AddCommands())
-            .ConfigureServices((result, services) =>
-            {
-                // Built here rather than resolved: registering the pipeline needs the file paths, and
-                // that happens while the container is still being composed. Everything else takes it
-                // by injection.
-                var workspace = SampleWorkspace.ForCommandLine(result, ImportPipeline.Name);
-
+            .UseSampleWorkspace(ImportPipeline.Name, (services, directory) =>
                 services.RegisterCommands()
-                    .AddSingleton(workspace)
                     .AddSingleton<ImportData>()
-                    .AddImportPipeline(workspace);
-            })
+                    .AddImportPipeline(directory))
             .RunAsync(args);
 }

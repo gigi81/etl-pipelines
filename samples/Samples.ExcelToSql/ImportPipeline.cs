@@ -1,8 +1,8 @@
+using System.IO.Abstractions;
 using ErrorOr;
 using EtlPipelines.Abstractions.Configuration;
 using EtlPipelines.Core;
 using EtlPipelines.Excel;
-using EtlPipelines.Samples.Common;
 using EtlPipelines.Sql;
 using EtlPipelines.Sql.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
@@ -50,20 +50,20 @@ public static class ImportPipeline
     public const string InputFile = "submitted.xlsx";
 
     /// <summary>The connection string for the sample's own database, inside its workspace.</summary>
-    public static string ConnectionString(SampleWorkspace workspace)
+    public static string ConnectionString(IDirectoryInfo directory)
     {
-        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(directory);
 
-        return $"Data Source={workspace.File("orders.db").FullName}";
+        return $"Data Source={directory.File("orders.db").FullName}";
     }
 
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
-    public static IServiceCollection AddImportPipeline(this IServiceCollection services, SampleWorkspace workspace)
+    public static IServiceCollection AddImportPipeline(this IServiceCollection services, IDirectoryInfo directory)
     {
         ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(directory);
 
-        services.AddSqliteConnection(Connection, ConnectionString(workspace));
+        services.AddSqliteConnection(Connection, ConnectionString(directory));
 
         // Registering the dead-letter sink is the whole of the configuration: FromExcel looks for one
         // in the container. Without it a row that will not convert fails the run. Registered under
@@ -72,7 +72,7 @@ public static class ImportPipeline
         services.AddSingleton<IDeadLetterSink<string>>(provider => provider.GetRequiredService<RejectedRows>());
 
         return services.AddEtlPipeline(Name, builder => builder
-            .FromExcel<SubmittedOrder>(workspace.File(InputFile))
+            .FromExcel<SubmittedOrder>(directory.File(InputFile))
             .Where(order => order.Amount > 0)
             .ToSqlTable(Connection, Table, options => options.Columns = ["Id", "Customer", "Amount"]));
     }

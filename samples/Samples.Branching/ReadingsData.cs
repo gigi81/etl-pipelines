@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO.Abstractions;
 using EtlPipelines.Samples.Common;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace EtlPipelines.Samples.Branching;
@@ -8,15 +9,17 @@ namespace EtlPipelines.Samples.Branching;
 /// <summary>Stands in for the sensor feed this job would normally be reading.</summary>
 public sealed class ReadingsData
 {
-    private readonly SampleWorkspace _workspace;
+    private readonly IDirectoryInfo _directory;
     private readonly ILogger<ReadingsData> _logger;
 
-    public ReadingsData(SampleWorkspace workspace, ILogger<ReadingsData> logger)
+    public ReadingsData(
+        [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
+        ILogger<ReadingsData> logger)
     {
-        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(directory);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _workspace = workspace;
+        _directory = directory;
         _logger = logger;
     }
 
@@ -25,7 +28,7 @@ public sealed class ReadingsData
 
     public async Task WriteAsync(CancellationToken cancellationToken)
     {
-        var file = _workspace.File(ReadingsPipeline.InputFile);
+        var file = _directory.File(ReadingsPipeline.InputFile);
         var start = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var lines = new List<string> { "SensorId,TakenAt,Celsius" };
 

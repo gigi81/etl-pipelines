@@ -1,7 +1,7 @@
+using System.IO.Abstractions;
 using EtlPipelines.Core;
 using EtlPipelines.Csv;
 using EtlPipelines.Excel;
-using EtlPipelines.Samples.Common;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Samples.Branching;
@@ -34,17 +34,17 @@ public static class ReadingsPipeline
     public const string ReportFile = "report.xlsx";
 
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
-    public static IServiceCollection AddReadingsPipeline(this IServiceCollection services, SampleWorkspace workspace)
+    public static IServiceCollection AddReadingsPipeline(this IServiceCollection services, IDirectoryInfo directory)
     {
         ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(directory);
 
         return services.AddEtlPipeline(Name, builder => builder
             .WithOptions(options => options.BatchSize = 256)
-            .FromCsv<Reading>(workspace.File(InputFile))
+            .FromCsv<Reading>(directory.File(InputFile))
             .Branch(
                 // Untouched, exactly as it arrived.
-                archived => archived.ToCsv(workspace.File(ArchiveFile)),
+                archived => archived.ToCsv(directory.File(ArchiveFile)),
                 // The same rows, on their way to something a person will read.
                 reported => reported
                     .Where(reading => reading.Celsius > 0)
@@ -54,6 +54,6 @@ public static class ReadingsPipeline
                         TakenAt = reading.TakenAt,
                         Fahrenheit = Math.Round((reading.Celsius * 9 / 5) + 32, 2),
                     })
-                    .ToExcel(workspace.File(ReportFile))));
+                    .ToExcel(directory.File(ReportFile))));
     }
 }

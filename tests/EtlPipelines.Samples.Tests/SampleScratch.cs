@@ -20,34 +20,35 @@ public sealed class SampleScratch : IAsyncDisposable
     private readonly IFileSystem _fileSystem = new FileSystem();
     private readonly ServiceProvider _provider;
 
-    public SampleScratch(string name, Action<IServiceCollection, SampleWorkspace> configure)
+    public SampleScratch(string name, Action<IServiceCollection, IDirectoryInfo> configure)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(configure);
 
         Directory = _fileSystem.DirectoryInfo.New(
             Path.Combine(Path.GetTempPath(), $"etl-samples-{name}-{Guid.NewGuid():N}"));
-
-        Workspace = new SampleWorkspace(_fileSystem, Directory);
+        Directory.Create();
 
         var services = new ServiceCollection();
         services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Warning));
-        services.AddSingleton(Workspace);
+        services.AddSingleton(_fileSystem);
+
+        // Under the same key the samples' own command line registers it, so the seeders resolve it
+        // here exactly as they do there.
+        services.AddKeyedSingleton(SampleWorkspace.Key, Directory);
         services.AddSingleton<PipelineRunner>();
-        configure(services, Workspace);
+        configure(services, Directory);
 
         _provider = services.BuildServiceProvider();
     }
 
+    /// <summary>The scratch directory, as a sample sees it.</summary>
     public IDirectoryInfo Directory { get; }
-
-    /// <summary>The scratch directory as a sample sees it.</summary>
-    public SampleWorkspace Workspace { get; }
 
     /// <summary>The container the sample's services were registered into.</summary>
     public IServiceProvider Services => _provider;
 
-    public IFileInfo File(string name) => Workspace.File(name);
+    public IFileInfo File(string name) => Directory.File(name);
 
     public T GetRequiredService<T>() where T : notnull => _provider.GetRequiredService<T>();
 

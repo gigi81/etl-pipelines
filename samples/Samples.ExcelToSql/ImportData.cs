@@ -1,7 +1,9 @@
+using System.IO.Abstractions;
 using System.Globalization;
 using EtlPipelines.Excel;
 using EtlPipelines.Samples.Common;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace EtlPipelines.Samples.ExcelToSql;
@@ -11,15 +13,17 @@ namespace EtlPipelines.Samples.ExcelToSql;
 /// </summary>
 public sealed class ImportData
 {
-    private readonly SampleWorkspace _workspace;
+    private readonly IDirectoryInfo _directory;
     private readonly ILogger<ImportData> _logger;
 
-    public ImportData(SampleWorkspace workspace, ILogger<ImportData> logger)
+    public ImportData(
+        [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
+        ILogger<ImportData> logger)
     {
-        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(directory);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _workspace = workspace;
+        _directory = directory;
         _logger = logger;
     }
 
@@ -43,7 +47,7 @@ public sealed class ImportData
     /// <summary>A workbook with a few rows nobody could load, because that is what hand-filled files are like.</summary>
     private async Task WriteWorkbookAsync(CancellationToken cancellationToken)
     {
-        var file = _workspace.File(ImportPipeline.InputFile);
+        var file = _directory.File(ImportPipeline.InputFile);
 
         var rows = Enumerable.Range(1, Rows)
             .Select(i => new TypedInByHand
@@ -69,7 +73,7 @@ public sealed class ImportData
 
     private async Task CreateTableAsync(CancellationToken cancellationToken)
     {
-        await using var connection = new SqliteConnection(ImportPipeline.ConnectionString(_workspace));
+        await using var connection = new SqliteConnection(ImportPipeline.ConnectionString(_directory));
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
@@ -83,7 +87,7 @@ public sealed class ImportData
     /// <summary>Counts what actually reached the table, which the row counts alone would not say.</summary>
     public async Task<long> CountAsync(CancellationToken cancellationToken)
     {
-        await using var connection = new SqliteConnection(ImportPipeline.ConnectionString(_workspace));
+        await using var connection = new SqliteConnection(ImportPipeline.ConnectionString(_directory));
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();

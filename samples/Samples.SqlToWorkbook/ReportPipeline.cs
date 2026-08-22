@@ -1,6 +1,6 @@
+using System.IO.Abstractions;
 using EtlPipelines.Core;
 using EtlPipelines.Excel;
-using EtlPipelines.Samples.Common;
 using EtlPipelines.Sql;
 using EtlPipelines.Sql.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,27 +42,27 @@ public static class ReportPipeline
     public const string OutputFile = "report.xlsx";
 
     /// <summary>The connection string for the sample's own database, inside its workspace.</summary>
-    public static string ConnectionString(SampleWorkspace workspace)
+    public static string ConnectionString(IDirectoryInfo directory)
     {
-        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(directory);
 
-        return $"Data Source={workspace.File("sales.db").FullName}";
+        return $"Data Source={directory.File("sales.db").FullName}";
     }
 
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
-    public static IServiceCollection AddReportPipeline(this IServiceCollection services, SampleWorkspace workspace)
+    public static IServiceCollection AddReportPipeline(this IServiceCollection services, IDirectoryInfo directory)
     {
         ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(directory);
 
         // The overload taking the connection string, because this database is a file in a directory
         // chosen when the command ran. An application whose database has a fixed address would call
         // AddSqliteConnection("sales") instead and let it come from ConnectionStrings:sales.
-        services.AddSqliteConnection(Connection, ConnectionString(workspace));
+        services.AddSqliteConnection(Connection, ConnectionString(directory));
 
         // One file object for every sheet: the workbook's sheet count is worked out while the
         // pipeline is composed, and it is keyed on the file it was given.
-        var report = workspace.File(OutputFile);
+        var report = directory.File(OutputFile);
 
         // Three sources, three sheets, one workbook. Each From/To pair is its own stage, and stages
         // run one after another, which is the ordering a single workbook needs. No mapping delegates:

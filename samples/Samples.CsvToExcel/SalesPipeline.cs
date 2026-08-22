@@ -1,7 +1,7 @@
+using System.IO.Abstractions;
 using EtlPipelines.Core;
 using EtlPipelines.Csv;
 using EtlPipelines.Excel;
-using EtlPipelines.Samples.Common;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Samples.CsvToExcel;
@@ -37,13 +37,13 @@ public static class SalesPipeline
     public const string OutputFile = "sales.xlsx";
 
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
-    public static IServiceCollection AddSalesPipeline(this IServiceCollection services, SampleWorkspace workspace)
+    public static IServiceCollection AddSalesPipeline(this IServiceCollection services, IDirectoryInfo directory)
     {
         ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(directory);
 
         return services.AddEtlPipeline(Name, builder => builder
-            .FromCsv<SalesRow>(workspace.File(InputFile))
+            .FromCsv<SalesRow>(directory.File(InputFile))
             .Where(row => row.Amount > 0)
             .Select(row => new SalesReport
             {
@@ -52,6 +52,6 @@ public static class SalesPipeline
                 Product = row.Product,
                 AmountInCents = row.Amount * 100,
             })
-            .ToExcel(workspace.File(OutputFile)));
+            .ToExcel(directory.File(OutputFile)));
     }
 }

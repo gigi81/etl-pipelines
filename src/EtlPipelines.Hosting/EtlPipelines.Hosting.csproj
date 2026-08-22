@@ -28,6 +28,12 @@
   <ItemGroup>
     <!-- Brings System.CommandLine and Microsoft.Extensions.Hosting with it. -->
     <PackageReference Include="Albatross.CommandLine" />
+    <!--
+      The file connectors name their files as IFileInfo rather than as paths, so an application built
+      on this host needs an IFileSystem in the container. Wrappers rather than the abstractions alone,
+      because the host is the thing that supplies the real implementation.
+    -->
+    <PackageReference Include="TestableIO.System.IO.Abstractions.Wrappers" />
   </ItemGroup>
 
 </Project>

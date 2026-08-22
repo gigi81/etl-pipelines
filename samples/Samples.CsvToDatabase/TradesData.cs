@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using EtlPipelines.Samples.Common;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace EtlPipelines.Samples.CsvToDatabase;
@@ -10,15 +11,17 @@ namespace EtlPipelines.Samples.CsvToDatabase;
 /// </summary>
 public sealed class TradesData
 {
-    private readonly SampleWorkspace _workspace;
+    private readonly IDirectoryInfo _directory;
     private readonly ILogger<TradesData> _logger;
 
-    public TradesData(SampleWorkspace workspace, ILogger<TradesData> logger)
+    public TradesData(
+        [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
+        ILogger<TradesData> logger)
     {
-        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(directory);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _workspace = workspace;
+        _directory = directory;
         _logger = logger;
     }
 
@@ -27,7 +30,7 @@ public sealed class TradesData
 
     public async Task WriteAsync(CancellationToken cancellationToken)
     {
-        var file = _workspace.File(TradesPipeline.InputFile);
+        var file = _directory.File(TradesPipeline.InputFile);
         var lines = new List<string>(Rows + 1) { "Id,Symbol,Price,Quantity" };
         var symbols = new[] { "ACME", "GLBX", "INIT", "UMBR" };
 
@@ -48,7 +51,7 @@ public sealed class TradesData
     /// </remarks>
     public async Task CreateSqliteTableAsync(CancellationToken cancellationToken)
     {
-        await using var connection = new SqliteConnection(TradesPipeline.ConnectionString(_workspace));
+        await using var connection = new SqliteConnection(TradesPipeline.ConnectionString(_directory));
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();

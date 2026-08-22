@@ -1,5 +1,6 @@
 using System.IO.Abstractions;
 using EtlPipelines.Samples.Common;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace EtlPipelines.Samples.CsvToExcel;
@@ -13,15 +14,17 @@ namespace EtlPipelines.Samples.CsvToExcel;
 /// </remarks>
 public sealed class SalesData
 {
-    private readonly SampleWorkspace _workspace;
+    private readonly IDirectoryInfo _directory;
     private readonly ILogger<SalesData> _logger;
 
-    public SalesData(SampleWorkspace workspace, ILogger<SalesData> logger)
+    public SalesData(
+        [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
+        ILogger<SalesData> logger)
     {
-        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(directory);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _workspace = workspace;
+        _directory = directory;
         _logger = logger;
     }
 
@@ -30,7 +33,7 @@ public sealed class SalesData
 
     public async Task WriteAsync(CancellationToken cancellationToken)
     {
-        var file = _workspace.File(SalesPipeline.InputFile);
+        var file = _directory.File(SalesPipeline.InputFile);
         var lines = new List<string> { "Id,Region,Product,Amount" };
 
         for (var i = 1; i <= Rows; i++)

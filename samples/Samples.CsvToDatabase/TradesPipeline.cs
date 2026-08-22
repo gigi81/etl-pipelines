@@ -1,6 +1,6 @@
+using System.IO.Abstractions;
 using EtlPipelines.Core;
 using EtlPipelines.Csv;
-using EtlPipelines.Samples.Common;
 using EtlPipelines.Sql;
 using EtlPipelines.Sql.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,16 +36,16 @@ public static class TradesPipeline
     public const int ExpectedRows = 9_500;
 
     /// <summary>The connection string for the sample's own database, inside its workspace.</summary>
-    public static string ConnectionString(SampleWorkspace workspace)
+    public static string ConnectionString(IDirectoryInfo directory)
     {
-        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(directory);
 
-        return $"Data Source={workspace.File("trades.db").FullName}";
+        return $"Data Source={directory.File("trades.db").FullName}";
     }
 
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
     /// <param name="services">The container.</param>
-    /// <param name="workspace">The directory the run reads and writes in.</param>
+    /// <param name="directory">The directory the run reads and writes in.</param>
     /// <param name="configureConnection">
     /// Registers the connection under the name given. Left unset, a SQLite file in the workspace is
     /// used — which is the one thing that differs between loading into SQLite and loading into Oracle.
@@ -56,12 +56,12 @@ public static class TradesPipeline
     /// </param>
     public static IServiceCollection AddTradesPipeline(
         this IServiceCollection services,
-        SampleWorkspace workspace,
+        IDirectoryInfo directory,
         Action<IServiceCollection, string>? configureConnection = null,
         string? parameterPrefix = null)
     {
         ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(directory);
 
         if (configureConnection is not null)
         {
@@ -69,12 +69,12 @@ public static class TradesPipeline
         }
         else
         {
-            services.AddSqliteConnection(Connection, ConnectionString(workspace));
+            services.AddSqliteConnection(Connection, ConnectionString(directory));
         }
 
         return services.AddEtlPipeline(Name, builder => builder
             .WithOptions(options => options.BatchSize = 1_000)
-            .FromCsv<Trade>(workspace.File(InputFile))
+            .FromCsv<Trade>(directory.File(InputFile))
             .Where(trade => trade.Quantity > 0)
             .ToSqlTable(Connection, Table, options =>
             {

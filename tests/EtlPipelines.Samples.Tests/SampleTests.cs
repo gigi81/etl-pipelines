@@ -26,8 +26,8 @@ public class SampleTests
     public async Task Csv_to_excel_filters_and_reshapes_into_a_workbook()
     {
         //arrange
-        await using var scratch = new SampleScratch("csv-excel", (services, workspace) =>
-            services.AddSingleton<SalesData>().AddSalesPipeline(workspace));
+        await using var scratch = new SampleScratch("csv-excel", (services, directory) =>
+            services.AddSingleton<SalesData>().AddSalesPipeline(directory));
 
         await scratch.GetRequiredService<SalesData>().WriteAsync(CancellationToken.None);
 
@@ -58,8 +58,8 @@ public class SampleTests
     public async Task Sql_to_workbook_writes_one_sheet_per_query()
     {
         //arrange
-        await using var scratch = new SampleScratch("sql-workbook", (services, workspace) =>
-            services.AddSingleton<ReportData>().AddReportPipeline(workspace));
+        await using var scratch = new SampleScratch("sql-workbook", (services, directory) =>
+            services.AddSingleton<ReportData>().AddReportPipeline(directory));
 
         await scratch.GetRequiredService<ReportData>().SeedAsync(CancellationToken.None);
 
@@ -86,8 +86,8 @@ public class SampleTests
     public async Task Excel_to_sql_loads_what_it_can_and_sets_the_rest_aside()
     {
         //arrange
-        await using var scratch = new SampleScratch("excel-sql", (services, workspace) =>
-            services.AddSingleton<ImportData>().AddImportPipeline(workspace));
+        await using var scratch = new SampleScratch("excel-sql", (services, directory) =>
+            services.AddSingleton<ImportData>().AddImportPipeline(directory));
 
         var data = scratch.GetRequiredService<ImportData>();
         await data.PrepareAsync(CancellationToken.None);
@@ -111,8 +111,8 @@ public class SampleTests
     public async Task Branching_reads_once_and_writes_to_both_destinations()
     {
         //arrange
-        await using var scratch = new SampleScratch("branching", (services, workspace) =>
-            services.AddSingleton<ReadingsData>().AddReadingsPipeline(workspace));
+        await using var scratch = new SampleScratch("branching", (services, directory) =>
+            services.AddSingleton<ReadingsData>().AddReadingsPipeline(directory));
 
         await scratch.GetRequiredService<ReadingsData>().WriteAsync(CancellationToken.None);
 
@@ -144,8 +144,8 @@ public class SampleTests
     public async Task Csv_to_database_loads_a_file_into_sqlite()
     {
         //arrange
-        await using var scratch = new SampleScratch("csv-sqlite", (services, workspace) =>
-            services.AddSingleton<TradesData>().AddTradesPipeline(workspace));
+        await using var scratch = new SampleScratch("csv-sqlite", (services, directory) =>
+            services.AddSingleton<TradesData>().AddTradesPipeline(directory));
 
         var data = scratch.GetRequiredService<TradesData>();
         await data.WriteAsync(CancellationToken.None);

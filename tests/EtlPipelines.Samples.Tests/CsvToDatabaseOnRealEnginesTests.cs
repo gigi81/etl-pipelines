@@ -46,10 +46,10 @@ public abstract class CsvToDatabaseOnRealEnginesTests<TFixture>
         //arrange
         // The engine is the only thing that changes: the same registration the sample's own command
         // line uses, handed a different Add...Connection.
-        await using var scratch = new SampleScratch("csv-db", (services, workspace) =>
+        await using var scratch = new SampleScratch("csv-db", (services, directory) =>
             services
                 .AddSingleton<TradesData>()
-                .AddTradesPipeline(workspace, Register, ParameterPrefix));
+                .AddTradesPipeline(directory, Register, ParameterPrefix));
 
         await using (var connection = await Open()(CancellationToken.None))
         {
