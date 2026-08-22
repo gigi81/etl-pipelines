@@ -45,6 +45,9 @@ public abstract class ScriptAndProcedureTests<TFixture>
     /// <summary>How this engine's procedure is called.</summary>
     protected virtual string CallSyntax(string procedure) => procedure;
 
+    /// <summary>Oracle binds with a colon; everyone else here uses an at sign.</summary>
+    protected virtual string ParameterPrefix => "@";
+
     private IFileInfo Script(string sql)
     {
         var path = _files.Path.Combine(_files.Directory.GetCurrentDirectory(), $"{Guid.NewGuid():N}.sql");
@@ -89,6 +92,41 @@ public abstract class ScriptAndProcedureTests<TFixture>
         count.CommandText = $"SELECT COUNT(*) FROM {table}";
         Convert.ToInt64(await count.ExecuteScalarAsync())
             .Should().Be(1, "the procedure deleted one of the two rows the script inserted");
+    }
+
+    [Test]
+    public async Task Runs_one_statement_with_a_bound_parameter()
+    {
+        //arrange
+        var table = NewName("orders");
+        var procedure = NewName("prune");
+        var script = Script(SetupScript(table, procedure));
+
+        await using var provider = Build(builder => builder
+            .RunSqlScript(Connection, script)
+            .RunSql(Connection, $"DELETE FROM {table} WHERE Id = {ParameterPrefix}id", options =>
+                options.Configure = command =>
+                {
+                    var parameter = command.CreateParameter();
+                    parameter.ParameterName = "id";
+                    parameter.Value = 2;
+                    command.Parameters.Add(parameter);
+                }));
+
+        //act
+        var result = await provider.GetRequiredEtlPipeline(Pipeline).RunAsync(CancellationToken.None);
+
+        //assert
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
+
+        await using var connection = await provider
+            .GetRequiredDbConnectionFactory(Connection)
+            .OpenAsync(CancellationToken.None);
+
+        await using var count = connection.CreateCommand();
+        count.CommandText = $"SELECT COUNT(*) FROM {table}";
+        Convert.ToInt64(await count.ExecuteScalarAsync())
+            .Should().Be(1, "the statement deleted the row it was given the id of");
     }
 
     [Test]
@@ -174,6 +212,8 @@ public sealed class OracleScriptTests(OracleFixture fixture)
 {
     protected override Action<IServiceCollection, string> Register =>
         (services, name) => services.AddOracleConnection(name, Fixture.ConnectionString);
+
+    protected override string ParameterPrefix => ":";
 
     /// <summary>Terminated with / throughout, which is what tells the parser this is PL/SQL.</summary>
     protected override string SetupScript(string table, string procedure) => $"""

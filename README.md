@@ -297,15 +297,32 @@ are stages:
 
 ```csharp
 services.AddEtlPipeline("orders", builder => builder
-    .RunSqlScript("warehouse", fileSystem.FileInfo.New("create-staging.sql"))
+    .RunSql("warehouse", "TRUNCATE TABLE orders_staging")
     .FromCsv<Order>(file)
     .ToSqlTable("warehouse", "orders_staging")
-    .RunStoredProcedure("warehouse", "dbo.MergeOrders"));
+    .RunStoredProcedure("warehouse", "dbo.MergeOrders")
+    .RunSqlScript("warehouse", fileSystem.FileInfo.New("rebuild-indexes.sql")));
 ```
 
-Both report no rows, so they stay out of the run's `RowsRead` and `RowsWritten` — see above. Neither
-opens a transaction: a procedure that wants one generally manages its own, and wrapping one from
-outside behaves differently on every engine.
+| | |
+|---|---|
+| `RunSql` | one statement, for the one-liner that does not warrant a file |
+| `RunStoredProcedure` | a procedure by name |
+| `RunSqlScript` | a file, split into batches the way the engine needs |
+
+`RunSql` and `RunStoredProcedure` send **one command as given** — nothing is split on `GO` or on a
+changed delimiter. Several statements, or anything with a procedure body in it, belong in a file.
+Bind values through `options.Configure` rather than building the string:
+
+```csharp
+.RunSql("warehouse", "DELETE FROM orders WHERE Batch = @batch", options =>
+    options.Configure = command => command.Parameters.Add(
+        new SqlParameter("@batch", batchId)))
+```
+
+All three report no rows, so they stay out of the run's `RowsRead` and `RowsWritten` — see above.
+None opens a transaction: a procedure that wants one generally manages its own, and wrapping one
+from outside behaves differently on every engine.
 
 **A script file is not a statement**, and this is where engines disagree most. Each provider package
 registers the parser its engine needs, under the connection's name:
