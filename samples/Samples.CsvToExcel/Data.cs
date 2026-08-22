@@ -1,4 +1,7 @@
+using ErrorOr;
+using System.Diagnostics;
 using System.IO.Abstractions;
+using EtlPipelines.Abstractions.Execution;
 using EtlPipelines.Samples.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -12,7 +15,7 @@ namespace EtlPipelines.Samples.CsvToExcel;
 /// A service rather than a static helper, so it takes the workspace and its logger the same way
 /// everything else does — and so a test can leave it out and put its own file in place instead.
 /// </remarks>
-public sealed class SalesData
+public sealed class SalesData : IPipelineStage
 {
     private readonly IDirectoryInfo _directory;
     private readonly ILogger<SalesData> _logger;
@@ -31,8 +34,16 @@ public sealed class SalesData
     /// <summary>Rows written, of which every tenth is a refund the pipeline filters out.</summary>
     public const int Rows = 500;
 
-    public async Task WriteAsync(CancellationToken cancellationToken)
+    /// <summary>The name this step appears under in the run's report.</summary>
+    public string Name => "fetch";
+
+    /// <inheritdoc />
+    public async ValueTask<ErrorOr<StageResult>> ExecuteAsync(
+        PipelineContext context,
+        CancellationToken cancellationToken)
     {
+        var started = Stopwatch.StartNew();
+
         var file = _directory.File(SalesPipeline.InputFile);
         var lines = new List<string> { "Id,Region,Product,Amount" };
 
@@ -44,5 +55,9 @@ public sealed class SalesData
 
         await file.WriteAllLinesAsync(lines, cancellationToken);
         _logger.LogInformation("Wrote {Rows} rows to {File}", Rows, file.FullName);
+
+        // No rows in or out: what this step wrote is a file, not rows through the framework, and
+        // a stage that reports none is skipped when the run's totals are worked out.
+        return new StageResult(Name, 0, 0, 0, started.Elapsed);
     }
 }

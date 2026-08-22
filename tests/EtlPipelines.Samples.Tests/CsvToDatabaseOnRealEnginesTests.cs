@@ -47,18 +47,17 @@ public abstract class CsvToDatabaseOnRealEnginesTests<TFixture>
         // The engine is the only thing that changes: the same registration the sample's own command
         // line uses, handed a different Add...Connection.
         await using var scratch = new SampleScratch("csv-db", (services, directory) =>
-            services
-                .AddSingleton<TradesData>()
-                .AddTradesPipeline(directory, Register, ParameterPrefix));
+            services.AddTradesPipeline(directory, Register, ParameterPrefix));
 
+        // The table, in this engine's own dialect. Handing the pipeline a connection is what tells it
+        // not to create one itself, so this is the whole of the arrangement - the file it loads is put
+        // in place by the pipeline's own opening stage.
         await using (var connection = await Open()(CancellationToken.None))
         {
             await using var command = connection.CreateCommand();
             command.CommandText = CreateTableSql;
             await command.ExecuteNonQueryAsync();
         }
-
-        await scratch.GetRequiredService<TradesData>().WriteAsync(CancellationToken.None);
 
         //act
         var result = await scratch.RunAsync();

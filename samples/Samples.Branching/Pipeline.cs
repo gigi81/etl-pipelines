@@ -41,6 +41,8 @@ public static class ReadingsPipeline
 
         return services.AddEtlPipeline(Name, builder => builder
             .WithOptions(options => options.BatchSize = 256)
+            // The feed this job reads does not exist until something fetches it.
+            .AddStage<ReadingsData>()
             .FromCsv<Reading>(directory.File(InputFile))
             .Branch(
                 // Untouched, exactly as it arrived.

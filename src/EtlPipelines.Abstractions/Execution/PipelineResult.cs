@@ -6,10 +6,13 @@ namespace EtlPipelines.Abstractions.Execution;
 /// operated.
 /// </summary>
 /// <param name="Name">The pipeline's name.</param>
-/// <param name="RowsRead">Rows the first stage consumed.</param>
+/// <param name="RowsRead">
+/// Rows the first stage that moved any consumed. Coarse job stages that move no rows — a download,
+/// a table swap — are skipped, so beginning a pipeline with one does not make this read zero.
+/// </param>
 /// <param name="RowsWritten">
-/// Rows the last stage produced. Not necessarily equal to <paramref name="RowsRead"/> — filters and
-/// aggregations change cardinality legitimately.
+/// Rows the last stage that moved any produced. Not necessarily equal to <paramref name="RowsRead"/>
+/// — filters and aggregations change cardinality legitimately.
 /// </param>
 /// <param name="RowsFailed">Rows rejected across all stages.</param>
 /// <param name="Elapsed">Total wall-clock time.</param>
@@ -33,12 +36,34 @@ public sealed record PipelineResult(
             failed += stage.RowsFailed;
         }
 
-        return new PipelineResult(
-            name,
-            stages.Count > 0 ? stages[0].RowsIn : 0,
-            stages.Count > 0 ? stages[^1].RowsOut : 0,
-            failed,
-            elapsed,
-            stages);
+        // Taken from the first and last stages that actually moved rows, rather than simply the first
+        // and last. A coarse job stage - downloading the file, swapping a staging table into place -
+        // moves no rows through the framework and reports none, and a pipeline that begins or ends
+        // with one would otherwise report that it had read or written nothing at all.
+        long read = 0;
+        long written = 0;
+
+        foreach (var stage in stages)
+        {
+            if (MovedRows(stage))
+            {
+                read = stage.RowsIn;
+                break;
+            }
+        }
+
+        for (var i = stages.Count - 1; i >= 0; i--)
+        {
+            if (MovedRows(stages[i]))
+            {
+                written = stages[i].RowsOut;
+                break;
+            }
+        }
+
+        return new PipelineResult(name, read, written, failed, elapsed, stages);
     }
+
+    private static bool MovedRows(StageResult stage) =>
+        stage.RowsIn > 0 || stage.RowsOut > 0 || stage.RowsFailed > 0;
 }

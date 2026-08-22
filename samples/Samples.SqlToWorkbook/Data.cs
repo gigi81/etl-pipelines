@@ -1,4 +1,7 @@
+using ErrorOr;
+using System.Diagnostics;
 using System.IO.Abstractions;
+using EtlPipelines.Abstractions.Execution;
 using EtlPipelines.Samples.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,7 +13,7 @@ namespace EtlPipelines.Samples.SqlToWorkbook;
 /// Fills the database this sample reports on.
 /// </summary>
 /// <remarks>Stands in for the database a real job would already be pointed at.</remarks>
-public sealed class ReportData
+public sealed class ReportData : IPipelineStage
 {
     private readonly IDirectoryInfo _directory;
     private readonly ILogger<ReportData> _logger;
@@ -33,8 +36,16 @@ public sealed class ReportData
     private const string Series =
         "(WITH RECURSIVE series(value) AS (SELECT 1 UNION ALL SELECT value + 1 FROM series WHERE value < 200) SELECT value FROM series)";
 
-    public async Task SeedAsync(CancellationToken cancellationToken)
+    /// <summary>The name this step appears under in the run's report.</summary>
+    public string Name => "seed";
+
+    /// <inheritdoc />
+    public async ValueTask<ErrorOr<StageResult>> ExecuteAsync(
+        PipelineContext context,
+        CancellationToken cancellationToken)
     {
+        var started = Stopwatch.StartNew();
+
         await using var connection = new SqliteConnection(ReportPipeline.ConnectionString(_directory));
         await connection.OpenAsync(cancellationToken);
 
@@ -61,5 +72,7 @@ public sealed class ReportData
 
         await command.ExecuteNonQueryAsync(cancellationToken);
         _logger.LogInformation("Seeded {Rows} orders and customers", Rows);
+
+        return new StageResult(Name, 0, 0, 0, started.Elapsed);
     }
 }
