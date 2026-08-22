@@ -1,6 +1,6 @@
 using System.Reflection;
 
-namespace EtlPipelines.Sql;
+namespace EtlPipelines.Sql.Loading;
 
 /// <summary>
 /// The columns a row type maps to, and how to read each one out of an instance.

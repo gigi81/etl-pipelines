@@ -1,7 +1,7 @@
+using Microsoft.Extensions.DependencyInjection;
 using System.Data;
 using System.Data.Common;
 using System.IO.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Sql;
 

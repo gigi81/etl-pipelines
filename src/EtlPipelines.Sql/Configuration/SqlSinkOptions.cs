@@ -1,30 +1,4 @@
-using System.Data;
-using System.Data.Common;
-
-namespace EtlPipelines.Sql;
-
-/// <summary>Settings shared by the SQL source and sink.</summary>
-public abstract class SqlOptions
-{
-    /// <summary>
-    /// How long a command may run before the provider gives up, in seconds. Left <see langword="null"/>
-    /// the provider's own default applies.
-    /// </summary>
-    public int? CommandTimeout { get; set; }
-}
-
-/// <summary>Settings for reading from a database.</summary>
-public sealed class SqlSourceOptions : SqlOptions
-{
-    /// <summary>How the command text should be interpreted. Defaults to <see cref="CommandType.Text"/>.</summary>
-    public CommandType CommandType { get; set; } = CommandType.Text;
-
-    /// <summary>
-    /// Binds parameters to the command before it runs. Use this rather than pasting values into the
-    /// SQL, which is how a value that contains a quote becomes an injection.
-    /// </summary>
-    public Action<IDbCommand>? Configure { get; set; }
-}
+namespace EtlPipelines.Sql.Configuration;
 
 /// <summary>Settings for writing to a database table.</summary>
 public sealed class SqlSinkOptions : SqlOptions
@@ -75,29 +49,4 @@ public sealed class SqlSinkOptions : SqlOptions
     /// parameterised INSERT path, which behaves the same everywhere.
     /// </remarks>
     public bool UseBulkLoader { get; set; } = true;
-}
-
-/// <summary>Settings shared by the stages that hand SQL to the server rather than moving rows.</summary>
-public abstract class SqlStageOptions : SqlOptions
-{
-    /// <summary>
-    /// What the stage is called in the run's report, traces and metrics. Defaults to the procedure's
-    /// name or the script's file name.
-    /// </summary>
-    public string? Name { get; set; }
-}
-
-/// <summary>Settings for running a stored procedure.</summary>
-public sealed class StoredProcedureOptions : SqlStageOptions
-{
-    /// <summary>
-    /// Binds parameters to the command before it runs. Use this rather than pasting values into the
-    /// procedure name, which is how a value that contains a quote becomes an injection.
-    /// </summary>
-    public Action<DbCommand>? Configure { get; set; }
-}
-
-/// <summary>Settings for running a script file.</summary>
-public sealed class SqlScriptOptions : SqlStageOptions
-{
 }

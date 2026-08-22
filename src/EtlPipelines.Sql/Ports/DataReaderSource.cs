@@ -1,8 +1,8 @@
+using Dapper;
 using System.Data;
 using System.Data.Common;
-using Dapper;
 
-namespace EtlPipelines.Sql;
+namespace EtlPipelines.Sql.Ports;
 
 /// <summary>
 /// An <see cref="IDataSource{TRow}"/> that pulls rows from an ADO.NET <see cref="IDataReader"/>.

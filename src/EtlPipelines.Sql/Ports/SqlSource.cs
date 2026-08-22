@@ -1,7 +1,7 @@
 using System.Data;
 using System.Data.Common;
 
-namespace EtlPipelines.Sql;
+namespace EtlPipelines.Sql.Ports;
 
 /// <summary>
 /// Reads rows from a SQL query.

@@ -2,7 +2,7 @@ using System.Data;
 using System.Data.Common;
 using System.Text;
 
-namespace EtlPipelines.Sql;
+namespace EtlPipelines.Sql.Ports;
 
 /// <summary>
 /// Writes rows into a database table.

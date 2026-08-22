@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Data.Common;
 
-namespace EtlPipelines.Sql;
+namespace EtlPipelines.Sql.Loading;
 
 /// <summary>
 /// Presents one batch of rows as a forward-only <see cref="DbDataReader"/>.
