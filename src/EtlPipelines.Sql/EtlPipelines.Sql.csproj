@@ -17,8 +17,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Only for resolving an optional IBulkLoader out of the container in ToSqlTable. -->
+    <!--
+      Dapper, for one thing only: turning an open reader into a compiled row mapper, so a caller who
+      does not want to hand-write one does not have to. No Dapper type appears in this package's
+      public surface, and nothing here goes through its query APIs - they buffer whole result sets,
+      which is the opposite of what a streaming pipeline wants.
+    -->
+    <PackageReference Include="Dapper" />
+    <!-- Resolving connection factories and bulk loaders out of the container. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <!-- Reading connection strings from IConfiguration.GetConnectionString. -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
   </ItemGroup>
 
 </Project>

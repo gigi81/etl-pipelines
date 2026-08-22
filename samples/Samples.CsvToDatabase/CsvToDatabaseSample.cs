@@ -1,4 +1,3 @@
-using System.Data.Common;
 using EtlPipelines.Core;
 using EtlPipelines.Csv;
 using EtlPipelines.Samples.Common;
@@ -14,10 +13,10 @@ public sealed record Trade(int Id, string Symbol, decimal Price, int Quantity);
 /// Loading a file into a table, against whichever database is in front of you.
 /// </summary>
 /// <remarks>
-/// The pipeline is the same for every engine: only the connection and the bulk loader change, which
-/// is why they are the two things this sample takes as properties. Left alone it uses a SQLite file
-/// in its own workspace, and the integration tests set them to run this very sample against SQL
-/// Server, PostgreSQL, MySQL and Oracle.
+/// The pipeline is the same for every engine, and it names its database rather than holding one — so
+/// the only thing that changes between engines is which <c>Add…Connection</c> registered that name.
+/// Left alone it registers a SQLite file in its own workspace; the integration tests substitute SQL
+/// Server, PostgreSQL, MySQL and Oracle and run this very sample against each.
 /// </remarks>
 public sealed class CsvToDatabaseSample : Sample
 {
@@ -26,16 +25,22 @@ public sealed class CsvToDatabaseSample : Sample
 
     public const string TableName = "trades";
 
-    /// <summary>How to open a connection. Left unset, the sample uses a SQLite file of its own.</summary>
-    public Func<CancellationToken, ValueTask<DbConnection>>? OpenConnection { get; init; }
+    /// <summary>The database the file is loaded into.</summary>
+    public const string Connection = "trades";
 
     /// <summary>
-    /// The provider's fast path, when the caller has one. Without it the sink falls back to
-    /// parameterised INSERTs, which behave the same everywhere but are slower.
+    /// Registers the connection this sample loads into, under the name it is given. Left unset, the
+    /// sample registers a SQLite file of its own.
     /// </summary>
-    public IBulkLoader? BulkLoader { get; init; }
+    /// <remarks>
+    /// One property where there used to be three. Each provider's <c>Add…Connection</c> brings that
+    /// engine's driver and its bulk-load fast path together, so naming the engine is now the whole of
+    /// the difference between loading into SQLite and loading into Oracle.
+    /// </remarks>
+    public Action<IServiceCollection, string>? ConfigureConnection { get; init; }
 
     /// <summary>The bind marker this engine wants — Oracle uses a colon where most use an at sign.</summary>
+    /// <remarks>Only reached when the bulk-load path is turned off; the loaders bind their own.</remarks>
     public string? ParameterPrefix { get; init; }
 
     public override string PipelineName => "trades";
@@ -44,16 +49,20 @@ public sealed class CsvToDatabaseSample : Sample
 
     public override void Register(IServiceCollection services, SampleWorkspace workspace)
     {
-        if (BulkLoader is not null)
+        if (ConfigureConnection is not null)
         {
-            services.AddSingleton(BulkLoader);
+            ConfigureConnection(services, Connection);
+        }
+        else
+        {
+            services.AddSqliteConnection(Connection, ConnectionString(workspace));
         }
 
         services.AddEtlPipeline(PipelineName, builder => builder
             .WithOptions(options => options.BatchSize = 1_000)
             .FromCsv<Trade>(workspace.File("trades.csv"))
             .Where(trade => trade.Quantity > 0)
-            .ToSqlTable(Open(workspace), TableName, options =>
+            .ToSqlTable(Connection, TableName, options =>
             {
                 if (ParameterPrefix is not null)
                 {
@@ -66,16 +75,13 @@ public sealed class CsvToDatabaseSample : Sample
     {
         await SampleData.WriteTradesAsync(workspace.File("trades.csv"), cancellationToken);
 
-        // Only when the sample brought its own database. A caller that handed one over has already
+        // Only when the sample brought its own database. A caller that registered one has already
         // created the table, in whatever dialect that engine wants.
-        if (OpenConnection is null)
+        if (ConfigureConnection is null)
         {
             await SampleData.CreateSqliteTableAsync(ConnectionString(workspace), cancellationToken);
         }
     }
-
-    private Func<CancellationToken, ValueTask<DbConnection>> Open(SampleWorkspace workspace) =>
-        OpenConnection ?? SqliteConnections.Open(ConnectionString(workspace));
 
     private static string ConnectionString(SampleWorkspace workspace) =>
         $"Data Source={workspace.File("trades.db").FullName}";

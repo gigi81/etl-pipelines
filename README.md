@@ -230,17 +230,39 @@ back-pressure knob between the pipeline and the disk.
 ## SQL databases
 
 `EtlPipelines.Sql` works against any ADO.NET provider, and a package per engine adds that engine's
-bulk-load path. Reference the one you need — a SQLite job never pulls in the Oracle driver.
+driver and bulk-load path. Reference the one you need — a SQLite job never pulls in the Oracle driver.
+
+Name a database once, and refer to it by that name from then on:
 
 ```csharp
-var open = SqliteConnections.Open(connectionString);
+builder.Services.AddSqliteConnection("sales");        // ConnectionStrings:sales
+builder.Services.AddSqlServerConnection("warehouse"); // ConnectionStrings:warehouse
 
 services.AddEtlPipeline("orders", builder => builder
-    .FromSql(open, "SELECT Id, Customer, Amount FROM orders", r =>
-        new Order(r.GetInt64(0), r.GetString(1), r.GetDecimal(2)))
+    .FromSql<Order>("sales", "SELECT Id, Customer, Amount FROM orders")
     .Select(o => o with { Amount = o.Amount * 100 })
-    .ToSqlTable(open, "orders_cents"));
+    .ToSqlTable<Order>("warehouse", "orders_cents"));
 ```
+
+The connection string comes from `IConfiguration.GetConnectionString(name)` — the ordinary
+`ConnectionStrings` section of `appsettings.json`, the environment, or anywhere else configuration
+comes from. Registration puts a **factory** in the container, not a connection: a source holds an open
+reader for the whole run and a sink holds an open transaction, so they cannot share one, and each opens
+and disposes its own. Two names mean two databases, which is how one pipeline reads from one engine and
+writes to another.
+
+There is an overload taking the connection string directly, for a database whose address is only known
+at run time, and one taking a `Func<CancellationToken, ValueTask<DbConnection>>` for anything stranger.
+
+**No mapping delegate.** Columns are matched to properties by name, by a parser Dapper compiles once
+the query's columns are known — not reflection per row. Pass a delegate to `FromSql` when you want the
+mapping under your own control.
+
+The row type wants a **parameterless constructor and settable properties**. A positional record works
+only when its constructor parameters match the types the *provider* reports, which is not the same as
+the types the record declares: SQLite reports a `DECIMAL` column as `Double`, so
+`record Order(long Id, string Customer, decimal Amount)` has no constructor the mapping can use. A
+record with settable properties converts per column and is fine.
 
 **A run is one transaction, committed only when it succeeds.** This is the database counterpart of
 the file connectors writing through a temporary file: a run that fails part-way leaves the table as
@@ -248,8 +270,8 @@ it was, rather than holding some fraction of the rows for a downstream job to re
 had finished. Set `UseTransaction = false` for a load large enough to strain the server's log, and
 accept partial writes in exchange.
 
-**Bulk loading is automatic when the provider package is registered.** `AddSqlServerBulkLoader()` and
-friends put an `IBulkLoader` in the container, and the sink picks it up:
+**Bulk loading comes with the connection.** `AddSqlServerConnection("warehouse")` registers that
+engine's `IBulkLoader` under the same name, and the sink writing to `"warehouse"` picks it up:
 
 | Package | Fast path |
 |---|---|
@@ -262,6 +284,9 @@ friends put an `IBulkLoader` in the container, and the sink picks it up:
 Batches reach the loader as a `DbDataReader` over the pooled buffer, so nothing is copied into a
 `DataTable` on the way. Set `UseBulkLoader = false` to force the portable INSERT path; bulk loaders
 are faster but do not all behave identically to an INSERT, and some bypass triggers.
+
+The loader is keyed to the connection name, so a pipeline writing to two engines gets each one's own
+fast path — there is no single registration for the second one to lose.
 
 Two things differ between engines and will bite quietly:
 
@@ -278,15 +303,19 @@ Two things differ between engines and will bite quietly:
 what to use for a provider with no package here, or for a reader you already have:
 
 ```csharp
-new DataReaderSource<OrderRow>(
-    async ct => await command.ExecuteReaderAsync(ct),
-    r => new OrderRow(r.GetInt32(0), r.GetString(1), r.GetDecimal(2)))
+new DataReaderSource<OrderRow>(async ct => await command.ExecuteReaderAsync(ct))
 ```
 
-The mapping delegate is not optional decoration. An `IDataRecord` is a **cursor positioned on the
-current row**, not a value — it is the same object every iteration and its contents change as the
-reader advances. A batch built from the record itself would hold N references to one object showing
-the last row read. The delegate copies the columns out, and the signature enforces it.
+Rows are always **materialised out of the reader**, whether by the automatic mapping or by a delegate
+you pass. A reader is a cursor positioned on the current row, not a value — it is the same object every
+iteration and its contents change as it advances — so a batch built from the reader itself would hold N
+references to one object showing the last row read.
+
+One thing to know about SQLite specifically: it types a *value*, not a column. In a `NUMERIC` column
+`3.0` is stored as an integer while `4.5` is stored as a float, so the column reports a different type
+from one row to the next. The source rebuilds its mapping when it meets a row the current one cannot
+read, which costs nothing on an engine whose column types are stable — every other one here — and one
+rebuild per change on a SQLite column that genuinely mixes them.
 
 The reader is opened in `InitializeAsync`, not in the constructor, so a registered source holds no
 open cursor between runs — each run opens its own and the run's scope closes it. Where the provider's
