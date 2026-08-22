@@ -40,6 +40,5 @@ public sealed class SampleWorkspace
     public IFileSystem FileSystem => Directory.FileSystem;
 
     /// <summary>A file in the workspace, whether or not it exists yet.</summary>
-    public IFileInfo File(string name) => FileSystem.FileInfo.New(
-        FileSystem.Path.Combine(Directory.FullName, name));
+    public IFileInfo File(string name) => Directory.File(name);
 }

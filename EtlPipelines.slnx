@@ -17,6 +17,7 @@
     <Project Path="src/EtlPipelines.Csv/EtlPipelines.Csv.csproj" />
     <Project Path="src/EtlPipelines.Excel/EtlPipelines.Excel.csproj" />
     <Project Path="src/EtlPipelines.Sql/EtlPipelines.Sql.csproj" />
+    <Project Path="src/EtlPipelines.Hosting/EtlPipelines.Hosting.csproj" />
     <Project Path="src/EtlPipelines.Sql.MySql/EtlPipelines.Sql.MySql.csproj" />
     <Project Path="src/EtlPipelines.Sql.Oracle/EtlPipelines.Sql.Oracle.csproj" />
     <Project Path="src/EtlPipelines.Sql.PostgreSql/EtlPipelines.Sql.PostgreSql.csproj" />
