@@ -450,6 +450,8 @@ files against — and gives you two verbs:
 ```bash
 myapp list          # the pipelines this application registered
 myapp run orders    # run one, exit 0 on success and 1 on failure
+myapp run           # run every one of them, stopping at the first failure
+myapp               # the same: an application asked for nothing runs its pipelines
 ```
 
 Steps that move no rows — fetching the file, swapping a staging table into place — are stages too, so
@@ -470,11 +472,11 @@ to an `ActivitySource` rather than to a logger, so turning the level up surfaces
 without an exporter:
 
 ```bash
-Logging__LogLevel__Default=Debug myapp run orders
+myapp run orders --verbose
 ```
 
-Through the environment rather than a `--` argument: the command line belongs to the verbs, so
-configuration comes from where the generic host normally reads it.
+`--verbose` is recursive on the root command, so it parses before the verb as readily as after it.
+`Logging__LogLevel__Default=Debug` in the environment does the same thing for anything finer-grained.
 
 Commands of your own go in alongside the built-in ones — the command line is
 [Albatross.CommandLine](https://rushuiguan.github.io/commandline/) over `System.CommandLine`, so a

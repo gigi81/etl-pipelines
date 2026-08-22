@@ -18,5 +18,7 @@ public class RunPipelineHandler : BaseHandler<RunPipelineParams>
 
     /// <inheritdoc />
     public override Task<int> InvokeAsync(CancellationToken cancellationToken) =>
-        _runner.RunAsync(parameters.Pipeline, cancellationToken);
+        parameters.Pipeline is { } pipeline
+            ? _runner.RunAsync(pipeline, cancellationToken)
+            : _runner.RunAllAsync(cancellationToken);
 }

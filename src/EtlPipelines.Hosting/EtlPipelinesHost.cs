@@ -53,23 +53,24 @@ public sealed class EtlPipelinesHost
             services.RegisterCommands();
         });
 
-        _host.ConfigureHost(builder => builder.ConfigureLogging(logging =>
-        {
-            logging.ClearProviders();
-            logging.AddSimpleConsole(options =>
-            {
-                options.SingleLine = true;
-                options.TimestampFormat = "HH:mm:ss ";
-            });
-
-            // The command line plumbing narrating itself - "Invoking command", "Disposing" - says
-            // nothing about the pipeline, which is the only thing anyone runs this to watch.
-            logging.AddFilter("Albatross.CommandLine", LogLevel.Warning);
-        }));
+        // On the root command and recursive, so it reaches every verb and shows up in --help. It has
+        // to be read from the parse result rather than injected: logging is configured while the host
+        // is being built, long before any handler could ask for it.
+        _host.CommandBuilder.RootCommand.Add(VerboseOption);
 
         // Resolving the listener is what starts it, and this runs before any command does.
         _host.ConfigureApplication((_, services) => services.GetRequiredService<PipelineTraceLogger>());
     }
+
+    /// <summary>
+    /// Turns the log level down to <see cref="LogLevel.Debug"/>, which is where the runtime's own
+    /// traces are written.
+    /// </summary>
+    public static Option<bool> VerboseOption { get; } = new("--verbose", "-v")
+    {
+        Description = "Log at debug level, which includes the pipeline's own per-stage traces.",
+        Recursive = true,
+    };
 
     /// <summary>
     /// The filesystem this host registers as <see cref="IFileSystem"/>.
@@ -139,7 +140,36 @@ public sealed class EtlPipelinesHost
         // to define it; adding ours first would make the duplicate the error instead.
         _host.AddCommands();
 
-        await using var host = _host.Parse(args).Build();
+        // An application built on this host exists to run its pipelines, so being asked for nothing
+        // in particular is taken as being asked for all of them rather than for the help text.
+        _host.Parse(args.Length == 0 ? ["run"] : args);
+
+        // After parsing, because --verbose is read from the result and the overload that hands it
+        // over throws until there is one.
+        ConfigureLogging();
+
+        await using var host = _host.Build();
         return await host.InvokeAsync().ConfigureAwait(false);
     }
+
+    private void ConfigureLogging() =>
+        _host.ConfigureHost((result, builder) => builder.ConfigureLogging(logging =>
+        {
+            logging.ClearProviders();
+            logging.AddSimpleConsole(options =>
+            {
+                options.SingleLine = true;
+                options.TimestampFormat = "HH:mm:ss ";
+            });
+
+            if (result.GetValue(VerboseOption))
+            {
+                logging.SetMinimumLevel(LogLevel.Debug);
+            }
+
+            // The command line plumbing narrating itself - "Invoking command", "Disposing" - says
+            // nothing about the pipeline, which is the only thing anyone runs this to watch. After
+            // the level above, so that --verbose does not turn it back on.
+            logging.AddFilter("Albatross.CommandLine", LogLevel.Warning);
+        }));
 }
