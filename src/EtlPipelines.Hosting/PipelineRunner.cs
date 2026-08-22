@@ -20,9 +20,6 @@ public class PipelineRunner
     /// <summary>Runs any of the pipelines registered in the container.</summary>
     public PipelineRunner(IEnumerable<IPipeline> pipelines, ILogger<PipelineRunner> logger)
     {
-        ArgumentNullException.ThrowIfNull(pipelines);
-        ArgumentNullException.ThrowIfNull(logger);
-
         _pipelines = pipelines;
         _logger = logger;
     }

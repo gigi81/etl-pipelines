@@ -39,9 +39,6 @@ public static class SalesPipeline
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
     public static IServiceCollection AddSalesPipeline(this IServiceCollection services, IDirectoryInfo directory)
     {
-        ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(directory);
-
         return services.AddEtlPipeline(Name, builder => builder
             // The file this job reads does not exist until something puts it there. A coarse
             // stage ahead of the dataflow is where that belongs - a real job's would download it.

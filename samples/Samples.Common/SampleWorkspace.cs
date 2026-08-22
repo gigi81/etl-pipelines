@@ -50,9 +50,7 @@ public static class SampleWorkspace
         string name,
         Action<IServiceCollection, IDirectoryInfo> configure)
     {
-        ArgumentNullException.ThrowIfNull(host);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentNullException.ThrowIfNull(configure);
 
         // On the root command rather than on each verb's parameters class, so that it is declared
         // once and can be read from the parse result while services are being registered.

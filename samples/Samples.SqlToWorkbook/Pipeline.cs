@@ -44,17 +44,12 @@ public static class ReportPipeline
     /// <summary>The connection string for the sample's own database, inside its workspace.</summary>
     public static string ConnectionString(IDirectoryInfo directory)
     {
-        ArgumentNullException.ThrowIfNull(directory);
-
         return $"Data Source={directory.File("sales.db").FullName}";
     }
 
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
     public static IServiceCollection AddReportPipeline(this IServiceCollection services, IDirectoryInfo directory)
     {
-        ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(directory);
-
         // The overload taking the connection string, because this database is a file in a directory
         // chosen when the command ran. An application whose database has a fixed address would call
         // AddSqliteConnection("sales") instead and let it come from ConnectionStrings:sales.

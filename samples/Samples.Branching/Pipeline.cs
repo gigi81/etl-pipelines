@@ -36,9 +36,6 @@ public static class ReadingsPipeline
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
     public static IServiceCollection AddReadingsPipeline(this IServiceCollection services, IDirectoryInfo directory)
     {
-        ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(directory);
-
         return services.AddEtlPipeline(Name, builder => builder
             .WithOptions(options => options.BatchSize = 256)
             // The feed this job reads does not exist until something fetches it.

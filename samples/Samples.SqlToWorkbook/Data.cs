@@ -22,9 +22,6 @@ public sealed class ReportData : IPipelineStage
         [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
         ILogger<ReportData> logger)
     {
-        ArgumentNullException.ThrowIfNull(directory);
-        ArgumentNullException.ThrowIfNull(logger);
-
         _directory = directory;
         _logger = logger;
     }

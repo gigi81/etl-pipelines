@@ -57,16 +57,12 @@ public static class ImportPipeline
     /// <summary>The connection string for the sample's own database, inside its workspace.</summary>
     public static string ConnectionString(IDirectoryInfo directory)
     {
-        ArgumentNullException.ThrowIfNull(directory);
-
         return $"Data Source={directory.File("orders.db").FullName}";
     }
 
     /// <summary>Counts what actually reached the table, which the row counts alone would not say.</summary>
     public static async Task<long> CountAsync(IDirectoryInfo directory, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(directory);
-
         await using var connection = new SqliteConnection(ConnectionString(directory));
         await connection.OpenAsync(cancellationToken);
 
@@ -79,9 +75,6 @@ public static class ImportPipeline
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
     public static IServiceCollection AddImportPipeline(this IServiceCollection services, IDirectoryInfo directory)
     {
-        ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(directory);
-
         services.AddSqliteConnection(Connection, ConnectionString(directory));
 
         // Registering the dead-letter sink is the whole of the configuration: FromExcel looks for one
@@ -114,10 +107,6 @@ public sealed class ImportCheck : IPipelineStage
         RejectedRows rejected,
         ILogger<ImportCheck> logger)
     {
-        ArgumentNullException.ThrowIfNull(directory);
-        ArgumentNullException.ThrowIfNull(rejected);
-        ArgumentNullException.ThrowIfNull(logger);
-
         _directory = directory;
         _rejected = rejected;
         _logger = logger;

@@ -23,7 +23,6 @@ public sealed class SampleScratch : IAsyncDisposable
     public SampleScratch(string name, Action<IServiceCollection, IDirectoryInfo> configure)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        ArgumentNullException.ThrowIfNull(configure);
 
         Directory = _fileSystem.DirectoryInfo.New(
             Path.Combine(Path.GetTempPath(), $"etl-samples-{name}-{Guid.NewGuid():N}"));

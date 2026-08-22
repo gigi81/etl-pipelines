@@ -19,9 +19,6 @@ public class ListPipelinesHandler : BaseHandler<ListPipelinesParams>
         ILogger<ListPipelinesHandler> logger)
         : base(result, parameters)
     {
-        ArgumentNullException.ThrowIfNull(runner);
-        ArgumentNullException.ThrowIfNull(logger);
-
         _runner = runner;
         _logger = logger;
     }
