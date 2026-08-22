@@ -51,4 +51,45 @@ public static class Extensions
 
         return builder.To(_ => new ExcelSink<TRow>(file, options));
     }
+
+    /// <summary>Terminates a dataflow by writing one sheet of a multi-sheet workbook.</summary>
+    /// <param name="builder">The dataflow being composed.</param>
+    /// <param name="file">The destination workbook. Pass the same file object for every sheet.</param>
+    /// <param name="sheetName">The name of the sheet these rows fill.</param>
+    /// <param name="options">Sheet settings, including whether to write atomically.</param>
+    /// <remarks>
+    /// <para>
+    /// Several sources converge on one workbook by giving each its own stage, because
+    /// <c>To(...)</c> hands the pipeline builder back:
+    /// </para>
+    /// <code>
+    /// services.AddEtlPipeline("report", b => b
+    ///     .From&lt;Orders, OrderRow&gt;().ToExcelSheet(report, "Orders")
+    ///     .From&lt;Customers, CustomerRow&gt;().ToExcelSheet(report, "Customers"));
+    /// </code>
+    /// <para>
+    /// Stages run one after another, so the sheets are written in the order they are declared and the
+    /// workbook is renamed into place only after the last one. Sheets of one workbook must not be put
+    /// in separate branches: branches run at the same time, and two writers interleaving into one zip
+    /// archive produce a file that will not open — starting a second sheet while one is still open
+    /// throws rather than corrupting it.
+    /// </para>
+    /// </remarks>
+    public static IPipelineBuilder ToExcelSheet<TRow>(
+        this IDataflowBuilder<TRow> builder,
+        IFileInfo file,
+        string sheetName,
+        ExcelSinkOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(file);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sheetName);
+
+        // Counted now, while the pipeline is being composed: the run needs to know how many sheets to
+        // expect so it can tell which one is the last.
+        SheetPlans.For(file).Add(sheetName);
+
+        var settings = options ?? new ExcelSinkOptions();
+        return builder.To(services => new ExcelSheetSink<TRow>(services, file, sheetName, settings));
+    }
 }
