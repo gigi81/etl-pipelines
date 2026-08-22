@@ -194,6 +194,97 @@ public sealed class SqlStageTests : IAsyncDisposable
         (await _host.ScalarAsync<long>("SELECT COUNT(*) FROM orders")).Should().Be(0, "the table exists");
     }
 
+    [Test]
+    public async Task Runs_one_statement_as_a_stage()
+    {
+        //arrange
+        await _host.ExecuteAsync("CREATE TABLE orders (Id INTEGER)");
+        await _host.ExecuteAsync("INSERT INTO orders (Id) VALUES (1), (2), (3)");
+
+        Registered().AddEtlPipeline(Pipeline, b => b.RunSql(Connection, "DELETE FROM orders WHERE Id > 1"));
+
+        //act
+        var result = await _host.RunAsync(Pipeline);
+
+        //assert
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
+        (await _host.ScalarAsync<long>("SELECT COUNT(*) FROM orders")).Should().Be(1);
+    }
+
+    [Test]
+    public async Task Binds_parameters_rather_than_pasting_them_into_the_statement()
+    {
+        //arrange
+        await _host.ExecuteAsync("CREATE TABLE orders (Id INTEGER, Customer TEXT)");
+
+        // The value is one an injection would love: pasting it into the string would end the
+        // statement early and run whatever came next.
+        const string awkward = "O'Brien'); DROP TABLE orders; --";
+
+        Registered().AddEtlPipeline(Pipeline, b => b
+            .RunSql(Connection, "INSERT INTO orders (Id, Customer) VALUES (1, $name)", options =>
+                options.Configure = command =>
+                {
+                    var parameter = command.CreateParameter();
+                    parameter.ParameterName = "$name";
+                    parameter.Value = awkward;
+                    command.Parameters.Add(parameter);
+                }));
+
+        //act
+        var result = await _host.RunAsync(Pipeline);
+
+        //assert
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
+        (await _host.ScalarAsync<string>("SELECT Customer FROM orders")).Should().Be(awkward);
+    }
+
+    [Test]
+    public async Task Names_a_statement_stage_after_the_statement()
+    {
+        //arrange
+        await _host.ExecuteAsync("CREATE TABLE orders (Id INTEGER)");
+        Registered().AddEtlPipeline(Pipeline, b => b.RunSql(Connection, "DELETE  FROM\n  orders"));
+
+        //act
+        var result = await _host.RunAsync(Pipeline);
+
+        //assert
+        // Collapsed to one line, because a run's report is a list and a statement is not.
+        result.Value.Stages.Should().ContainSingle().Which.Name.Should().Be("DELETE FROM orders");
+    }
+
+    [Test]
+    public async Task Shortens_a_long_statement_down_to_a_stage_name()
+    {
+        //arrange
+        await _host.ExecuteAsync("CREATE TABLE orders (Id INTEGER)");
+        var sql = $"DELETE FROM orders WHERE Id IN ({string.Join(", ", Enumerable.Range(1, 40))})";
+
+        Registered().AddEtlPipeline(Pipeline, b => b.RunSql(Connection, sql));
+
+        //act
+        var result = await _host.RunAsync(Pipeline);
+
+        //assert
+        var name = result.Value.Stages.Should().ContainSingle().Subject.Name;
+        name.Should().HaveLength(40).And.EndWith("...").And.StartWith("DELETE FROM orders");
+    }
+
+    [Test]
+    public async Task Reports_a_statement_that_will_not_run()
+    {
+        //arrange
+        Registered().AddEtlPipeline(Pipeline, b => b.RunSql(Connection, "DELETE FROM not_a_table"));
+
+        //act
+        var result = await _host.RunAsync(Pipeline);
+
+        //assert
+        result.IsError.Should().BeTrue();
+        result.FirstError.Description.Should().Contain("DELETE FROM not_a_table");
+    }
+
     public sealed record Order
     {
         public long Id { get; set; }

@@ -146,14 +146,47 @@ public static class Extensions
         this IPipelineBuilder builder,
         string connectionName,
         string procedure,
-        Action<StoredProcedureOptions>? configure = null)
+        Action<SqlCommandOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        var options = new StoredProcedureOptions();
+        var options = new SqlCommandOptions();
         configure?.Invoke(options);
 
-        return builder.AddStage(new StoredProcedureStage(connectionName, procedure, options));
+        return builder.AddStage(
+            new SqlCommandStage(connectionName, procedure, CommandType.StoredProcedure, options));
+    }
+
+    /// <summary>Adds a stage that runs one SQL statement.</summary>
+    /// <param name="builder">The pipeline being composed.</param>
+    /// <param name="connectionName">The name the connection was registered under.</param>
+    /// <param name="sql">The statement to run.</param>
+    /// <param name="configure">Command timeout, parameters, and what the stage is called.</param>
+    /// <remarks>
+    /// <para>
+    /// For the one-liner that does not warrant a file: truncating a staging table, setting a flag,
+    /// calling something that is not a procedure. Bind values through
+    /// <see cref="SqlCommandOptions.Configure"/> rather than building the string, which is how a
+    /// value containing a quote becomes an injection.
+    /// </para>
+    /// <para>
+    /// One command, sent as given: nothing is split on <c>GO</c> or on a changed delimiter. Several
+    /// statements, or anything with a procedure body in it, belong in a file and go through
+    /// <see cref="RunSqlScript"/>, which splits them the way the engine needs.
+    /// </para>
+    /// </remarks>
+    public static IPipelineBuilder RunSql(
+        this IPipelineBuilder builder,
+        string connectionName,
+        string sql,
+        Action<SqlCommandOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        var options = new SqlCommandOptions();
+        configure?.Invoke(options);
+
+        return builder.AddStage(new SqlCommandStage(connectionName, sql, CommandType.Text, options));
     }
 
     /// <summary>Adds a stage that runs a SQL script file.</summary>
