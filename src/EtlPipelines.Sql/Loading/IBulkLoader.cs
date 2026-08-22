@@ -1,6 +1,6 @@
 using System.Data.Common;
 
-namespace EtlPipelines.Sql;
+namespace EtlPipelines.Sql.Loading;
 
 /// <summary>
 /// A provider's fast path for getting many rows into a table.

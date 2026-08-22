@@ -1,6 +1,6 @@
-using System.Data.Common;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System.Data.Common;
 
 namespace EtlPipelines.Sql;
 
