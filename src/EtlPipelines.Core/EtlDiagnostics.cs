@@ -19,41 +19,51 @@ public static class EtlDiagnostics
     /// <summary>The name to enable when subscribing to pipeline traces.</summary>
     public const string SourceName = "EtlPipelines";
 
-    private const string PipelineTag = "etl.pipeline";
-    private const string StageTag = "etl.stage";
-    private const string RunTag = "etl.run_id";
-    private const string OutcomeTag = "etl.outcome";
-    private const string RowsInTag = "etl.rows_in";
-    private const string RowsOutTag = "etl.rows_out";
+    private const string Prefix = "etl";
+
+    // The two things a run is made of. Each names a span, a tag on that span, and the instruments
+    // that measure it, and deliberately the same word in all three places: that is what lets a trace
+    // and a metric be lined up against each other.
+    private const string Pipeline = $"{Prefix}.pipeline";
+    private const string Stage = $"{Prefix}.stage";
+    private const string Rows = $"{Prefix}.rows";
+
+    private const string RunTag = $"{Prefix}.run_id";
+    private const string OutcomeTag = $"{Prefix}.outcome";
+    private const string RowsInTag = $"{Prefix}.rows_in";
+    private const string RowsOutTag = $"{Prefix}.rows_out";
+
+    private const string Succeeded = "succeeded";
+    private const string Failed = "failed";
 
     private static readonly ActivitySource ActivitySource = new(SourceName);
 
     private static readonly Meter Meter = new(SourceName);
 
     private static readonly Counter<long> RowsIn =
-        Meter.CreateCounter<long>("etl.rows.in", "rows", "Rows consumed by a stage.");
+        Meter.CreateCounter<long>($"{Rows}.in", "rows", "Rows consumed by a stage.");
 
     private static readonly Counter<long> RowsOut =
-        Meter.CreateCounter<long>("etl.rows.out", "rows", "Rows produced by a stage.");
+        Meter.CreateCounter<long>($"{Rows}.out", "rows", "Rows produced by a stage.");
 
     private static readonly Counter<long> RowsFailed =
-        Meter.CreateCounter<long>("etl.rows.failed", "rows", "Rows rejected by a stage.");
+        Meter.CreateCounter<long>($"{Rows}.failed", "rows", "Rows rejected by a stage.");
 
     private static readonly Histogram<double> StageDuration =
-        Meter.CreateHistogram<double>("etl.stage.duration", "ms", "Stage wall-clock duration.");
+        Meter.CreateHistogram<double>($"{Stage}.duration", "ms", "Stage wall-clock duration.");
 
     private static readonly Histogram<double> RunDuration =
-        Meter.CreateHistogram<double>("etl.pipeline.duration", "ms", "Pipeline wall-clock duration.");
+        Meter.CreateHistogram<double>($"{Pipeline}.duration", "ms", "Pipeline wall-clock duration.");
 
     private static readonly Counter<long> Runs =
-        Meter.CreateCounter<long>("etl.pipeline.runs", "runs", "Pipeline runs, tagged by outcome.");
+        Meter.CreateCounter<long>($"{Pipeline}.runs", "runs", "Pipeline runs, tagged by outcome.");
 
     /// <summary>Begins the span covering one run.</summary>
     internal static Activity? StartRun(PipelineContext context)
     {
-        var activity = ActivitySource.StartActivity($"etl.pipeline {context.PipelineName}");
+        var activity = ActivitySource.StartActivity($"{Pipeline} {context.PipelineName}");
 
-        activity?.SetTag(PipelineTag, context.PipelineName);
+        activity?.SetTag(Pipeline, context.PipelineName);
         activity?.SetTag(RunTag, context.RunId);
 
         return activity;
@@ -62,10 +72,10 @@ public static class EtlDiagnostics
     /// <summary>Begins the span covering one stage of a run.</summary>
     internal static Activity? StartStage(PipelineContext context, string stage)
     {
-        var activity = ActivitySource.StartActivity($"etl.stage {stage}");
+        var activity = ActivitySource.StartActivity($"{Stage} {stage}");
 
-        activity?.SetTag(PipelineTag, context.PipelineName);
-        activity?.SetTag(StageTag, stage);
+        activity?.SetTag(Pipeline, context.PipelineName);
+        activity?.SetTag(Stage, stage);
         activity?.SetTag(RunTag, context.RunId);
 
         return activity;
@@ -87,8 +97,8 @@ public static class EtlDiagnostics
     {
         var tags = new TagList
         {
-            { PipelineTag, context.PipelineName },
-            { StageTag, result.Name },
+            { Pipeline, context.PipelineName },
+            { Stage, result.Name },
             { OutcomeTag, Outcome(error) },
         };
 
@@ -112,7 +122,7 @@ public static class EtlDiagnostics
     {
         var tags = new TagList
         {
-            { PipelineTag, context.PipelineName },
+            { Pipeline, context.PipelineName },
             { OutcomeTag, Outcome(error) },
         };
 
@@ -122,7 +132,7 @@ public static class EtlDiagnostics
         Fail(activity, error);
     }
 
-    private static string Outcome(Error? error) => error is null ? "succeeded" : "failed";
+    private static string Outcome(Error? error) => error is null ? Succeeded : Failed;
 
     private static void Fail(Activity? activity, Error? error)
     {
