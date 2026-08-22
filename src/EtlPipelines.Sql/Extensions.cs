@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.IO.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Sql;
@@ -129,5 +130,53 @@ public static class Extensions
             openConnection,
             options,
             services.GetService<IBulkLoader>()));
+    }
+
+    /// <summary>Adds a stage that runs a stored procedure.</summary>
+    /// <param name="builder">The pipeline being composed.</param>
+    /// <param name="connectionName">The name the connection was registered under.</param>
+    /// <param name="procedure">The procedure to call.</param>
+    /// <param name="configure">Command timeout, parameters, and what the stage is called.</param>
+    /// <remarks>
+    /// A stage rather than part of a dataflow, because it moves no rows through this process: it
+    /// tells the server to do something with rows an earlier stage already put there. Reach for it
+    /// when the work is far cheaper next to the data than round-tripped out here and back.
+    /// </remarks>
+    public static IPipelineBuilder RunStoredProcedure(
+        this IPipelineBuilder builder,
+        string connectionName,
+        string procedure,
+        Action<StoredProcedureOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        var options = new StoredProcedureOptions();
+        configure?.Invoke(options);
+
+        return builder.AddStage(new StoredProcedureStage(connectionName, procedure, options));
+    }
+
+    /// <summary>Adds a stage that runs a SQL script file.</summary>
+    /// <param name="builder">The pipeline being composed.</param>
+    /// <param name="connectionName">The name the connection was registered under.</param>
+    /// <param name="script">The file to run.</param>
+    /// <param name="configure">Command timeout and what the stage is called.</param>
+    /// <remarks>
+    /// The file is split into batches by the <see cref="ISqlScriptParser"/> registered under the same
+    /// connection name — <c>GO</c> for SQL Server, <c>DELIMITER</c> for MySQL, terminator detection
+    /// for Oracle, and the whole file at once for PostgreSQL and SQLite.
+    /// </remarks>
+    public static IPipelineBuilder RunSqlScript(
+        this IPipelineBuilder builder,
+        string connectionName,
+        IFileInfo script,
+        Action<SqlScriptOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        var options = new SqlScriptOptions();
+        configure?.Invoke(options);
+
+        return builder.AddStage(new SqlScriptStage(connectionName, script, options));
     }
 }

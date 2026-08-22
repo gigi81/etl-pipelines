@@ -28,6 +28,9 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <!-- Reading connection strings from IConfiguration.GetConnectionString. -->
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <!-- Script files are named as IFileInfo, the same currency the file connectors use. -->
+    <PackageReference Include="TestableIO.System.IO.Abstractions" />
+    <PackageReference Include="TestableIO.System.IO.Abstractions.Extensions" />
   </ItemGroup>
 
 </Project>
