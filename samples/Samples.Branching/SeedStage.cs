@@ -10,14 +10,14 @@ using Microsoft.Extensions.Logging;
 namespace EtlPipelines.Samples.Branching;
 
 /// <summary>Stands in for the sensor feed this job would normally be reading.</summary>
-public sealed class ReadingsData : IPipelineStage
+public sealed class SeedStage : IPipelineStage
 {
     private readonly IDirectoryInfo _directory;
-    private readonly ILogger<ReadingsData> _logger;
+    private readonly ILogger<SeedStage> _logger;
 
-    public ReadingsData(
+    public SeedStage(
         [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
-        ILogger<ReadingsData> logger)
+        ILogger<SeedStage> logger)
     {
         _directory = directory;
         _logger = logger;
@@ -36,7 +36,7 @@ public sealed class ReadingsData : IPipelineStage
     {
         var started = Stopwatch.StartNew();
 
-        var file = _directory.File(ReadingsPipeline.InputFile);
+        var file = _directory.File(Pipeline.InputFile);
         var start = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var lines = new List<string> { "SensorId,TakenAt,Celsius" };
 

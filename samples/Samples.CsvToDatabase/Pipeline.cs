@@ -18,7 +18,7 @@ public sealed record Trade(int Id, string Symbol, decimal Price, int Quantity);
 /// Left alone it registers a SQLite file in its own workspace; the integration tests substitute SQL
 /// Server, PostgreSQL, MySQL and Oracle and run this very registration against each.
 /// </remarks>
-public static class TradesPipeline
+public static class Pipeline
 {
     /// <summary>The name the pipeline is registered under.</summary>
     public const string Name = "trades";
@@ -52,7 +52,7 @@ public static class TradesPipeline
     /// The bind marker this engine wants — Oracle uses a colon where most use an at sign. Only
     /// reached when the bulk-load path is turned off; the loaders bind their own.
     /// </param>
-    public static IServiceCollection AddTradesPipeline(
+    public static IServiceCollection AddPipeline(
         this IServiceCollection services,
         IDirectoryInfo directory,
         Action<IServiceCollection, string>? configureConnection = null,
@@ -73,11 +73,11 @@ public static class TradesPipeline
         {
             builder.WithOptions(options => options.BatchSize = 1_000)
                 // The file this job loads does not exist until something fetches it.
-                .AddStage<TradesData>();
+                .AddStage<SeedStage>();
 
             if (ownsDatabase)
             {
-                builder.AddStage<TradesTable>();
+                builder.AddStage<CreateTableStage>();
             }
 
             builder

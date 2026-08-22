@@ -25,7 +25,7 @@ public sealed class SalesReport
 /// The most ordinary ETL job there is: read a CSV, drop the rows that do not belong, reshape the
 /// rest, write a spreadsheet.
 /// </summary>
-public static class SalesPipeline
+public static class Pipeline
 {
     /// <summary>The name the pipeline is registered under, and what <c>run</c> and <c>list</c> call it.</summary>
     public const string Name = "sales";
@@ -37,12 +37,12 @@ public static class SalesPipeline
     public const string OutputFile = "sales.xlsx";
 
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
-    public static IServiceCollection AddSalesPipeline(this IServiceCollection services, IDirectoryInfo directory)
+    public static IServiceCollection AddPipeline(this IServiceCollection services, IDirectoryInfo directory)
     {
         return services.AddEtlPipeline(Name, builder => builder
             // The file this job reads does not exist until something puts it there. A coarse
             // stage ahead of the dataflow is where that belongs - a real job's would download it.
-            .AddStage<SalesData>()
+            .AddStage<SeedStage>()
             .FromCsv<SalesRow>(directory.File(InputFile))
             .Where(row => row.Amount > 0)
             .Select(row => new SalesReport

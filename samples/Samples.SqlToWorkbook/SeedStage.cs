@@ -13,14 +13,14 @@ namespace EtlPipelines.Samples.SqlToWorkbook;
 /// Fills the database this sample reports on.
 /// </summary>
 /// <remarks>Stands in for the database a real job would already be pointed at.</remarks>
-public sealed class ReportData : IPipelineStage
+public sealed class SeedStage : IPipelineStage
 {
     private readonly IDirectoryInfo _directory;
-    private readonly ILogger<ReportData> _logger;
+    private readonly ILogger<SeedStage> _logger;
 
-    public ReportData(
+    public SeedStage(
         [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
-        ILogger<ReportData> logger)
+        ILogger<SeedStage> logger)
     {
         _directory = directory;
         _logger = logger;
@@ -43,7 +43,7 @@ public sealed class ReportData : IPipelineStage
     {
         var started = Stopwatch.StartNew();
 
-        await using var connection = new SqliteConnection(ReportPipeline.ConnectionString(_directory));
+        await using var connection = new SqliteConnection(Pipeline.ConnectionString(_directory));
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();

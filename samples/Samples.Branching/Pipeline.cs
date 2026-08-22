@@ -19,7 +19,7 @@ public sealed class ReadingReport
 /// Keeping the raw record while the same rows carry on: the archive and the report come from one
 /// pass over the source rather than from two jobs that have to agree with each other.
 /// </summary>
-public static class ReadingsPipeline
+public static class Pipeline
 {
     /// <summary>The name the pipeline is registered under.</summary>
     public const string Name = "readings";
@@ -34,12 +34,12 @@ public static class ReadingsPipeline
     public const string ReportFile = "report.xlsx";
 
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
-    public static IServiceCollection AddReadingsPipeline(this IServiceCollection services, IDirectoryInfo directory)
+    public static IServiceCollection AddPipeline(this IServiceCollection services, IDirectoryInfo directory)
     {
         return services.AddEtlPipeline(Name, builder => builder
             .WithOptions(options => options.BatchSize = 256)
             // The feed this job reads does not exist until something fetches it.
-            .AddStage<ReadingsData>()
+            .AddStage<SeedStage>()
             .FromCsv<Reading>(directory.File(InputFile))
             .Branch(
                 // Untouched, exactly as it arrived.
