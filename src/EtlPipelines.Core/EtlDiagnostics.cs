@@ -7,12 +7,26 @@ namespace EtlPipelines.Core;
 /// Tracing and metrics for pipeline runs, exposed through the standard .NET primitives so any
 /// OpenTelemetry exporter picks them up without this library depending on one.
 /// </summary>
+/// <remarks>
+/// Every span, instrument and tag name the runtime publishes is declared here and nowhere else. The
+/// engine calls in at the points where something worth recording happened and passes what it knows;
+/// what that becomes — which tag, which counter, whether a span is marked failed — is this class's
+/// business alone. Keeping it that way is what makes the published telemetry reviewable in one place
+/// instead of assembled from tags set across the runtime.
+/// </remarks>
 public static class EtlDiagnostics
 {
     /// <summary>The name to enable when subscribing to pipeline traces.</summary>
     public const string SourceName = "EtlPipelines";
 
-    internal static readonly ActivitySource ActivitySource = new(SourceName);
+    private const string PipelineTag = "etl.pipeline";
+    private const string StageTag = "etl.stage";
+    private const string RunTag = "etl.run_id";
+    private const string OutcomeTag = "etl.outcome";
+    private const string RowsInTag = "etl.rows_in";
+    private const string RowsOutTag = "etl.rows_out";
+
+    private static readonly ActivitySource ActivitySource = new(SourceName);
 
     private static readonly Meter Meter = new(SourceName);
 
@@ -28,17 +42,93 @@ public static class EtlDiagnostics
     private static readonly Histogram<double> StageDuration =
         Meter.CreateHistogram<double>("etl.stage.duration", "ms", "Stage wall-clock duration.");
 
-    internal static void RecordStage(string pipeline, StageResult stage)
+    private static readonly Histogram<double> RunDuration =
+        Meter.CreateHistogram<double>("etl.pipeline.duration", "ms", "Pipeline wall-clock duration.");
+
+    private static readonly Counter<long> Runs =
+        Meter.CreateCounter<long>("etl.pipeline.runs", "runs", "Pipeline runs, tagged by outcome.");
+
+    /// <summary>Begins the span covering one run.</summary>
+    internal static Activity? StartRun(PipelineContext context)
+    {
+        var activity = ActivitySource.StartActivity($"etl.pipeline {context.PipelineName}");
+
+        activity?.SetTag(PipelineTag, context.PipelineName);
+        activity?.SetTag(RunTag, context.RunId);
+
+        return activity;
+    }
+
+    /// <summary>Begins the span covering one stage of a run.</summary>
+    internal static Activity? StartStage(PipelineContext context, string stage)
+    {
+        var activity = ActivitySource.StartActivity($"etl.stage {stage}");
+
+        activity?.SetTag(PipelineTag, context.PipelineName);
+        activity?.SetTag(StageTag, stage);
+        activity?.SetTag(RunTag, context.RunId);
+
+        return activity;
+    }
+
+    /// <summary>
+    /// Records what a stage did, whether or not it finished.
+    /// </summary>
+    /// <remarks>
+    /// The rows are recorded whether the stage failed or not: one that died after half a million rows
+    /// still consumed them, and a counter that only moved on success would report a load as having
+    /// done nothing at all. The outcome is a tag, so the two are still tellable apart.
+    /// </remarks>
+    internal static void RecordStage(
+        PipelineContext context,
+        Activity? activity,
+        StageResult result,
+        Error? error = null)
     {
         var tags = new TagList
         {
-            { "etl.pipeline", pipeline },
-            { "etl.stage", stage.Name },
+            { PipelineTag, context.PipelineName },
+            { StageTag, result.Name },
+            { OutcomeTag, Outcome(error) },
         };
 
-        RowsIn.Add(stage.RowsIn, tags);
-        RowsOut.Add(stage.RowsOut, tags);
-        RowsFailed.Add(stage.RowsFailed, tags);
-        StageDuration.Record(stage.Elapsed.TotalMilliseconds, tags);
+        RowsIn.Add(result.RowsIn, tags);
+        RowsOut.Add(result.RowsOut, tags);
+        RowsFailed.Add(result.RowsFailed, tags);
+        StageDuration.Record(result.Elapsed.TotalMilliseconds, tags);
+
+        activity?.SetTag(RowsInTag, result.RowsIn);
+        activity?.SetTag(RowsOutTag, result.RowsOut);
+
+        Fail(activity, error);
+    }
+
+    /// <summary>Records how a run ended, whether or not it finished.</summary>
+    internal static void RecordRun(
+        PipelineContext context,
+        Activity? activity,
+        TimeSpan elapsed,
+        Error? error = null)
+    {
+        var tags = new TagList
+        {
+            { PipelineTag, context.PipelineName },
+            { OutcomeTag, Outcome(error) },
+        };
+
+        RunDuration.Record(elapsed.TotalMilliseconds, tags);
+        Runs.Add(1, tags);
+
+        Fail(activity, error);
+    }
+
+    private static string Outcome(Error? error) => error is null ? "succeeded" : "failed";
+
+    private static void Fail(Activity? activity, Error? error)
+    {
+        if (error is { } failure)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, failure.Description);
+        }
     }
 }

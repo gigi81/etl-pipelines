@@ -31,15 +31,16 @@ public sealed class EtlPipeline : IPipeline
     {
         var started = Stopwatch.StartNew();
 
-        using var activity = EtlDiagnostics.ActivitySource.StartActivity($"etl.pipeline {Name}");
-
         // One scope per run, and every component is registered scoped, so each run resolves its own
         // stages and ports and the scope disposes all of them together when the run ends. Two runs of
         // the same pipeline — sequential or concurrent — therefore share nothing.
         await using var scope = _services.CreateAsyncScope();
         var context = new PipelineContext(Name, scope.ServiceProvider, _blueprint.Options);
 
-        activity?.SetTag("etl.run_id", context.RunId);
+        // After the context, because the span is tagged with the run it belongs to. Building and
+        // tearing down the scope then falls outside the span - which is the more honest boundary
+        // anyway, since PipelineResult.Elapsed does not count them either.
+        using var activity = EtlDiagnostics.StartRun(context);
 
         var results = new List<StageResult>(_blueprint.Stages.Count);
 
@@ -50,13 +51,17 @@ public sealed class EtlPipeline : IPipeline
 
             if (result.IsError)
             {
-                activity?.SetStatus(ActivityStatusCode.Error, result.FirstError.Description);
+                EtlDiagnostics.RecordRun(context, activity, started.Elapsed, result.FirstError);
                 return result.Errors;
             }
 
             results.Add(result.Value);
         }
 
-        return PipelineResult.FromStages(Name, results, started.Elapsed);
+        var run = PipelineResult.FromStages(Name, results, started.Elapsed);
+
+        EtlDiagnostics.RecordRun(context, activity, run.Elapsed);
+
+        return run;
     }
 }

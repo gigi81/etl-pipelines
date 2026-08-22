@@ -18,11 +18,14 @@
   </PropertyGroup>
 
   <!--
-    Abstractions only, like the connectors: everything needed to run a pipeline and report on it -
-    IPipeline, PipelineResult - is declared there, so hosting does not depend on the execution engine.
+    Core as well as Abstractions, unlike the connectors. A connector must not drag in the execution
+    engine; this package is the engine's front door, and any application using it has already called
+    AddEtlPipeline. Referencing it means the activity source name comes from EtlDiagnostics, where it
+    is declared, rather than being repeated here as a string that must silently match.
   -->
   <ItemGroup>
     <ProjectReference Include="..\EtlPipelines.Abstractions\EtlPipelines.Abstractions.csproj" />
+    <ProjectReference Include="..\EtlPipelines.Core\EtlPipelines.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

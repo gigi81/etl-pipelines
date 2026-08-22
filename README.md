@@ -470,8 +470,11 @@ to an `ActivitySource` rather than to a logger, so turning the level up surfaces
 without an exporter:
 
 ```bash
-myapp run orders --Logging:LogLevel:Default=Debug
+Logging__LogLevel__Default=Debug myapp run orders
 ```
+
+Through the environment rather than a `--` argument: the command line belongs to the verbs, so
+configuration comes from where the generic host normally reads it.
 
 Commands of your own go in alongside the built-in ones — the command line is
 [Albatross.CommandLine](https://rushuiguan.github.io/commandline/) over `System.CommandLine`, so a
@@ -513,5 +516,19 @@ return await new EtlPipelinesHost("Loads the nightly orders file.")
 
 ## Observability
 
-Traces and metrics are published through `ActivitySource` and `Meter` named `EtlPipelines`, so any
-OpenTelemetry exporter picks them up without this library depending on one.
+Traces and metrics are published through an `ActivitySource` and a `Meter` both named
+`EtlPipelines`, so any OpenTelemetry exporter picks them up without this library depending on one.
+Every span, instrument and tag name is declared in `EtlDiagnostics` and nowhere else.
+
+| Instrument | |
+|---|---|
+| `etl.rows.in` / `etl.rows.out` / `etl.rows.failed` | rows a stage consumed, produced and rejected |
+| `etl.stage.duration` | stage wall-clock time |
+| `etl.pipeline.duration` | run wall-clock time |
+| `etl.pipeline.runs` | runs completed |
+
+Tagged with `etl.pipeline`, `etl.stage` and `etl.outcome`. **Rows are counted whether the stage
+succeeded or not** — one that died after half a million rows still consumed them, and a counter that
+only moved on success would report a failed load as having done nothing at all. `etl.outcome` is what
+tells the two apart. Spans carry `etl.run_id` as well, and a failed one is marked
+`ActivityStatusCode.Error` with the error's description.

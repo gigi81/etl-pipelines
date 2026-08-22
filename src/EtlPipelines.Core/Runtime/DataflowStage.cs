@@ -31,9 +31,7 @@ internal sealed class DataflowStage(string name, IReadOnlyList<DataflowNode> tem
         var tracker = new RowErrorTracker(context.Options);
 
         using var run = new DataflowRunContext(context, tracker, cancellationToken);
-        using var activity = EtlDiagnostics.ActivitySource.StartActivity($"etl.stage {Name}");
-        activity?.SetTag("etl.pipeline", context.PipelineName);
-        activity?.SetTag("etl.run_id", context.RunId);
+        using var activity = EtlDiagnostics.StartStage(context, Name);
 
         try
         {
@@ -51,27 +49,23 @@ internal sealed class DataflowStage(string name, IReadOnlyList<DataflowNode> tem
         }
 
         var elapsed = started.Elapsed;
-
-        if (run.FirstError is { } error)
-        {
-            return error;
-        }
+        var error = run.FirstError;
 
         // Distinguish a caller cancellation from a clean finish: nodes swallow cancellation so the
         // stage can report it once, coherently, instead of as a torn set of partial failures.
-        if (cancellationToken.IsCancellationRequested)
+        if (error is null && cancellationToken.IsCancellationRequested)
         {
-            return Error.Failure($"stage.{Name}.cancelled", $"Stage '{Name}' was cancelled.");
+            error = Error.Failure($"stage.{Name}.cancelled", $"Stage '{Name}' was cancelled.");
         }
 
         var first = nodes[0];
         var last = nodes[^1];
         var result = new StageResult(Name, first.RowsIn, last.RowsOut, tracker.Failed, elapsed);
 
-        EtlDiagnostics.RecordStage(context.PipelineName, result);
-        activity?.SetTag("etl.rows_in", result.RowsIn);
-        activity?.SetTag("etl.rows_out", result.RowsOut);
+        // Before the exit rather than after the happy path, so a stage that failed part-way is still
+        // counted for the rows it did move.
+        EtlDiagnostics.RecordStage(context, activity, result, error);
 
-        return result;
+        return error is { } failure ? failure : result;
     }
 }

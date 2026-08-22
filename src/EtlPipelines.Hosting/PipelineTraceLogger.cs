@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using EtlPipelines.Core;
 using Microsoft.Extensions.Logging;
 
 namespace EtlPipelines.Hosting;
@@ -19,9 +20,6 @@ namespace EtlPipelines.Hosting;
 /// </remarks>
 public sealed class PipelineTraceLogger : IDisposable
 {
-    /// <summary>The activity source name the runtime publishes under.</summary>
-    private const string SourceName = "EtlPipelines";
-
     private readonly ILogger<PipelineTraceLogger> _logger;
     private readonly ActivityListener _listener;
 
@@ -31,7 +29,7 @@ public sealed class PipelineTraceLogger : IDisposable
         _logger = logger;
         _listener = new ActivityListener
         {
-            ShouldListenTo = source => source.Name == SourceName,
+            ShouldListenTo = source => source.Name == EtlDiagnostics.SourceName,
             // All data rather than propagation only: the tags carry the row counts, and without them
             // there would be nothing worth logging.
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
