@@ -1,5 +1,9 @@
 # EtlPipelines
 
+[![NuGet Version](https://img.shields.io/nuget/v/EtlPipelines.Core)](https://www.nuget.org/packages/EtlPipelines.Core)
+[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/gigi81/etl-pipelines/ci.yml)](https://github.com/gigi81/etl-pipelines/actions)
+[![codecov](https://codecov.io/github/gigi81/etl-pipelines/graph/badge.svg)](https://codecov.io/github/gigi81/etl-pipelines)
+
 A streaming ETL pipeline abstraction for .NET, built so that extract, transform and load actually
 overlap rather than run one after another.
 

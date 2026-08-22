@@ -85,6 +85,15 @@ jobs:
         with:
           name: Code coverage ${{ matrix.os }}
           path: "./TestResults/*.cobertura.xml"
+      # One leg only. Codecov merges every report it is sent for a commit, and the three legs cover
+      # the same lines, so uploading all of them would say nothing extra. Linux is the one that also
+      # runs the container-backed tests, so its report is the most complete of the three.
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        if: runner.os == 'Linux'
+        with:
+          files: "./TestResults/*.cobertura.xml"
+          token: ${{ secrets.CODECOV_TOKEN }}
   pack:
     name: Pack
     needs: [test]

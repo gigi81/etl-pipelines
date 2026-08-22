@@ -146,16 +146,29 @@ public sealed class CollectingSink<TRow> : IDataSink<TRow>
 }
 
 /// <summary>Fails once it has seen a given number of rows, to exercise mid-run failure.</summary>
-public sealed class FailingSink<TRow>(int failAfter) : IDataSink<TRow>
+/// <remarks>
+/// <paramref name="delayPerBatch"/> matters when this sits alongside another branch that writes to
+/// the database: without it this sink can consume its batches and fail before the sibling has written
+/// anything at all, which makes "the run failed part-way through" untrue in the only sense a test
+/// asserting on what was left behind cares about.
+/// </remarks>
+public sealed class FailingSink<TRow>(int failAfter, TimeSpan delayPerBatch = default) : IDataSink<TRow>
 {
     private int _seen;
 
-    public ValueTask<ErrorOr<int>> WriteAsync(ReadOnlyMemory<TRow> batch, CancellationToken cancellationToken)
+    public async ValueTask<ErrorOr<int>> WriteAsync(
+        ReadOnlyMemory<TRow> batch,
+        CancellationToken cancellationToken)
     {
+        if (delayPerBatch > TimeSpan.Zero)
+        {
+            await Task.Delay(delayPerBatch, cancellationToken);
+        }
+
         _seen += batch.Length;
-        return ValueTask.FromResult<ErrorOr<int>>(_seen >= failAfter
+        return _seen >= failAfter
             ? Error.Failure("sink.exploded", "Deliberate failure.")
-            : batch.Length);
+            : batch.Length;
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

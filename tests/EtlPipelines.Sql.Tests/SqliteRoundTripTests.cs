@@ -149,7 +149,9 @@ public sealed class SqliteRoundTripTests : IAsyncDisposable
             .From(new ArraySource<Order>(Sample(400)))
             .Branch(
                 b1 => b1.ToSqlTable(_host.Open, "orders", o => o.UseTransaction = false),
-                b2 => b2.To(new FailingSink<Order>(failAfter: 40))));
+                // Delayed so the database branch provably writes before this gives up: this test is
+                // about what survives a failure, which needs something to have been written first.
+                b2 => b2.To(new FailingSink<Order>(failAfter: 40, TimeSpan.FromMilliseconds(10)))));
 
         //act
         var result = await _host.RunAsync(PipelineName);
