@@ -1,9 +1,33 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+    <Description>Runs EtlPipelines pipelines as a command line application.</Description>
+    <!--
+      The Albatross.CommandLine source generator emits public command classes with no XML comments,
+      and this repository builds with GenerateDocumentationFile and TreatWarningsAsErrors, so CS1591
+      would fail the build on code nobody here writes. CS1591 is only controllable through NoWarn -
+      an .editorconfig severity for *.g.cs does not reach it - so it is off for this project, and the
+      hand-written types below carry their documentation by review rather than by the compiler.
+    -->
+    <!--
+      NU5104: Albatross.CommandLine is a release candidate, and packing a stable version with a
+      prerelease dependency is an error rather than a warning here. Without this a tagged release
+      could not be packed at all. Drop it when the dependency goes stable.
+    -->
+    <NoWarn>$(NoWarn);CS1591;NU5104</NoWarn>
   </PropertyGroup>
+
+  <!--
+    Abstractions only, like the connectors: everything needed to run a pipeline and report on it -
+    IPipeline, PipelineResult - is declared there, so hosting does not depend on the execution engine.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\EtlPipelines.Abstractions\EtlPipelines.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Brings System.CommandLine and Microsoft.Extensions.Hosting with it. -->
+    <PackageReference Include="Albatross.CommandLine" />
+  </ItemGroup>
 
 </Project>

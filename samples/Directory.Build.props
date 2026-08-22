@@ -12,6 +12,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      Directly, in every sample, because the Albatross.CommandLine source generator is an analyzer and
+      analyzers do not flow across a ProjectReference. A sample that only inherited the package through
+      Samples.Common would compile, and its [Verb] classes would simply never be generated.
+    -->
+    <PackageReference Include="Albatross.CommandLine" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="TestableIO.System.IO.Abstractions.Wrappers" />

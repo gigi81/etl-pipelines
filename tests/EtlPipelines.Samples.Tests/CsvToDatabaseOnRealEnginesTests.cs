@@ -1,5 +1,4 @@
 using System.Data.Common;
-using EtlPipelines.Samples.Common;
 using EtlPipelines.Samples.CsvToDatabase;
 using EtlPipelines.Sql.MySql;
 using EtlPipelines.Sql.Oracle;
@@ -45,7 +44,12 @@ public abstract class CsvToDatabaseOnRealEnginesTests<TFixture>
     public async Task Loads_the_sample_file_into_the_table()
     {
         //arrange
-        using var scratch = new SampleScratch("csv-db");
+        // The engine is the only thing that changes: the same registration the sample's own command
+        // line uses, handed a different Add...Connection.
+        await using var scratch = new SampleScratch("csv-db", (services, workspace) =>
+            services
+                .AddSingleton<TradesData>()
+                .AddTradesPipeline(workspace, Register, ParameterPrefix));
 
         await using (var connection = await Open()(CancellationToken.None))
         {
@@ -54,26 +58,21 @@ public abstract class CsvToDatabaseOnRealEnginesTests<TFixture>
             await command.ExecuteNonQueryAsync();
         }
 
+        await scratch.GetRequiredService<TradesData>().WriteAsync(CancellationToken.None);
+
         //act
-        // The engine is the only thing that changes: the same sample class, given a connection, a
-        // bulk loader and a bind marker, and run through the same host its Program.cs starts.
-        await using var run = await SampleHost.RunAsync(
-            new CsvToDatabaseSample
-            {
-                ConfigureConnection = Register,
-                ParameterPrefix = ParameterPrefix,
-            },
-            scratch.Workspace);
+        var result = await scratch.RunAsync();
 
         //assert
-        run.Result.RowsRead.Should().Be(10_000);
-        run.Result.RowsWritten.Should().Be(CsvToDatabaseSample.ExpectedRows);
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
+        result.Value.RowsRead.Should().Be(TradesData.Rows);
+        result.Value.RowsWritten.Should().Be(TradesPipeline.ExpectedRows);
 
         await using var check = await Open()(CancellationToken.None);
         await using var count = check.CreateCommand();
-        count.CommandText = $"SELECT COUNT(*) FROM {CsvToDatabaseSample.TableName}";
+        count.CommandText = $"SELECT COUNT(*) FROM {TradesPipeline.Table}";
         Convert.ToInt64(await count.ExecuteScalarAsync())
-            .Should().Be(CsvToDatabaseSample.ExpectedRows, "every filtered row reached the table");
+            .Should().Be(TradesPipeline.ExpectedRows, "every filtered row reached the table");
     }
 }
 
@@ -95,7 +94,7 @@ public sealed class SqlServerSampleTests(SqlServerFixture fixture)
         (services, name) => services.AddSqlServerConnection(name, Fixture.ConnectionString);
 
     protected override string CreateTableSql =>
-        $"CREATE TABLE {CsvToDatabaseSample.TableName} (Id INT, Symbol NVARCHAR(10), Price DECIMAL(18,2), Quantity INT)";
+        $"CREATE TABLE {TradesPipeline.Table} (Id INT, Symbol NVARCHAR(10), Price DECIMAL(18,2), Quantity INT)";
 }
 
 public sealed class PostgreSqlFixture : DatabaseFixture<PostgreSqlContainer>
@@ -116,7 +115,7 @@ public sealed class PostgreSqlSampleTests(PostgreSqlFixture fixture)
         (services, name) => services.AddPostgreSqlConnection(name, Fixture.ConnectionString);
 
     protected override string CreateTableSql =>
-        $"CREATE TABLE {CsvToDatabaseSample.TableName} (Id INT, Symbol TEXT, Price NUMERIC(18,2), Quantity INT)";
+        $"CREATE TABLE {TradesPipeline.Table} (Id INT, Symbol TEXT, Price NUMERIC(18,2), Quantity INT)";
 }
 
 public sealed class MySqlFixture : DatabaseFixture<MySqlContainer>
@@ -139,7 +138,7 @@ public sealed class MySqlSampleTests(MySqlFixture fixture)
         (services, name) => services.AddMySqlConnection(name, Fixture.ConnectionString);
 
     protected override string CreateTableSql =>
-        $"CREATE TABLE {CsvToDatabaseSample.TableName} (Id INT, Symbol VARCHAR(10), Price DECIMAL(18,2), Quantity INT)";
+        $"CREATE TABLE {TradesPipeline.Table} (Id INT, Symbol VARCHAR(10), Price DECIMAL(18,2), Quantity INT)";
 }
 
 public sealed class OracleFixture : DatabaseFixture<OracleContainer>
@@ -163,5 +162,5 @@ public sealed class OracleSampleTests(OracleFixture fixture)
     protected override string? ParameterPrefix => ":";
 
     protected override string CreateTableSql =>
-        $"CREATE TABLE {CsvToDatabaseSample.TableName} (Id NUMBER(10), Symbol VARCHAR2(10), Price NUMBER(18,2), Quantity NUMBER(10))";
+        $"CREATE TABLE {TradesPipeline.Table} (Id NUMBER(10), Symbol VARCHAR2(10), Price NUMBER(18,2), Quantity NUMBER(10))";
 }

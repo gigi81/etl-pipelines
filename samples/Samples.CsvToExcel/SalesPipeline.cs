@@ -25,19 +25,25 @@ public sealed class SalesReport
 /// The most ordinary ETL job there is: read a CSV, drop the rows that do not belong, reshape the
 /// rest, write a spreadsheet.
 /// </summary>
-public sealed class CsvToExcelSample : Sample
+public static class SalesPipeline
 {
-    public override string PipelineName => "sales";
+    /// <summary>The name the pipeline is registered under, and what <c>run</c> and <c>list</c> call it.</summary>
+    public const string Name = "sales";
 
-    public override string Description => "CSV in, filtered and reshaped, Excel out";
+    /// <summary>The incoming file, as the sample's own seeder writes it.</summary>
+    public const string InputFile = "sales.csv";
 
-    public override void Register(IServiceCollection services, SampleWorkspace workspace)
+    /// <summary>The workbook the run produces.</summary>
+    public const string OutputFile = "sales.xlsx";
+
+    /// <summary>Registers the pipeline against the directory the run is working in.</summary>
+    public static IServiceCollection AddSalesPipeline(this IServiceCollection services, SampleWorkspace workspace)
     {
-        var input = workspace.File("sales.csv");
-        var output = workspace.File("sales.xlsx");
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(workspace);
 
-        services.AddEtlPipeline(PipelineName, builder => builder
-            .FromCsv<SalesRow>(input)
+        return services.AddEtlPipeline(Name, builder => builder
+            .FromCsv<SalesRow>(workspace.File(InputFile))
             .Where(row => row.Amount > 0)
             .Select(row => new SalesReport
             {
@@ -46,9 +52,6 @@ public sealed class CsvToExcelSample : Sample
                 Product = row.Product,
                 AmountInCents = row.Amount * 100,
             })
-            .ToExcel(output));
+            .ToExcel(workspace.File(OutputFile)));
     }
-
-    public override Task PrepareAsync(SampleWorkspace workspace, CancellationToken cancellationToken) =>
-        SampleData.WriteSalesAsync(workspace.File("sales.csv"), cancellationToken);
 }

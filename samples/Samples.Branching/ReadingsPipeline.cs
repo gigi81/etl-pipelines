@@ -19,24 +19,32 @@ public sealed class ReadingReport
 /// Keeping the raw record while the same rows carry on: the archive and the report come from one
 /// pass over the source rather than from two jobs that have to agree with each other.
 /// </summary>
-public sealed class BranchingSample : Sample
+public static class ReadingsPipeline
 {
-    public override string PipelineName => "readings";
+    /// <summary>The name the pipeline is registered under.</summary>
+    public const string Name = "readings";
 
-    public override string Description => "One read of the source, an archive and a report out of it";
+    /// <summary>The incoming file, as the sample's own seeder writes it.</summary>
+    public const string InputFile = "readings.csv";
 
-    public override void Register(IServiceCollection services, SampleWorkspace workspace)
+    /// <summary>Every row, exactly as it arrived.</summary>
+    public const string ArchiveFile = "archive.csv";
+
+    /// <summary>The warm rows, on their way to somebody who will read them.</summary>
+    public const string ReportFile = "report.xlsx";
+
+    /// <summary>Registers the pipeline against the directory the run is working in.</summary>
+    public static IServiceCollection AddReadingsPipeline(this IServiceCollection services, SampleWorkspace workspace)
     {
-        var incoming = workspace.File("readings.csv");
-        var archive = workspace.File("archive.csv");
-        var report = workspace.File("report.xlsx");
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(workspace);
 
-        services.AddEtlPipeline(PipelineName, builder => builder
+        return services.AddEtlPipeline(Name, builder => builder
             .WithOptions(options => options.BatchSize = 256)
-            .FromCsv<Reading>(incoming)
+            .FromCsv<Reading>(workspace.File(InputFile))
             .Branch(
                 // Untouched, exactly as it arrived.
-                archived => archived.ToCsv(archive),
+                archived => archived.ToCsv(workspace.File(ArchiveFile)),
                 // The same rows, on their way to something a person will read.
                 reported => reported
                     .Where(reading => reading.Celsius > 0)
@@ -46,9 +54,6 @@ public sealed class BranchingSample : Sample
                         TakenAt = reading.TakenAt,
                         Fahrenheit = Math.Round((reading.Celsius * 9 / 5) + 32, 2),
                     })
-                    .ToExcel(report)));
+                    .ToExcel(workspace.File(ReportFile))));
     }
-
-    public override Task PrepareAsync(SampleWorkspace workspace, CancellationToken cancellationToken) =>
-        SampleData.WriteReadingsAsync(workspace.File("readings.csv"), cancellationToken);
 }

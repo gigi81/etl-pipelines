@@ -65,6 +65,13 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IPipelineFactory, PipelineFactory>();
         services.AddSingleton(builder.CreateBlueprint());
 
+        // Also as IPipeline, so that a host can take IEnumerable<IPipeline> and discover what an
+        // application registered without being told the names first - which is what lets a command
+        // line front end offer "list" and refuse an unknown name with the real ones in the message.
+        // The factory still owns the instance; this resolves the same object rather than a second.
+        services.AddSingleton<IPipeline>(provider =>
+            provider.GetRequiredService<IPipelineFactory>().Get(name));
+
         return services;
     }
 

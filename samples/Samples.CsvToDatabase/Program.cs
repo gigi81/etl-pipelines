@@ -1,5 +1,4 @@
-using EtlPipelines.Samples.Common;
 using EtlPipelines.Samples.CsvToDatabase;
 
-// Everything a reader came here for is in CsvToDatabaseSample.cs. This starts a generic host around it.
-return await SampleHost.RunAsync<CsvToDatabaseSample>(args);
+// The application itself is in TradesCommand.cs, where the tests can reach it too.
+return await TradesCli.RunAsync(args);

@@ -1,18 +1,37 @@
+using EtlPipelines.Samples.Common;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 
 namespace EtlPipelines.Samples.SqlToWorkbook;
 
 /// <summary>
 /// Fills the database this sample reports on.
 /// </summary>
-/// <remarks>Kept out of the sample itself, where it would bury the three queries that are the point.</remarks>
-internal static class SampleData
+/// <remarks>Stands in for the database a real job would already be pointed at.</remarks>
+public sealed class ReportData
 {
+    private readonly SampleWorkspace _workspace;
+    private readonly ILogger<ReportData> _logger;
+
+    public ReportData(SampleWorkspace workspace, ILogger<ReportData> logger)
+    {
+        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        _workspace = workspace;
+        _logger = logger;
+    }
+
+    /// <summary>Rows seeded into each table.</summary>
     public const int Rows = 200;
 
-    public static async Task SeedAsync(string connectionString, CancellationToken cancellationToken)
+    /// <summary>This provider build has no <c>generate_series</c>, so the rows come from a recursive CTE.</summary>
+    private const string Series =
+        "(WITH RECURSIVE series(value) AS (SELECT 1 UNION ALL SELECT value + 1 FROM series WHERE value < 200) SELECT value FROM series)";
+
+    public async Task SeedAsync(CancellationToken cancellationToken)
     {
-        await using var connection = new SqliteConnection(connectionString);
+        await using var connection = new SqliteConnection(ReportPipeline.ConnectionString(_workspace));
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
@@ -37,9 +56,6 @@ internal static class SampleData
             """;
 
         await command.ExecuteNonQueryAsync(cancellationToken);
+        _logger.LogInformation("Seeded {Rows} orders and customers", Rows);
     }
-
-    /// <summary>This provider build has no <c>generate_series</c>, so the rows come from a recursive CTE.</summary>
-    private const string Series =
-        "(WITH RECURSIVE series(value) AS (SELECT 1 UNION ALL SELECT value + 1 FROM series WHERE value < 200) SELECT value FROM series)";
 }
