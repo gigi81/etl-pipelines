@@ -62,7 +62,7 @@ public sealed class CsvToDatabaseSample : Sample
             }));
     }
 
-    public override async Task PrepareAsync(SampleWorkspace workspace, CancellationToken cancellationToken)
+    public async override Task PrepareAsync(SampleWorkspace workspace, CancellationToken cancellationToken)
     {
         await SampleData.WriteTradesAsync(workspace.File("trades.csv"), cancellationToken);
 

@@ -30,7 +30,7 @@ internal sealed class SampleRunner(
     IHostApplicationLifetime lifetime,
     SampleRunState state) : BackgroundService
 {
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected async override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var logger = loggerFactory.CreateLogger(sample.GetType());
 

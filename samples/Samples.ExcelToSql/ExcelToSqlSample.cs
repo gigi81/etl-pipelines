@@ -46,14 +46,14 @@ public sealed class ExcelToSqlSample : Sample
                 options => options.Columns = ["Id", "Customer", "Amount"]));
     }
 
-    public override async Task PrepareAsync(SampleWorkspace workspace, CancellationToken cancellationToken)
+    public async override Task PrepareAsync(SampleWorkspace workspace, CancellationToken cancellationToken)
     {
         await SampleData.WriteWorkbookAsync(workspace.File("submitted.xlsx"), cancellationToken);
         await SampleData.CreateTableAsync(ConnectionString(workspace), cancellationToken);
     }
 
     /// <summary>Row counts alone would not say that anything had been set aside.</summary>
-    public override async Task ReportAsync(SampleOutcome outcome, CancellationToken cancellationToken)
+    public async override Task ReportAsync(SampleOutcome outcome, CancellationToken cancellationToken)
     {
         var rejected = outcome.Services.GetRequiredService<RejectedRows>();
 
