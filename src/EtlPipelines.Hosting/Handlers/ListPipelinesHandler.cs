@@ -1,43 +1,9 @@
 using System.CommandLine;
 using Albatross.CommandLine;
-using Albatross.CommandLine.Annotations;
+using EtlPipelines.Hosting.Commands;
 using Microsoft.Extensions.Logging;
 
-namespace EtlPipelines.Hosting;
-
-/// <summary>Runs one registered pipeline.</summary>
-[Verb<RunPipelineHandler>("run", Description = "Runs a registered pipeline by name.")]
-public class RunPipelineParams
-{
-    /// <summary>The pipeline to run, as it was named in <c>AddEtlPipeline</c>.</summary>
-    [Argument(Description = "The name the pipeline was registered under.")]
-    public required string Pipeline { get; init; }
-}
-
-/// <summary>Handles <c>run</c>.</summary>
-public class RunPipelineHandler : BaseHandler<RunPipelineParams>
-{
-    private readonly PipelineRunner _runner;
-
-    /// <summary>Takes the runner every command line front end shares.</summary>
-    public RunPipelineHandler(ParseResult result, RunPipelineParams parameters, PipelineRunner runner)
-        : base(result, parameters)
-    {
-        ArgumentNullException.ThrowIfNull(runner);
-
-        _runner = runner;
-    }
-
-    /// <inheritdoc />
-    public override Task<int> InvokeAsync(CancellationToken cancellationToken) =>
-        _runner.RunAsync(parameters.Pipeline, cancellationToken);
-}
-
-/// <summary>Lists the pipelines the application registered.</summary>
-[Verb<ListPipelinesHandler>("list", Description = "Lists the pipelines this application can run.")]
-public class ListPipelinesParams
-{
-}
+namespace EtlPipelines.Hosting.Handlers;
 
 /// <summary>Handles <c>list</c>.</summary>
 public class ListPipelinesHandler : BaseHandler<ListPipelinesParams>
