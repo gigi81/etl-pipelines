@@ -49,7 +49,7 @@ public class PipelineRunner
             _logger.LogError(
                 "No pipeline named '{Pipeline}' is registered. Registered pipelines: {Registered}",
                 name,
-                Names());
+                this.PipelineNames);
 
             return 1;
         }
@@ -76,7 +76,7 @@ public class PipelineRunner
             return 1;
         }
 
-        _logger.LogInformation("Running every registered pipeline: {Registered}", Names());
+        _logger.LogInformation("Running pipeline(s): {Registered}", this.PipelineNames);
 
         foreach (var pipeline in pipelines)
         {
@@ -97,7 +97,8 @@ public class PipelineRunner
     public async Task<int> RunAsync(IPipeline pipeline, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(pipeline);
-
+        
+        _logger.LogInformation("Starting pipeline: {PipelineName}", pipeline.Name);
         var run = await pipeline.RunAsync(cancellationToken).ConfigureAwait(false);
 
         if (run.IsError)
@@ -114,10 +115,13 @@ public class PipelineRunner
         return 0;
     }
 
-    private string Names()
+    private string PipelineNames
     {
-        var names = _pipelines.Select(pipeline => pipeline.Name).ToArray();
-        return names.Length == 0 ? "(none)" : string.Join(", ", names);
+        get
+        {
+            var names = _pipelines.Select(pipeline => pipeline.Name).ToArray();
+            return names.Length == 0 ? "(none)" : string.Join(", ", names);
+        }
     }
 
     private void Report(PipelineResult result)
