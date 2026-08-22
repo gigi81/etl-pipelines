@@ -77,8 +77,8 @@ public static class SqlServerExtensions
     /// under <c>ConnectionStrings</c>.
     /// </param>
     /// <remarks>
-    /// The loader is keyed to the connection name rather than registered once for the container, so a
-    /// pipeline reading from one engine and writing to another gets the right fast path at each end.
+    /// The loader and the script parser are keyed to the connection name rather than registered once for
+    /// the container, so a pipeline that touches two engines gets the right one at each end.
     /// </remarks>
     public static IServiceCollection AddSqlServerConnection(this IServiceCollection services, string name)
     {
@@ -86,6 +86,7 @@ public static class SqlServerExtensions
 
         services.AddDbConnection(name, OpenAsync);
         services.AddKeyedSingleton<IBulkLoader, SqlServerBulkLoader>(name);
+        services.AddKeyedSingleton<ISqlScriptParser, SqlServerScriptParser>(name);
 
         return services;
     }
@@ -106,6 +107,7 @@ public static class SqlServerExtensions
 
         services.AddDbConnection(name, connectionString, OpenAsync);
         services.AddKeyedSingleton<IBulkLoader, SqlServerBulkLoader>(name);
+        services.AddKeyedSingleton<ISqlScriptParser, SqlServerScriptParser>(name);
 
         return services;
     }

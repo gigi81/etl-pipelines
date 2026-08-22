@@ -7,11 +7,20 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Configuration" />
+    <PackageReference Include="TestableIO.System.IO.Abstractions.TestingHelpers" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\EtlPipelines.Sql\EtlPipelines.Sql.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Sql.Sqlite\EtlPipelines.Sql.Sqlite.csproj" />
+    <!--
+      The provider packages, for their script parsers alone. Splitting a file into batches is pure
+      text work needing no server, and it is the part most likely to be got wrong - so it is tested
+      here, where it runs on every CI leg, rather than behind a container.
+    -->
+    <ProjectReference Include="..\..\src\EtlPipelines.Sql.SqlServer\EtlPipelines.Sql.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Sql.MySql\EtlPipelines.Sql.MySql.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Sql.Oracle\EtlPipelines.Sql.Oracle.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Core\EtlPipelines.Core.csproj" />
   </ItemGroup>
 

@@ -144,8 +144,8 @@ public static class OracleExtensions
     /// under <c>ConnectionStrings</c>.
     /// </param>
     /// <remarks>
-    /// The loader is keyed to the connection name rather than registered once for the container, so a
-    /// pipeline reading from one engine and writing to another gets the right fast path at each end.
+    /// The loader and the script parser are keyed to the connection name rather than registered once for
+    /// the container, so a pipeline that touches two engines gets the right one at each end.
     /// </remarks>
     public static IServiceCollection AddOracleConnection(this IServiceCollection services, string name)
     {
@@ -153,6 +153,7 @@ public static class OracleExtensions
 
         services.AddDbConnection(name, OpenAsync);
         services.AddKeyedSingleton<IBulkLoader, OracleBulkLoader>(name);
+        services.AddKeyedSingleton<ISqlScriptParser, OracleScriptParser>(name);
 
         return services;
     }
@@ -173,6 +174,7 @@ public static class OracleExtensions
 
         services.AddDbConnection(name, connectionString, OpenAsync);
         services.AddKeyedSingleton<IBulkLoader, OracleBulkLoader>(name);
+        services.AddKeyedSingleton<ISqlScriptParser, OracleScriptParser>(name);
 
         return services;
     }

@@ -289,6 +289,41 @@ are faster but do not all behave identically to an INSERT, and some bypass trigg
 The loader is keyed to the connection name, so a pipeline writing to two engines gets each one's own
 fast path — there is no single registration for the second one to lose.
 
+### Procedures and scripts
+
+Not every step of a job moves rows through this process. A procedure that reshapes what was just
+loaded, or a script that creates the staging tables, is work better done next to the data — and both
+are stages:
+
+```csharp
+services.AddEtlPipeline("orders", builder => builder
+    .RunSqlScript("warehouse", fileSystem.FileInfo.New("create-staging.sql"))
+    .FromCsv<Order>(file)
+    .ToSqlTable("warehouse", "orders_staging")
+    .RunStoredProcedure("warehouse", "dbo.MergeOrders"));
+```
+
+Both report no rows, so they stay out of the run's `RowsRead` and `RowsWritten` — see above. Neither
+opens a transaction: a procedure that wants one generally manages its own, and wrapping one from
+outside behaves differently on every engine.
+
+**A script file is not a statement**, and this is where engines disagree most. Each provider package
+registers the parser its engine needs, under the connection's name:
+
+| Engine | Batches split on |
+|---|---|
+| `SqlServer` | a line of nothing but `GO` — a client convention the server has never heard of |
+| `MySql` | the current delimiter, which `DELIMITER $$` lets a script change so a procedure body can hold semicolons |
+| `Oracle` | `;` or `/`, whichever the file uses — keeping the `;` that closes an `END;` |
+| `PostgreSql`, `Sqlite` | nothing: both take the whole file in one command |
+
+Ported from [dbdeploy](https://github.com/gigi81/dbdeploy), where they have been in service a while.
+Oracle wants one terminator per file: a script closing PL/SQL with `/` is read as using `/`
+throughout, so close every statement the same way.
+
+The file is resolved when the stage runs, not when the pipeline is composed, so a script fetched by
+an earlier stage works.
+
 Two things differ between engines and will bite quietly:
 
 - **Identifiers go in exactly as the row type spells them.** Nothing is quoted, so PostgreSQL folds
