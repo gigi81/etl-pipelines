@@ -25,6 +25,7 @@
     -->
     <ProjectReference Include="..\..\src\EtlPipelines.Sql.SqlServer\EtlPipelines.Sql.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Sql.MySql\EtlPipelines.Sql.MySql.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Sql.PostgreSql\EtlPipelines.Sql.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Sql.Oracle\EtlPipelines.Sql.Oracle.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Core\EtlPipelines.Core.csproj" />
   </ItemGroup>

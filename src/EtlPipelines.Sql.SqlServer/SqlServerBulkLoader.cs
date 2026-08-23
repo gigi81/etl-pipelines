@@ -1,3 +1,4 @@
+using EtlPipelines.Sql.Connections;
 using EtlPipelines.Sql.Loading;
 using EtlPipelines.Sql.Ports;
 using EtlPipelines.Sql.Scripts;
@@ -83,11 +84,15 @@ public static class SqlServerExtensions
     /// The loader and the script parser are keyed to the connection name rather than registered once for
     /// the container, so a pipeline that touches two engines gets the right one at each end.
     /// </remarks>
-    public static IServiceCollection AddSqlServerConnection(this IServiceCollection services, string name)
+    /// <param name="configure">Statements to run on each connection once it is open.</param>
+    public static IServiceCollection AddSqlServerConnection(
+        this IServiceCollection services,
+        string name,
+        Action<DbConnectionOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddDbConnection(name, OpenAsync);
+        services.AddDbConnection(name, OpenAsync, Options(configure));
         services.AddKeyedSingleton<IBulkLoader, SqlServerBulkLoader>(name);
         services.AddKeyedSingleton<ISqlScriptParser, SqlServerScriptParser>(name);
 
@@ -101,14 +106,19 @@ public static class SqlServerExtensions
     /// <remarks>
     /// For a database whose address is only known at run time — a throwaway container in a test.
     /// </remarks>
+    /// <param name="services">The container.</param>
+    /// <param name="name">The name the pipeline refers to this connection by.</param>
+    /// <param name="connectionString">The connection string to use, in full.</param>
+    /// <param name="configure">Statements to run on each connection once it is open.</param>
     public static IServiceCollection AddSqlServerConnection(
         this IServiceCollection services,
         string name,
-        string connectionString)
+        string connectionString,
+        Action<DbConnectionOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddDbConnection(name, connectionString, OpenAsync);
+        services.AddDbConnection(name, connectionString, OpenAsync, Options(configure));
         services.AddKeyedSingleton<IBulkLoader, SqlServerBulkLoader>(name);
         services.AddKeyedSingleton<ISqlScriptParser, SqlServerScriptParser>(name);
 
@@ -122,5 +132,17 @@ public static class SqlServerExtensions
         var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         return connection;
+    }
+
+    /// <summary>
+    /// This engine has nothing worth naming beyond the statements themselves — see
+    /// <see cref="DbConnectionOptions.SessionStatements"/>.
+    /// </summary>
+    private static DbConnectionOptions Options(Action<DbConnectionOptions>? configure)
+    {
+        var options = new DbConnectionOptions();
+        configure?.Invoke(options);
+
+        return options;
     }
 }

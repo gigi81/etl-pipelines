@@ -23,6 +23,7 @@ public static class ConnectionRegistration
     /// <see cref="ConfigurationExtensions.GetConnectionString"/> looks up.
     /// </param>
     /// <param name="open">Opens a connection to the given connection string.</param>
+    /// <param name="options">Statements to run on each connection once it is open.</param>
     /// <remarks>
     /// Resolved lazily: the configuration is read the first time a run opens a connection, not at
     /// registration, so an application can register its pipelines before configuration is complete.
@@ -30,15 +31,18 @@ public static class ConnectionRegistration
     public static IServiceCollection AddDbConnection(
         this IServiceCollection services,
         string name,
-        Func<string, CancellationToken, ValueTask<DbConnection>> open)
+        Func<string, CancellationToken, ValueTask<DbConnection>> open,
+        DbConnectionOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(open);
 
         services.AddKeyedSingleton<IDbConnectionFactory>(name, (provider, _) =>
-            new DelegateDbConnectionFactory(name, cancellationToken =>
-                open(ConnectionString(provider, name), cancellationToken)));
+            WithSession(
+                new DelegateDbConnectionFactory(name, cancellationToken =>
+                    open(ConnectionString(provider, name), cancellationToken)),
+                options));
 
         return services;
     }
@@ -55,7 +59,8 @@ public static class ConnectionRegistration
         this IServiceCollection services,
         string name,
         string connectionString,
-        Func<string, CancellationToken, ValueTask<DbConnection>> open)
+        Func<string, CancellationToken, ValueTask<DbConnection>> open,
+        DbConnectionOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -63,9 +68,11 @@ public static class ConnectionRegistration
         ArgumentNullException.ThrowIfNull(open);
 
         services.AddKeyedSingleton<IDbConnectionFactory>(name, (_, _) =>
-            new DelegateDbConnectionFactory(
-                name,
-                cancellationToken => open(connectionString, cancellationToken)));
+            WithSession(
+                new DelegateDbConnectionFactory(
+                    name,
+                    cancellationToken => open(connectionString, cancellationToken)),
+                options));
 
         return services;
     }
@@ -84,6 +91,12 @@ public static class ConnectionRegistration
                 $"AddSqlServerConnection, AddPostgreSqlConnection, AddMySqlConnection or " +
                 $"AddOracleConnection - and put its connection string under ConnectionStrings:{name}.");
     }
+
+    /// <summary>Wraps the factory only when there is something to run, so the common case pays nothing.</summary>
+    private static IDbConnectionFactory WithSession(IDbConnectionFactory inner, DbConnectionOptions? options) =>
+        options is { SessionStatements.Count: > 0 }
+            ? new SessionDbConnectionFactory(inner, options.SessionStatements)
+            : inner;
 
     private static string ConnectionString(IServiceProvider provider, string name)
     {

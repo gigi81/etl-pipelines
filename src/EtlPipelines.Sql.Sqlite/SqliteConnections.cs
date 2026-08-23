@@ -1,3 +1,4 @@
+using EtlPipelines.Sql.Connections;
 using EtlPipelines.Sql.Loading;
 using EtlPipelines.Sql.Ports;
 using Microsoft.Data.Sqlite;
@@ -41,11 +42,15 @@ public static class SqliteConnections
     /// No bulk loader is registered with it, for the reason given above: the sink's own prepared
     /// INSERT inside one transaction already is the fast path on SQLite.
     /// </remarks>
-    public static IServiceCollection AddSqliteConnection(this IServiceCollection services, string name)
+    /// <param name="configure">Statements to run on each connection once it is open.</param>
+    public static IServiceCollection AddSqliteConnection(
+        this IServiceCollection services,
+        string name,
+        Action<DbConnectionOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        return services.AddDbConnection(name, OpenAsync);
+        return services.AddDbConnection(name, OpenAsync, Options(configure));
     }
 
     /// <summary>
@@ -56,14 +61,19 @@ public static class SqliteConnections
     /// For a database whose path is only known at run time — a file in a directory the run was
     /// handed, which is what the samples have.
     /// </remarks>
+    /// <param name="services">The container.</param>
+    /// <param name="name">The name the pipeline refers to this connection by.</param>
+    /// <param name="connectionString">The connection string to use, in full.</param>
+    /// <param name="configure">Statements to run on each connection once it is open.</param>
     public static IServiceCollection AddSqliteConnection(
         this IServiceCollection services,
         string name,
-        string connectionString)
+        string connectionString,
+        Action<DbConnectionOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        return services.AddDbConnection(name, connectionString, OpenAsync);
+        return services.AddDbConnection(name, connectionString, OpenAsync, Options(configure));
     }
 
     private static async ValueTask<DbConnection> OpenAsync(
@@ -73,5 +83,17 @@ public static class SqliteConnections
         var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         return connection;
+    }
+
+    /// <summary>
+    /// This engine has nothing worth naming beyond the statements themselves — see
+    /// <see cref="DbConnectionOptions.SessionStatements"/>.
+    /// </summary>
+    private static DbConnectionOptions Options(Action<DbConnectionOptions>? configure)
+    {
+        var options = new DbConnectionOptions();
+        configure?.Invoke(options);
+
+        return options;
     }
 }

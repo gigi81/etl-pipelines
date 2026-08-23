@@ -356,6 +356,47 @@ Both forms are resolved when the stage runs rather than when the pipeline is com
 fetched by an earlier stage works. `RunSqlScript` also takes an `ISqlScriptSource` if the script
 comes from somewhere else entirely.
 
+### Reaching another schema
+
+A job does not always own the schema it works in. Oracle makes this sharpest — a schema *is* a user,
+so connecting as `ETL` finds only `ETL`'s tables — but the same question comes up everywhere:
+
+```csharp
+services.AddOracleConnection("warehouse", options => options.CurrentSchema = "HR");
+```
+
+| Engine | What it issues |
+|---|---|
+| `Oracle` | `ALTER SESSION SET CURRENT_SCHEMA` |
+| `PostgreSql` | `SET search_path` |
+| `MySql` | `USE` — a schema *is* a database |
+
+It reaches **every unqualified name in the run**, including the SQL you wrote for `FromSql`,
+`RunSql` and the script stages. Nothing else could: `ToSqlTable` takes a table name the library
+controls, so `"HR.TRADES"` has always worked there, but your own SELECT is yours.
+
+There is no `CurrentSchema` on SQL Server or SQLite, because neither has a session-level equivalent —
+SQL Server's default schema belongs to the database user, set with `ALTER USER … WITH DEFAULT_SCHEMA`.
+A property that silently did nothing on one engine would be worse than its absence. Both take the
+general form, which every provider has:
+
+```csharp
+services.AddSqlServerConnection("warehouse", options =>
+    options.SessionStatements.Add("SET LOCK_TIMEOUT 5000"));
+```
+
+Statements run on **every** connection as it opens, which is what makes them survive pooling.
+
+**Two things to know**, and the second is the one that bites:
+
+- **It changes name resolution, not privileges.** The session still runs as the connecting user, who
+  still needs grants on the other schema's objects. Oracle's `USER` goes on reporting whoever
+  connected. Read `CurrentSchema` as "look here first", never as "become this user".
+- **Oracle keeps session state on a pooled connection.** Other code opening the *same connection
+  string* — another registration, an ORM, a health check — can be handed a connection still pointed
+  at your schema. Npgsql and MySqlConnector both reset on return, so this is Oracle's alone. Give a
+  connection carrying session settings a connection string of its own, or turn pooling off on it.
+
 Two things differ between engines and will bite quietly:
 
 - **Identifiers go in exactly as the row type spells them.** Nothing is quoted, so PostgreSQL folds
