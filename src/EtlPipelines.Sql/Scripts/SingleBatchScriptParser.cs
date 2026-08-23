@@ -1,4 +1,3 @@
-using System.IO.Abstractions;
 using System.Runtime.CompilerServices;
 
 namespace EtlPipelines.Sql.Scripts;
@@ -18,13 +17,12 @@ public sealed class SingleBatchScriptParser : ISqlScriptParser
 
     /// <inheritdoc />
     public async IAsyncEnumerable<string> ParseAsync(
-        IFileInfo script,
+        TextReader script,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(script);
 
-        using var reader = new StreamReader(script.OpenRead());
-        var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+        var text = await script.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
 
         if (!string.IsNullOrWhiteSpace(text))
         {

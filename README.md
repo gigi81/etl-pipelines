@@ -309,6 +309,7 @@ services.AddEtlPipeline("orders", builder => builder
 | `RunSql` | one statement, for the one-liner that does not warrant a file |
 | `RunStoredProcedure` | a procedure by name |
 | `RunSqlScript` | a file, split into batches the way the engine needs |
+| `RunEmbeddedSqlScript` | the same, for a script compiled into the assembly |
 
 `RunSql` and `RunStoredProcedure` send **one command as given** — nothing is split on `GO` or on a
 changed delimiter. Several statements, or anything with a procedure body in it, belong in a file.
@@ -338,8 +339,22 @@ Ported from [dbdeploy](https://github.com/gigi81/dbdeploy), where they have been
 Oracle wants one terminator per file: a script closing PL/SQL with `/` is read as using `/`
 throughout, so close every statement the same way.
 
-The file is resolved when the stage runs, not when the pipeline is composed, so a script fetched by
-an earlier stage works.
+**A script can ship inside the assembly** instead of beside it — nothing to copy on deploy, nothing
+to go missing between the build and the run:
+
+```csharp
+.RunEmbeddedSqlScript("warehouse", typeof(Program).Assembly, "create-staging.sql")
+```
+
+Mark the file as an `EmbeddedResource` in its project. The name is matched leniently, because a
+resource's logical name is its root namespace and folder path joined with dots and almost nobody
+remembers that: an exact match wins, and failing that a resource whose name *ends* in
+`.create-staging.sql` is taken when exactly one does. When nothing matches — or two do — the error
+lists what the assembly actually holds.
+
+Both forms are resolved when the stage runs rather than when the pipeline is composed, so a script
+fetched by an earlier stage works. `RunSqlScript` also takes an `ISqlScriptSource` if the script
+comes from somewhere else entirely.
 
 Two things differ between engines and will bite quietly:
 

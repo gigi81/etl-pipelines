@@ -1,5 +1,4 @@
 using EtlPipelines.Sql.Scripts;
-using System.IO.Abstractions;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -17,16 +16,13 @@ public sealed class SqlServerScriptParser : ISqlScriptParser
 {
     /// <inheritdoc />
     public async IAsyncEnumerable<string> ParseAsync(
-        IFileInfo script,
+        TextReader script,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(script);
 
-        await using var file = script.OpenRead();
-        using var reader = new StreamReader(file);
-
         var buffer = new StringBuilder();
-        var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+        var line = await script.ReadLineAsync(cancellationToken).ConfigureAwait(false);
 
         while (line is not null)
         {
@@ -44,7 +40,7 @@ public sealed class SqlServerScriptParser : ISqlScriptParser
                 buffer.AppendLine(line);
             }
 
-            line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            line = await script.ReadLineAsync(cancellationToken).ConfigureAwait(false);
         }
 
         if (HasContent(buffer))
