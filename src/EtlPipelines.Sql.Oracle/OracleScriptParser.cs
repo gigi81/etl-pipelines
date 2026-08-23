@@ -1,5 +1,4 @@
 using EtlPipelines.Sql.Scripts;
-using System.IO.Abstractions;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Text;
@@ -21,7 +20,7 @@ public sealed partial class OracleScriptParser : ISqlScriptParser
 
     /// <inheritdoc />
     public async IAsyncEnumerable<string> ParseAsync(
-        IFileInfo script,
+        TextReader script,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(script);
@@ -78,18 +77,15 @@ public sealed partial class OracleScriptParser : ISqlScriptParser
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PlSqlEnd();
 
-    private static async Task<string[]> ReadLinesAsync(IFileInfo script, CancellationToken cancellationToken)
+    private static async Task<string[]> ReadLinesAsync(TextReader script, CancellationToken cancellationToken)
     {
         var lines = new List<string>();
 
-        await using var file = script.OpenRead();
-        using var reader = new StreamReader(file);
-
-        var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+        var line = await script.ReadLineAsync(cancellationToken).ConfigureAwait(false);
         while (line is not null)
         {
             lines.Add(line);
-            line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            line = await script.ReadLineAsync(cancellationToken).ConfigureAwait(false);
         }
 
         return [.. lines];

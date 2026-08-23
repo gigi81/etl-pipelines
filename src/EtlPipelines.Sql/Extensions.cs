@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Data;
 using System.Data.Common;
 using System.IO.Abstractions;
+using System.Reflection;
 
 namespace EtlPipelines.Sql;
 
@@ -172,7 +173,7 @@ public static class Extensions
     /// <para>
     /// One command, sent as given: nothing is split on <c>GO</c> or on a changed delimiter. Several
     /// statements, or anything with a procedure body in it, belong in a file and go through
-    /// <see cref="RunSqlScript"/>, which splits them the way the engine needs.
+    /// <see cref="RunSqlScript(IPipelineBuilder, string, IFileInfo, Action{SqlScriptOptions})"/>, which splits them the way the engine needs.
     /// </para>
     /// </remarks>
     public static IPipelineBuilder RunSql(
@@ -197,12 +198,52 @@ public static class Extensions
     /// <remarks>
     /// The file is split into batches by the <see cref="ISqlScriptParser"/> registered under the same
     /// connection name — <c>GO</c> for SQL Server, <c>DELIMITER</c> for MySQL, terminator detection
-    /// for Oracle, and the whole file at once for PostgreSQL and SQLite.
+    /// for Oracle, and the whole file at once for PostgreSQL and SQLite. Use
+    /// <see cref="RunEmbeddedSqlScript"/> for a script compiled into an assembly instead.
     /// </remarks>
     public static IPipelineBuilder RunSqlScript(
         this IPipelineBuilder builder,
         string connectionName,
         IFileInfo script,
+        Action<SqlScriptOptions>? configure = null) =>
+        builder.RunSqlScript(connectionName, new FileSqlScriptSource(script), configure);
+
+    /// <summary>Adds a stage that runs a SQL script compiled into an assembly.</summary>
+    /// <param name="builder">The pipeline being composed.</param>
+    /// <param name="connectionName">The name the connection was registered under.</param>
+    /// <param name="assembly">The assembly the script is embedded in.</param>
+    /// <param name="resourceName">
+    /// The resource's logical name, or the tail of it: <c>create-staging.sql</c> finds
+    /// <c>My.App.Scripts.create-staging.sql</c> as long as nothing else ends the same way.
+    /// </param>
+    /// <param name="configure">Command timeout and what the stage is called.</param>
+    /// <remarks>
+    /// A script that ships inside the application rather than beside it: nothing to copy on deploy
+    /// and nothing to go missing between the build and the run. The file has to be marked as an
+    /// <c>EmbeddedResource</c> in its project; when the name does not match, the error lists what the
+    /// assembly actually holds.
+    /// </remarks>
+    public static IPipelineBuilder RunEmbeddedSqlScript(
+        this IPipelineBuilder builder,
+        string connectionName,
+        Assembly assembly,
+        string resourceName,
+        Action<SqlScriptOptions>? configure = null) =>
+        builder.RunSqlScript(connectionName, new EmbeddedSqlScriptSource(assembly, resourceName), configure);
+
+    /// <summary>Adds a stage that runs a SQL script from wherever <paramref name="script"/> reads it.</summary>
+    /// <param name="builder">The pipeline being composed.</param>
+    /// <param name="connectionName">The name the connection was registered under.</param>
+    /// <param name="script">Where the script is read from.</param>
+    /// <param name="configure">Command timeout and what the stage is called.</param>
+    /// <remarks>
+    /// The general form the other two are built on, for a script that comes from somewhere neither
+    /// covers — an object store, a configuration service.
+    /// </remarks>
+    public static IPipelineBuilder RunSqlScript(
+        this IPipelineBuilder builder,
+        string connectionName,
+        ISqlScriptSource script,
         Action<SqlScriptOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);

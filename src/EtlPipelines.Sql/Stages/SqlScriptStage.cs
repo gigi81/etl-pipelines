@@ -1,7 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using System.Data.Common;
 using System.Diagnostics;
-using System.IO.Abstractions;
 
 namespace EtlPipelines.Sql.Stages;
 
@@ -10,10 +9,14 @@ namespace EtlPipelines.Sql.Stages;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The file is split into batches by the <see cref="ISqlScriptParser"/> registered under the
+/// The script is split into batches by the <see cref="ISqlScriptParser"/> registered under the
 /// connection's name, and each batch is executed in order over one connection. That split is the
-/// whole difficulty — see <see cref="ISqlScriptParser"/> for why a file is not a statement — and it
-/// is why the parser comes from the connection rather than being chosen here.
+/// whole difficulty — see <see cref="ISqlScriptParser"/> for why a script is not a statement — and
+/// it is why the parser comes from the connection rather than being chosen here.
+/// </para>
+/// <para>
+/// Where the text came from is <see cref="ISqlScriptSource"/>'s business: a file beside the
+/// application, or a resource compiled into it.
 /// </para>
 /// <para>
 /// The batch that failed is named in the error, since a script that dies on its fortieth statement
@@ -23,11 +26,11 @@ namespace EtlPipelines.Sql.Stages;
 public sealed class SqlScriptStage : IPipelineStage
 {
     private readonly string _connectionName;
-    private readonly IFileInfo _script;
+    private readonly ISqlScriptSource _script;
     private readonly SqlScriptOptions _options;
 
     /// <summary>Runs <paramref name="script"/> over the connection registered as <paramref name="connectionName"/>.</summary>
-    public SqlScriptStage(string connectionName, IFileInfo script, SqlScriptOptions? options = null)
+    public SqlScriptStage(string connectionName, ISqlScriptSource script, SqlScriptOptions? options = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionName);
         ArgumentNullException.ThrowIfNull(script);
@@ -51,14 +54,14 @@ public sealed class SqlScriptStage : IPipelineStage
 
         var started = Stopwatch.StartNew();
 
-        // Refreshed rather than trusted: IFileInfo caches what it found when it was created, and a
-        // script perfectly well may not exist until an earlier stage of this same run has fetched it.
-        _script.Refresh();
+        var opened = await _script.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        if (!_script.Exists)
+        if (opened.IsError)
         {
-            return Error.Failure($"sql.script.{Name}.missing", $"The script '{_script.FullName}' does not exist.");
+            return opened.Errors;
         }
+
+        using var text = opened.Value;
 
         var parser = context.Services.GetKeyedService<ISqlScriptParser>(_connectionName)
             ?? SingleBatchScriptParser.Instance;
@@ -72,7 +75,7 @@ public sealed class SqlScriptStage : IPipelineStage
                 .OpenAsync(cancellationToken)
                 .ConfigureAwait(false);
 
-            await foreach (var sql in parser.ParseAsync(_script, cancellationToken).ConfigureAwait(false))
+            await foreach (var sql in parser.ParseAsync(text, cancellationToken).ConfigureAwait(false))
             {
                 batch++;
 
@@ -91,7 +94,7 @@ public sealed class SqlScriptStage : IPipelineStage
         {
             return Error.Failure(
                 $"sql.script.{Name}.failed",
-                $"{_script.Name}, batch {batch}: {exception.Message}");
+                $"{Name}, batch {batch}: {exception.Message}");
         }
 
         return new StageResult(Name, 0, 0, 0, started.Elapsed);

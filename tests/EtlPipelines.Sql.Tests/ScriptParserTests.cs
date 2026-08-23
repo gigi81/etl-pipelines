@@ -1,5 +1,3 @@
-using System.IO.Abstractions;
-using System.IO.Abstractions.TestingHelpers;
 using EtlPipelines.Sql.MySql;
 using EtlPipelines.Sql.Oracle;
 using EtlPipelines.Sql.SqlServer;
@@ -7,29 +5,22 @@ using EtlPipelines.Sql.SqlServer;
 namespace EtlPipelines.Sql.Tests;
 
 /// <summary>
-/// Splitting a script file into the batches a server will take.
+/// Splitting a script into the batches a server will take.
 /// </summary>
 /// <remarks>
-/// Pure text work needing no database, which is why it is here rather than behind a container: this
-/// is the part of running a script that engines disagree about, and every case below is one that
-/// silently produces the wrong statements rather than an error when it is got wrong.
+/// Pure text work needing neither a database nor a file, which is why it is here rather than behind
+/// a container: this is the part of running a script that engines disagree about, and every case
+/// below is one that silently produces the wrong statements rather than an error when got wrong.
 /// </remarks>
 public sealed class ScriptParserTests
 {
-    private readonly MockFileSystem _files = new();
-
-    private IFileInfo Script(string sql)
+    private static async Task<string[]> ParseAsync(ISqlScriptParser parser, string sql)
     {
-        var path = _files.Path.Combine(_files.Directory.GetCurrentDirectory(), $"{Guid.NewGuid():N}.sql");
-        _files.AddFile(path, new MockFileData(sql));
-        return _files.FileInfo.New(path);
-    }
+        using var reader = new StringReader(sql);
 
-    private async Task<string[]> ParseAsync(ISqlScriptParser parser, string sql)
-    {
         var batches = new List<string>();
 
-        await foreach (var batch in parser.ParseAsync(Script(sql), CancellationToken.None))
+        await foreach (var batch in parser.ParseAsync(reader, CancellationToken.None))
         {
             batches.Add(batch.Trim());
         }
