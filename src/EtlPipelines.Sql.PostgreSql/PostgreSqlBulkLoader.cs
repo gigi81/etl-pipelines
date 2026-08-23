@@ -1,3 +1,4 @@
+using EtlPipelines.Sql.Connections;
 using EtlPipelines.Sql.Loading;
 using EtlPipelines.Sql.Ports;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -102,11 +103,15 @@ public static class PostgreSqlExtensions
     /// The loader is keyed to the connection name rather than registered once for the container, so a
     /// pipeline reading from one engine and writing to another gets the right fast path at each end.
     /// </remarks>
-    public static IServiceCollection AddPostgreSqlConnection(this IServiceCollection services, string name)
+    /// <param name="configure">The schema to resolve names against, and any other session statements.</param>
+    public static IServiceCollection AddPostgreSqlConnection(
+        this IServiceCollection services,
+        string name,
+        Action<PostgreSqlConnectionOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddDbConnection(name, OpenAsync);
+        services.AddDbConnection(name, OpenAsync, Options(configure));
         services.AddKeyedSingleton<IBulkLoader, PostgreSqlBulkLoader>(name);
 
         return services;
@@ -119,14 +124,19 @@ public static class PostgreSqlExtensions
     /// <remarks>
     /// For a database whose address is only known at run time — a throwaway container in a test.
     /// </remarks>
+    /// <param name="services">The container.</param>
+    /// <param name="name">The name the pipeline refers to this connection by.</param>
+    /// <param name="connectionString">The connection string to use, in full.</param>
+    /// <param name="configure">The schema to resolve names against, and any other session statements.</param>
     public static IServiceCollection AddPostgreSqlConnection(
         this IServiceCollection services,
         string name,
-        string connectionString)
+        string connectionString,
+        Action<PostgreSqlConnectionOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddDbConnection(name, connectionString, OpenAsync);
+        services.AddDbConnection(name, connectionString, OpenAsync, Options(configure));
         services.AddKeyedSingleton<IBulkLoader, PostgreSqlBulkLoader>(name);
 
         return services;
@@ -139,5 +149,20 @@ public static class PostgreSqlExtensions
         var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         return connection;
+    }
+
+    /// <summary>Turns the named settings into the statements that apply them.</summary>
+    private static PostgreSqlConnectionOptions Options(Action<PostgreSqlConnectionOptions>? configure)
+    {
+        var options = new PostgreSqlConnectionOptions();
+        configure?.Invoke(options);
+
+        if (options.CurrentSchema is { } schema)
+        {
+            options.SessionStatements.Add(
+                $"SET search_path TO {SqlIdentifier.Require(schema, nameof(options.CurrentSchema))}");
+        }
+
+        return options;
     }
 }

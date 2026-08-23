@@ -1,3 +1,4 @@
+using EtlPipelines.Sql.Connections;
 using EtlPipelines.Sql.Loading;
 using EtlPipelines.Sql.Ports;
 using EtlPipelines.Sql.Scripts;
@@ -82,11 +83,15 @@ public static class MySqlExtensions
     /// The loader and the script parser are keyed to the connection name rather than registered once for
     /// the container, so a pipeline that touches two engines gets the right one at each end.
     /// </remarks>
-    public static IServiceCollection AddMySqlConnection(this IServiceCollection services, string name)
+    /// <param name="configure">The schema to resolve names against, and any other session statements.</param>
+    public static IServiceCollection AddMySqlConnection(
+        this IServiceCollection services,
+        string name,
+        Action<MySqlConnectionOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddDbConnection(name, OpenAsync);
+        services.AddDbConnection(name, OpenAsync, Options(configure));
         services.AddKeyedSingleton<IBulkLoader, MySqlBulkLoader>(name);
         services.AddKeyedSingleton<ISqlScriptParser, MySqlScriptParser>(name);
 
@@ -100,14 +105,19 @@ public static class MySqlExtensions
     /// <remarks>
     /// For a database whose address is only known at run time — a throwaway container in a test.
     /// </remarks>
+    /// <param name="services">The container.</param>
+    /// <param name="name">The name the pipeline refers to this connection by.</param>
+    /// <param name="connectionString">The connection string to use, in full.</param>
+    /// <param name="configure">The schema to resolve names against, and any other session statements.</param>
     public static IServiceCollection AddMySqlConnection(
         this IServiceCollection services,
         string name,
-        string connectionString)
+        string connectionString,
+        Action<MySqlConnectionOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddDbConnection(name, connectionString, OpenAsync);
+        services.AddDbConnection(name, connectionString, OpenAsync, Options(configure));
         services.AddKeyedSingleton<IBulkLoader, MySqlBulkLoader>(name);
         services.AddKeyedSingleton<ISqlScriptParser, MySqlScriptParser>(name);
 
@@ -121,5 +131,20 @@ public static class MySqlExtensions
         var connection = new MySqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         return connection;
+    }
+
+    /// <summary>Turns the named settings into the statements that apply them.</summary>
+    private static MySqlConnectionOptions Options(Action<MySqlConnectionOptions>? configure)
+    {
+        var options = new MySqlConnectionOptions();
+        configure?.Invoke(options);
+
+        if (options.CurrentSchema is { } schema)
+        {
+            options.SessionStatements.Add(
+                $"USE {SqlIdentifier.Require(schema, nameof(options.CurrentSchema))}");
+        }
+
+        return options;
     }
 }
