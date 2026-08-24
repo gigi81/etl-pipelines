@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="TestableIO.System.IO.Abstractions.TestingHelpers" />
+    <!--
+      No Testcontainers.Sftp module exists, so the fixture uses the generic ContainerBuilder that
+      already comes with Testcontainers itself.
+    -->
+    <PackageReference Include="Testcontainers" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\EtlPipelines.Core\EtlPipelines.Core.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Files\EtlPipelines.Files.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Files.Sftp\EtlPipelines.Files.Sftp.csproj" />
+  </ItemGroup>
+
+</Project>

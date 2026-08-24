@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>File stages for EtlPipelines: copy, move, compress and extract.</Description>
+  </PropertyGroup>
+
+  <!--
+    Deliberately references the abstractions only, not the EtlPipelines.Core runtime. Every type a
+    connector needs - the ports, the lifecycle interfaces, and the builder interfaces - lives in
+    Abstractions, so a connector never depends on the execution engine.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\EtlPipelines.Abstractions\EtlPipelines.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Every filesystem call goes through IFileSystem so the stages can be tested against an in-memory
+      filesystem. No archive package: zip, tar and gzip are all in the .NET 10 shared framework, and
+      their stream-based APIs are exactly what lets an extraction run through IFileSystem at all.
+    -->
+    <PackageReference Include="TestableIO.System.IO.Abstractions" />
+    <PackageReference Include="TestableIO.System.IO.Abstractions.Extensions" />
+    <!-- Named resources - none here yet, but the satellite Http/Sftp packages resolve theirs the
+         same way, and this dependency is what lets that be a shared convention. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+</Project>

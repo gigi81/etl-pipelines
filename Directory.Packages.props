@@ -13,6 +13,7 @@
     <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="9.6.0" />
     <PackageVersion Include="OllamaSharp" Version="5.2.7" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.11" />
     <PackageVersion Include="Nerdbank.GitVersioning" Version="3.10.91">
       <PrivateAssets>all</PrivateAssets>
@@ -42,6 +43,7 @@
     <PackageVersion Include="Soenneker.Extensions.Enumerable.String" Version="2.1.590" />
     <PackageVersion Include="Soenneker.Extensions.String" Version="2.1.257" />
     <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.7.0.110445" />
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <PackageVersion Include="System.Linq.Async" Version="6.0.1" />
     <PackageVersion Include="TestableIO.System.IO.Abstractions" Version="22.2.0" />
     <PackageVersion Include="TestableIO.System.IO.Abstractions.Wrappers" Version="22.2.0" />

@@ -184,8 +184,15 @@ internal sealed class RenamedStage(string name, IPipelineStage inner) : IPipelin
 {
     public string Name { get; } = name;
 
-    public ValueTask<ErrorOr<StageResult>> ExecuteAsync(
+    public async ValueTask<ErrorOr<StageResult>> ExecuteAsync(
         PipelineContext context,
-        CancellationToken cancellationToken) =>
-        inner.ExecuteAsync(context, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var result = await inner.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
+
+        // The run loop names the span and tags the metric from this property, so the StageResult it
+        // records must carry the same name - otherwise a renamed stage is traced under one name and
+        // reported under another.
+        return result.IsError ? result : result.Value with { Name = Name };
+    }
 }

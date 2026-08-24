@@ -40,6 +40,10 @@ public static class EtlDiagnostics
     private const string RunId = $"{Prefix}.run.id";
     private const string Outcome = $"{Prefix}.outcome";
 
+    // Not a published name - carried on Error.Metadata only, between DataflowStage and the run loop
+    // that now records every stage. Never appears on a span or an instrument.
+    private const string StageResultKey = $"{Stage}.result";
+
     private const string Succeeded = "succeeded";
     private const string Failed = "failed";
 
@@ -138,6 +142,24 @@ public static class EtlDiagnostics
 
         Fail(activity, error);
     }
+
+    /// <summary>
+    /// Attaches what a stage moved to an error it is also returning, so a stage that fails part-way
+    /// through does not lose the rows it did move before the run loop records them.
+    /// </summary>
+    internal static Error WithStageResult(this Error error, StageResult result) =>
+        Error.Custom(
+            error.NumericType,
+            error.Code,
+            error.Description,
+            new Dictionary<string, object>(error.Metadata ?? new Dictionary<string, object>())
+            {
+                [StageResultKey] = result,
+            });
+
+    /// <summary>Recovers a <see cref="StageResult"/> a stage attached with <see cref="WithStageResult"/>.</summary>
+    internal static StageResult? StageResultOf(Error error) =>
+        error.Metadata?.GetValueOrDefault(StageResultKey) as StageResult;
 
     private static string OutcomeOf(Error? error) => error is null ? Succeeded : Failed;
 

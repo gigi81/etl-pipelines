@@ -36,6 +36,18 @@ jobs:
         run: dotnet restore
       - name: Build
         run: dotnet build --configuration Release --no-restore
+      # First, and fast: a single atmoz/sftp container, nothing near the size of the database steps
+      # below. Kept in this workflow rather than the CI one for the same reason every other
+      # Docker-backed test is - the CI workflow filters Category=Docker out on all three of its legs.
+      - name: File servers
+        shell: bash
+        run: >
+          dotnet test tests/EtlPipelines.Files.Servers.Tests/EtlPipelines.Files.Servers.Tests.csproj
+          --configuration Release --no-build
+          --results-directory ./TestResults
+          --report-trx --report-trx-filename "{asm}-integration.trx"
+          --coverage --coverage-output-format cobertura
+          || true
       # One project at a time, deliberately. Both projects start their own Oracle, SQL Server,
       # PostgreSQL and MySQL, and `dotnet test` runs test assemblies in parallel: run together, the
       # runner ends up hosting two of each engine and the second Oracle never finishes opening its

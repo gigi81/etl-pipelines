@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Downloads files over HTTP as an EtlPipelines stage.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EtlPipelines.Files\EtlPipelines.Files.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      IHttpClientFactory only. Callers register their own named client with services.AddHttpClient,
+      which is where headers, auth, a base address and any retry policy belong - this package adds
+      nothing on top and takes no dependency on a retry library.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Http" />
+  </ItemGroup>
+
+</Project>
