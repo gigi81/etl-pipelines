@@ -31,7 +31,6 @@ internal sealed class DataflowStage(string name, IReadOnlyList<DataflowNode> tem
         var tracker = new RowErrorTracker(context.Options);
 
         using var run = new DataflowRunContext(context, tracker, cancellationToken);
-        using var activity = EtlDiagnostics.StartStage(context, Name);
 
         try
         {
@@ -62,10 +61,9 @@ internal sealed class DataflowStage(string name, IReadOnlyList<DataflowNode> tem
         var last = nodes[^1];
         var result = new StageResult(Name, first.RowsIn, last.RowsOut, tracker.Failed, elapsed);
 
-        // Before the exit rather than after the happy path, so a stage that failed part-way is still
-        // counted for the rows it did move.
-        EtlDiagnostics.RecordStage(context, activity, result, error);
-
-        return error is { } failure ? failure : result;
+        // The run loop in EtlPipeline records every stage now, on both paths. On this one ErrorOr
+        // carries either the value or the errors and never both, so the counts this stage did move
+        // ride along on the error itself, where the loop can find them again.
+        return error is { } failure ? failure.WithStageResult(result) : result;
     }
 }

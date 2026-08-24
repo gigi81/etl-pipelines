@@ -47,14 +47,32 @@ public sealed class EtlPipeline : IPipeline
         foreach (var resolve in _blueprint.Stages)
         {
             var stage = resolve(scope.ServiceProvider);
+
+            // Opened here rather than inside each stage, so every stage is traced - a coarse
+            // IPipelineStage published nothing at all before this - and traced exactly once. A
+            // stage that opened its own span underneath this one (DataflowStage used to) would be
+            // reported twice.
+            var stageStarted = Stopwatch.GetTimestamp();
+            using var stageActivity = EtlDiagnostics.StartStage(context, stage.Name);
+
             var result = await stage.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
 
             if (result.IsError)
             {
+                // Recorded on the failure path too. A stage that died after half a million rows
+                // still consumed them, and a span left with no outcome is the one a reader most
+                // needs to see. A stage that knows what it moved says so through the error - see
+                // EtlDiagnostics.WithStageResult - and one that does not is recorded with zero
+                // counts and this loop's own elapsed time.
+                var failed = EtlDiagnostics.StageResultOf(result.FirstError)
+                    ?? new StageResult(stage.Name, 0, 0, 0, Stopwatch.GetElapsedTime(stageStarted));
+
+                EtlDiagnostics.RecordStage(context, stageActivity, failed, result.FirstError);
                 EtlDiagnostics.RecordRun(context, activity, started.Elapsed, result.FirstError);
                 return result.Errors;
             }
 
+            EtlDiagnostics.RecordStage(context, stageActivity, result.Value);
             results.Add(result.Value);
         }
 
