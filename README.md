@@ -14,6 +14,9 @@ overlap rather than run one after another.
 | `EtlPipelines.Core` | The runtime and the builder. Start here. |
 | `EtlPipelines.Csv` | CSV source and sink, built on CsvHelper. |
 | `EtlPipelines.Excel` | Excel (`.xlsx`) source and sink, built on MiniExcel. |
+| `EtlPipelines.Files` | Copy, move, compress and extract files as pipeline stages. No third-party dependency. |
+| `EtlPipelines.Files.Http` | Downloads files over HTTP. |
+| `EtlPipelines.Files.Sftp` | Uploads and downloads files over SFTP, built on SSH.NET. |
 | `EtlPipelines.Hosting` | Runs your pipelines as a command line application. |
 | `EtlPipelines.Sql` | Source and sink for any ADO.NET provider. |
 | `EtlPipelines.Sql.Sqlite` .`SqlServer` .`PostgreSql` .`MySql` .`Oracle` | One per engine: the driver, and that engine's bulk-load fast path. |
@@ -227,6 +230,162 @@ back-pressure knob between the pipeline and the disk.
 > **Preview dependency.** MiniExcel 2.x is still a preview release, and its API changed substantially
 > from 1.x. Pinned deliberately: 2.x is the line with `IAsyncEnumerable` streaming on both sides,
 > which is what makes a non-materialising connector possible.
+
+## Files
+
+Every real ETL job starts before the first row: a vendor drops a `.tar.gz` on an SFTP server, a
+partner publishes a CSV at a URL, a finance team writes to a network share. `EtlPipelines.Files`
+covers copy, move, compress and extract with no third-party dependency — zip, tar and gzip are all in
+the .NET shared framework. `EtlPipelines.Files.Http` and `EtlPipelines.Files.Sftp` are separate
+packages for the same reason the SQL provider packages are: reference the one you need.
+
+```csharp
+services.AddHttpClient("vendor");
+services.AddSftpConnection("vendor", o => o.HostKeyFingerprints.Add("SHA256:..."));
+
+services.AddEtlPipeline("nightly", b => b
+    .DownloadFromSftp("vendor", "/out", "*.tar.gz", inbox)
+    .ExtractArchive(inbox.File("orders.tar.gz"), extracted)
+    .FromCsv<Order>(extracted.File("orders.csv"))
+    .ToSqlTable("warehouse", "staging.orders"));
+```
+
+These are coarse stages, not ports — `AddStage`-level steps like `RunSql`, not a source or a sink in a
+dataflow — so they chain on `IPipelineBuilder` the same way `RunSqlScript` does, and files are named
+as `IFileInfo`/`IDirectoryInfo` for the same reason every other connector names them that way: the
+file already carries the filesystem it belongs to, so a test passes `mockFileSystem.FileInfo.New(...)`
+and everything downstream follows.
+
+**A file stage is not transactional.** Copy, move, download and extract all fail fast and keep what
+already succeeded — a multi-file stage that fails on file 3 of 5 leaves the first two written, not
+rolled back, because deleting them on the failure path would be a second destructive act on top of
+the first. A move deletes its source only once the destination is complete, so a failed multi-file
+move can be rerun.
+
+**Writes are atomic by default.** Every file a stage produces streams into a temporary sibling of its
+target and is renamed into place only once it is complete — the same pattern `CsvSink` and `ExcelSink`
+use, generalised. `OverwritePolicy` controls what happens when a target already exists: `Overwrite`
+(the default), `Skip` to resume a drain without redoing work, or `Fail` to refuse the whole batch
+before a single byte is written.
+
+### Selecting files
+
+A stage works on one named file, or every file a pattern matches in a directory:
+
+```csharp
+b.CopyFile(inbox.File("orders.csv"), archive.File("orders.csv"));
+b.CopyFiles(inbox, "*.csv", archive);
+```
+
+Selection is resolved when the stage **runs**, not when the pipeline is composed, so a pattern can
+match files an earlier stage in the same run just produced. Matches are sorted — by name, by
+`LastWriteTime` or by `Length`, ascending or descending — so a rerun does the same work in the same
+order and "file 3 of 5" in an error message is a reproducible address. Matching nothing is not an
+error by default; `MinimumFiles` opts a stage into treating an empty inbox as one.
+
+> **Known limitation.** The pattern language is `*` and `?` only, plus a `Recursive` flag for
+> subdirectories — there is no `**` and no brace sets. That needs
+> `Microsoft.Extensions.FileSystemGlobbing`, a dependency this package deliberately does not take.
+
+### Copying and moving
+
+```csharp
+b.CopyFiles(inbox, "*.csv", archive, o => o.Overwrite = OverwritePolicy.Skip);
+b.MoveFiles(inbox, "*.csv", processed);
+```
+
+A same-volume move is already an atomic rename, so it is not wrapped in a copy by default — that
+would add a full data copy to the operation people choose because it is cheap. Set
+`FileMoveOptions.WriteAtomically = true` for a destination on a network share (see below), where
+`File.Move` falls back to copy-then-delete regardless and this buys back the atomicity a plain rename
+would have given it on one volume.
+
+### Archives
+
+```csharp
+b.CompressFiles(inbox, "*.csv", archive.File("orders.tar.gz"));
+b.ExtractArchive(archive.File("orders.tar.gz"), extracted);
+```
+
+Zip, tar, gzip and tar.gz, detected from the archive's extension or set explicitly with
+`ExtractOptions.Format`/`CompressOptions.Format`. Extraction runs entirely through `IFileInfo.OpenRead`
+and `IFileSystem`, never through `ZipFile`/`TarFile`, which are path-based and would silently reach
+past whatever filesystem the pipeline is composed against.
+
+**Every entry is checked before any entry is written.** An archive entry named `../../etc/passwd`, or
+a tar symbolic link aimed outside the extraction directory, is the "Zip Slip" vulnerability — present
+in every format here, because none of them constrain what an entry may call itself. A validation pass
+over the whole archive runs first; an unsafe entry refuses the extraction rather than writing
+everything before it and stopping partway. `ExtractOptions.MaxEntries` (10,000 by default) and
+`MaxTotalBytes` (unlimited by default) are a zip-bomb guard on top, belt-and-braces rather than a
+substitute for trusting the source of the archive.
+
+### Downloading over HTTP
+
+```csharp
+services.AddHttpClient("vendor", c => c.BaseAddress = new Uri("https://vendor.example/"));
+
+b.DownloadFromHttp("vendor", new Uri("https://vendor.example/orders.csv"), inbox.File("orders.csv"));
+```
+
+The named client comes from `IHttpClientFactory` — headers, auth, a base address and any retry policy
+belong on `services.AddHttpClient("vendor", ...)`, which this package takes no dependency on and adds
+nothing on top of. Downloads stream with `HttpCompletionOption.ResponseHeadersRead`; the default
+buffers the whole body into memory first, which for a large file is the problem streaming exists to
+avoid. A failed status is reported with the URL and the reason phrase, not `EnsureSuccessStatusCode`'s
+exception, which loses both.
+
+### SFTP
+
+```csharp
+services.AddSftpConnection("vendor", o =>
+{
+    o.HostKeyFingerprints.Add("SHA256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU");
+    o.PrivateKeyPath = "/etc/etl/vendor.key";
+});
+
+b.DownloadFromSftp("vendor", "/out", "*.csv", inbox);
+b.UploadToSftp("vendor", outbox, "*.csv", "/in");
+```
+
+Settings live under `Sftp:<name>` rather than `ConnectionStrings`, read lazily the first time a run
+connects — the same lazy-configuration convention `AddSqliteConnection` and friends follow. The test
+seam is SSH.NET's own `ISftpClient`, not a wrapper of it.
+
+**Host keys are verified by default, not trusted.** With no fingerprint configured and
+`AcceptAnyHostKey` left `false`, a connection is refused rather than silently accepted — accepting any
+host key by default would make every SFTP pipeline here trivially machine-in-the-middleable. The
+refusal names exactly what was presented:
+
+```
+The SFTP connection 'vendor' has no expected host key. sftp.vendor.com:22 presented
+'SHA256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU'. If that is the right server, add it under
+Sftp:vendor:HostKeyFingerprints:0. To skip the check, set Sftp:vendor:AcceptAnyHostKey to true.
+```
+
+Paste that fingerprint into configuration, or compare it against `ssh-keygen -lf` on the server's own
+key — both the bare form SSH.NET reports and the `SHA256:`-prefixed form `ssh-keygen` prints are
+accepted. `~/.ssh/known_hosts` is not read; fingerprints come from configuration only.
+
+### Network shares
+
+A UNC path is just a path — `fileSystem.DirectoryInfo.New(@"\\nas\feeds\inbox")` and everything
+downstream follows, no different option or code path needed.
+
+**Authentication is the operating system's job, not this library's.** On Windows, run the process as
+an account that has rights on the share, or establish the session with `net use` before the process
+starts. On Linux and in containers, mount the share. No API here takes a share password, and none
+ever will.
+
+**A move to a share is a copy and a delete, not a rename**, whatever `WriteAtomically` says: `File.Move`
+falls back to copy-then-delete across volumes, and a share is always a different volume. Set
+`WriteAtomically = true` when something is watching the destination, so it never sees a partial file.
+
+> **Known limitation.** `PipelineContext.Items`, which every file stage publishes its output list
+> into, cannot feed `FromCsv<T>` — a dataflow's source is bound when the pipeline is composed, before
+> a pattern has matched anything. When a dataflow must consume a dynamically discovered file, extract
+> or download it to a *known* path first and name that path, the way the example at the top of this
+> section does.
 
 ## SQL databases
 
@@ -644,3 +803,8 @@ tells the two apart. Spans carry `etl.run.id`, and the row counts under the same
 instruments use; a failed span is marked `ActivityStatusCode.Error` with the error's description.
 
 Names are dot-separated throughout, following OpenTelemetry's attribute naming.
+
+Every stage is traced this way, coarse ones included — a file download or an SQL script gets a span
+and its row counters (zero, since it moves no rows through the framework) exactly like a dataflow
+stage does. The span is opened by the pipeline's run loop, once per stage, so a connector package
+never has to depend on the runtime to participate.
