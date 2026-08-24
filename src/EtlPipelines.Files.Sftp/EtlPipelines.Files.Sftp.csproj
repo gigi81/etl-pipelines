@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Uploads and downloads files over SFTP as EtlPipelines stages.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EtlPipelines.Files\EtlPipelines.Files.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      SSH.NET's own ISftpClient is the seam these stages test against - it is not our narrow
+      abstraction over SFTP, it is the vendor's own client interface, mockable directly.
+    -->
+    <PackageReference Include="SSH.NET" />
+    <!-- Resolving named connection factories out of the container. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <!-- Binding SftpConnectionOptions from a Sftp:<name> configuration section. -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+  </ItemGroup>
+
+</Project>
