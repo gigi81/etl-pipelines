@@ -14,3 +14,4 @@ global using EtlPipelines.Sql.Loading;
 global using EtlPipelines.Sql.Ports;
 global using EtlPipelines.Sql.Scripts;
 global using EtlPipelines.Sql.Stages;
+global using EtlPipelines.Sql.Statements;

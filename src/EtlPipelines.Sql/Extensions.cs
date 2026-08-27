@@ -196,13 +196,12 @@ public static class Extensions
     /// <param name="table">The table to empty.</param>
     /// <param name="configure">Command timeout and what the stage is called.</param>
     /// <remarks>
-    /// Issued as <c>DELETE FROM</c> rather than a literal <c>TRUNCATE TABLE</c>, because not every
-    /// engine this library supports has one — SQLite has no <c>TRUNCATE</c> statement at all. Every
-    /// engine here supports an unqualified <c>DELETE FROM</c>, which is all "empty this table" needs;
-    /// what a real <c>TRUNCATE</c> additionally buys on engines that have one — skipping row-by-row
-    /// logging, resetting an identity column — is not guaranteed here. Reach for
-    /// <see cref="RunSql(IPipelineBuilder, string, string, Action{SqlCommandOptions})"/> directly for
-    /// an engine-specific <c>TRUNCATE</c> and those extra guarantees.
+    /// Runs whatever the connection's own engine actually supports, resolved from the
+    /// <see cref="ITruncateStatement"/> registered under its name — real <c>TRUNCATE TABLE</c> for
+    /// SQL Server, PostgreSQL, MySQL and Oracle, and <c>DELETE FROM</c> for SQLite, which has no
+    /// <c>TRUNCATE</c> statement at all. Each provider package registers the right one, so naming a
+    /// connection is all this needs; nothing here asks the caller to know which engine is on the other
+    /// end.
     /// </remarks>
     public static IPipelineBuilder TruncateTable(
         this IPipelineBuilder builder,
@@ -211,9 +210,11 @@ public static class Extensions
         Action<SqlCommandOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
-        ArgumentException.ThrowIfNullOrWhiteSpace(table);
 
-        return builder.RunSql(connectionName, $"DELETE FROM {table}", configure);
+        var options = new SqlCommandOptions();
+        configure?.Invoke(options);
+
+        return builder.AddStage(new TruncateTableStage(connectionName, table, options));
     }
 
     /// <summary>Adds a stage that runs a SQL script file.</summary>
