@@ -136,6 +136,35 @@ public sealed class EtlPipelineBuilder : IPipelineBuilder
     }
 
     /// <inheritdoc />
+    public IPipelineBuilder Parallel(params Action<IPipelineBuilder>[] branches)
+    {
+        ArgumentNullException.ThrowIfNull(branches);
+
+        if (branches.Length < 2)
+        {
+            throw new InvalidOperationException(
+                $"Parallel needs at least two branches but got {branches.Length}. A single branch has " +
+                "nothing to run alongside it and should just be composed on the main chain.");
+        }
+
+        // A unique name per branch, not just per group, is what keeps EtlComponentKey collision-free:
+        // NextKey combines it with an ordinal that starts over inside each branch builder, so two
+        // branches at the same position - their first stage, say - would otherwise mint the same key.
+        var group = NextKey("parallel").Ordinal;
+        var compiled = new IReadOnlyList<Func<IServiceProvider, IPipelineStage>>[branches.Length];
+
+        for (var i = 0; i < branches.Length; i++)
+        {
+            var branch = new EtlPipelineBuilder($"{_name}.parallel{group}.branch{i}", _services);
+            branches[i](branch);
+            compiled[i] = branch.CreateBlueprint().Stages;
+        }
+
+        _stages.Add(_ => new ParallelStage(compiled));
+        return this;
+    }
+
+    /// <inheritdoc />
     public IPipeline Build() => new EtlPipeline(CreateBlueprint(), _services.BuildServiceProvider());
 
     /// <summary>Captures the composed pipeline so a provider built later can run it.</summary>
