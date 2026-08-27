@@ -1,6 +1,7 @@
 using EtlPipelines.Sql.Connections;
 using EtlPipelines.Sql.Loading;
 using EtlPipelines.Sql.Ports;
+using EtlPipelines.Sql.Statements;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using System.Data.Common;
@@ -13,6 +14,11 @@ namespace EtlPipelines.Sql.Sqlite;
 /// has no bulk API: the fastest way in is a prepared INSERT reused inside one transaction, which is
 /// exactly what <see cref="SqlSink{TRow}"/> does on its own. The transaction is what matters — without
 /// one SQLite commits per statement and a large load crawls.
+/// <para>
+/// An <see cref="ITruncateStatement"/> <b>is</b> registered here, unlike the loader: SQLite has no
+/// <c>TRUNCATE</c> statement at all, so <see cref="Extensions.TruncateTable"/> would otherwise send it
+/// one it cannot run. <see cref="SqliteTruncateStatement"/> issues <c>DELETE FROM</c> instead.
+/// </para>
 /// </remarks>
 public static class SqliteConnections
 {
@@ -50,7 +56,10 @@ public static class SqliteConnections
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        return services.AddDbConnection(name, OpenAsync, Options(configure));
+        services.AddDbConnection(name, OpenAsync, Options(configure));
+        services.AddKeyedSingleton<ITruncateStatement>(name, SqliteTruncateStatement.Instance);
+
+        return services;
     }
 
     /// <summary>
@@ -73,7 +82,10 @@ public static class SqliteConnections
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        return services.AddDbConnection(name, connectionString, OpenAsync, Options(configure));
+        services.AddDbConnection(name, connectionString, OpenAsync, Options(configure));
+        services.AddKeyedSingleton<ITruncateStatement>(name, SqliteTruncateStatement.Instance);
+
+        return services;
     }
 
     private static async ValueTask<DbConnection> OpenAsync(
