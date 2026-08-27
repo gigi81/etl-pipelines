@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\samples\Samples.ExcelToSql\Samples.ExcelToSql.csproj" />
     <ProjectReference Include="..\..\samples\Samples.Branching\Samples.Branching.csproj" />
     <ProjectReference Include="..\..\samples\Samples.CsvToDatabase\Samples.CsvToDatabase.csproj" />
+    <ProjectReference Include="..\..\samples\Samples.ArchiveToDatabase\Samples.ArchiveToDatabase.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Sql.SqlServer\EtlPipelines.Sql.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Sql.PostgreSql\EtlPipelines.Sql.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Sql.MySql\EtlPipelines.Sql.MySql.csproj" />
