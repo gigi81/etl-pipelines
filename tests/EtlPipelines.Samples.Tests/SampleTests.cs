@@ -149,24 +149,38 @@ public class SampleTests
     }
 
     [Test]
-    public async Task Archive_to_database_bundles_five_files_and_loads_five_tables()
+    public async Task Archive_to_database_builds_the_feed_separately_from_the_job_that_reads_it()
     {
         //arrange
         await using var scratch = new SampleScratch("archive-sqlite", (services, directory) =>
             ArchiveToDatabase.Pipeline.AddPipeline(services, directory));
 
-        //act
-        var result = await scratch.RunAsync();
-
-        //assert
-        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-
-        // seed, compress, extract, create-tables, then one dataflow per table.
-        result.Value.Stages.Should().HaveCount(4 + ArchiveToDatabase.Pipeline.Tables.Length);
-
         var archive = scratch.File(ArchiveToDatabase.Pipeline.ArchiveFile);
+
+        //act
+        var seeded = await scratch.RunAsync(ArchiveToDatabase.Pipeline.SeedName);
+
+        //assert - the setup pipeline alone produces the feed, and nothing else
+        seeded.IsError.Should().BeFalse(seeded.IsError ? seeded.FirstError.Description : null);
+        seeded.Value.Stages.Should().HaveCount(2, "writing the files and bundling them are its only two stages");
         archive.Refresh();
-        archive.Exists.Should().BeTrue("the pipeline bundles the five files into a real zip");
+        archive.Exists.Should().BeTrue("build-feed bundles the five files into a real zip");
+
+        foreach (var table in ArchiveToDatabase.Pipeline.Tables)
+        {
+            scratch.Directory.SubDirectory(ArchiveToDatabase.Pipeline.ExtractedDirectory)
+                .File($"{table}.csv").Exists.Should().BeFalse("the real job has not run yet");
+        }
+
+        //act
+        var loaded = await scratch.RunAsync(ArchiveToDatabase.Pipeline.Name);
+
+        //assert - the real job only extracts and loads; it never wrote the feed itself
+        loaded.IsError.Should().BeFalse(loaded.IsError ? loaded.FirstError.Description : null);
+        loaded.Value.Stages.Should().HaveCount(
+            2 + ArchiveToDatabase.Pipeline.Tables.Length, "extract, create-tables, then one dataflow per table");
+        loaded.Value.Stages.Select(s => s.Name).Should().NotContain(
+            s => s.Contains("compress"), "compressing the feed belongs to build-feed, not to this pipeline");
 
         foreach (var table in ArchiveToDatabase.Pipeline.Tables)
         {
@@ -188,5 +202,21 @@ public class SampleTests
             var count = (long)(await command.ExecuteScalarAsync())!;
             count.Should().Be(ArchiveToDatabase.SeedStage.RowsPerFile, $"{table} should hold every row its CSV carried");
         }
+    }
+
+    [Test]
+    public async Task Archive_to_database_job_fails_when_the_feed_was_never_built()
+    {
+        //arrange
+        await using var scratch = new SampleScratch("archive-no-feed", (services, directory) =>
+            ArchiveToDatabase.Pipeline.AddPipeline(services, directory));
+
+        //act
+        // The real job never builds its own input - running it before build-feed is exactly the
+        // mistake this separation is meant to make obvious rather than silently paper over.
+        var result = await scratch.RunAsync(ArchiveToDatabase.Pipeline.Name);
+
+        //assert
+        result.IsError.Should().BeTrue();
     }
 }

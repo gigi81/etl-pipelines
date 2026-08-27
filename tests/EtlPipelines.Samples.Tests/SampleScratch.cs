@@ -62,6 +62,13 @@ public sealed class SampleScratch : IAsyncDisposable
     public Task<ErrorOr<PipelineResult>> RunAsync(CancellationToken cancellationToken = default) =>
         _provider.GetServices<IPipeline>().Single().RunAsync(cancellationToken);
 
+    /// <summary>
+    /// Runs one named pipeline of a sample that registers more than one — a vendor-side setup
+    /// pipeline and the real job that consumes what it produced, say — and hands back what it did.
+    /// </summary>
+    public Task<ErrorOr<PipelineResult>> RunAsync(string name, CancellationToken cancellationToken = default) =>
+        _provider.GetServices<IPipeline>().Single(pipeline => pipeline.Name == name).RunAsync(cancellationToken);
+
     public async ValueTask DisposeAsync()
     {
         await _provider.DisposeAsync();

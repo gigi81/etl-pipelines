@@ -672,7 +672,7 @@ Runnable programs in [`samples/`](samples):
 | `Samples.ExcelToSql` | a hand-filled spreadsheet loaded into a table, bad rows set aside |
 | `Samples.CsvToDatabase` | one pipeline, five engines — only the registered connection changes |
 | `Samples.Branching` | archiving the raw rows while the same pass builds a report |
-| `Samples.ArchiveToDatabase` | five CSV files bundled into a zip, then extracted and loaded into five tables |
+| `Samples.ArchiveToDatabase` | a vendor's zip, built by its own pipeline, extracted and loaded into five tables by another |
 
 Each is a command line application, and none of them writes a command: `run` and `list` come from
 `EtlPipelines.Hosting`. `--work-dir` says where to work, and defaults to a new directory under the
@@ -694,7 +694,14 @@ services.AddEtlPipeline(Name, builder => builder
 ```
 
 Each sample is three files: `Pipeline.cs` registers it, `SeedStage.cs` is the stage that puts the
-input in place, and `Program.cs` builds the host. Each is also an integration test:
+input in place, and `Program.cs` builds the host. `Samples.ArchiveToDatabase` is the one exception
+worth knowing about: its input is a zip a vendor would have sent, not a file this job would ever
+write itself, so `SeedStage` runs in a **separate registered pipeline** — `build-feed` — rather than
+as an early stage of the job that reads it. `run` with no name runs every registered pipeline in the
+order they were registered, so `build-feed` still runs before `archive` without either needing to
+know about the other; named individually, `run archive` before `run build-feed` fails, on purpose.
+
+Each sample is also an integration test:
 `tests/EtlPipelines.Samples.Tests` runs the pipelines through their own registration and checks what
 they left behind, then runs each one again through its command line to prove the wiring holds.
 `Samples.CsvToDatabase` is run again against real SQL Server, PostgreSQL, MySQL and Oracle containers
