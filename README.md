@@ -130,6 +130,39 @@ Three things worth knowing:
 - **A fan-out is still one stage.** It stays a single entry in `PipelineResult.Stages`, with `RowsOut`
   summed across destinations: two branches over 1,000 rows report 1,000 in and 2,000 out.
 
+## Running stages in parallel
+
+`Branch` fans *one already-flowing stream* out to several destinations. `Parallel` is its coarse-stage
+counterpart: several **independent** chains, each reading and writing something of its own, run at the
+same time instead of one after another:
+
+```csharp
+services.AddEtlPipeline("archive", builder => builder
+    .ExtractArchive(archive, extracted)
+    .Parallel(
+        b => b.TruncateTable("db", "customers").FromCsv<Row>(extracted.File("customers.csv")).ToSqlTable("db", "customers"),
+        b => b.TruncateTable("db", "products").FromCsv<Row>(extracted.File("products.csv")).ToSqlTable("db", "products"),
+        b => b.TruncateTable("db", "regions").FromCsv<Row>(extracted.File("regions.csv")).ToSqlTable("db", "regions")));
+```
+
+Five independent extract-and-load chains against five different tables — the motivating case — have no
+reason to make the fifth wait on the first four just because they happen to be declared in the same
+pipeline. Each branch is composed exactly like the main chain, including a dataflow of its own, and
+runs its own stages in order; it is the branches that overlap with each other, not the stages inside
+one of them.
+
+Two things worth knowing:
+
+- **One branch failing does not cancel the others.** Every branch that is already running keeps going
+  to completion — cutting one off mid-write would trade a slow run for a half-written table, which is
+  worse. Once every branch has finished, the block fails if any of them did, and reports the first
+  error; whatever the other branches moved is still counted, the same way a failed dataflow stage still
+  reports what it moved before it died.
+- **The block is still one entry in `PipelineResult.Stages`**, named `Parallel(N)`, with row counts
+  summed across branches and elapsed time the block's own wall clock rather than the sum of its
+  branches. Each branch's own stages are still traced individually — nothing is lost, only rolled up
+  in the run's own report.
+
 ## CSV files
 
 `EtlPipelines.Csv` is a separate package, so the core runtime takes no CsvHelper dependency.

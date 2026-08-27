@@ -1,4 +1,5 @@
 using System.IO.Abstractions;
+using EtlPipelines.Abstractions.Building;
 using EtlPipelines.Core;
 using EtlPipelines.Csv;
 using EtlPipelines.Files;
@@ -106,27 +107,19 @@ public static class Pipeline
                 builder.AddStage<CreateTablesStage>();
             }
 
-            // One file, one table, five times over - each Truncate/From/To trio is its own pair of
-            // stages, and stages run one after another, so the extraction above has always finished
-            // before the first one opens its file. CreateTablesStage already left every table empty,
-            // so TruncateTable has nothing to do here - it earns its place in a job run more than
-            // once against a database it does not own, where "empty" cannot be assumed.
-            builder
-                .TruncateTable(Connection, Tables[0])
-                    .FromCsv<Item>(extracted.File($"{Tables[0]}.csv"))
-                    .ToSqlTable(Connection, Tables[0])
-                .TruncateTable(Connection, Tables[1])
-                    .FromCsv<Item>(extracted.File($"{Tables[1]}.csv"))
-                    .ToSqlTable(Connection, Tables[1])
-                .TruncateTable(Connection, Tables[2])
-                    .FromCsv<Item>(extracted.File($"{Tables[2]}.csv"))
-                    .ToSqlTable(Connection, Tables[2])
-                .TruncateTable(Connection, Tables[3])
-                    .FromCsv<Item>(extracted.File($"{Tables[3]}.csv"))
-                    .ToSqlTable(Connection, Tables[3])
-                .TruncateTable(Connection, Tables[4])
-                    .FromCsv<Item>(extracted.File($"{Tables[4]}.csv"))
-                    .ToSqlTable(Connection, Tables[4]);
+            // One file, one table, five times over - and the five have nothing to do with each other:
+            // different tables, different source files, so there is no reason to make the fifth wait
+            // on the first four. Each branch still runs its own Truncate/From/To in order - the
+            // extraction above has always finished before any of them opens a file - only the five
+            // branches themselves overlap. CreateTablesStage already left every table empty, so
+            // TruncateTable has nothing to do here - it earns its place in a job run more than once
+            // against a database it does not own, where "empty" cannot be assumed.
+            builder.Parallel(Tables
+                .Select<string, Action<IPipelineBuilder>>(table => b => b
+                    .TruncateTable(Connection, table)
+                        .FromCsv<Item>(extracted.File($"{table}.csv"))
+                        .ToSqlTable(Connection, table))
+                .ToArray());
         });
     }
 }

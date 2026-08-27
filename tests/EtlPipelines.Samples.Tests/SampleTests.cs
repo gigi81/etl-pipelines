@@ -178,13 +178,13 @@ public class SampleTests
         //assert - the real job only extracts and loads; it never wrote the feed itself
         loaded.IsError.Should().BeFalse(loaded.IsError ? loaded.FirstError.Description : null);
         loaded.Value.Stages.Should().HaveCount(
-            2 + (2 * ArchiveToDatabase.Pipeline.Tables.Length),
-            "extract, create-tables, then a truncate and a dataflow per table");
+            3,
+            "extract, create-tables, then one parallel block truncating and loading every table");
         loaded.Value.Stages.Select(s => s.Name).Should().NotContain(
             s => s.Contains("compress"), "compressing the feed belongs to build-feed, not to this pipeline");
         loaded.Value.Stages.Select(s => s.Name).Should().Contain(
-            $"DELETE FROM {ArchiveToDatabase.Pipeline.Tables[0]}",
-            "each table is truncated - a no-op here, since CreateTablesStage already left it empty - before its load");
+            $"Parallel({ArchiveToDatabase.Pipeline.Tables.Length})",
+            "the five truncate-and-load chains run as one parallel block, one branch per table");
 
         foreach (var table in ArchiveToDatabase.Pipeline.Tables)
         {
