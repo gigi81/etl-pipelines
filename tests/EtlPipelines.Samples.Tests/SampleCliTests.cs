@@ -127,6 +127,24 @@ public class SampleCliTests
     }
 
     [Test]
+    public async Task Archive_to_database_runs_from_the_command_line()
+    {
+        var directory = Scratch("archive-sqlite");
+
+        try
+        {
+            var exitCode = await ArchiveToDatabase.Program.RunAsync(["run", ArchiveToDatabase.Pipeline.Name, "--work-dir", directory]);
+
+            exitCode.Should().Be(0);
+            File.Exists(Path.Combine(directory, ArchiveToDatabase.Pipeline.ArchiveFile)).Should().BeTrue();
+        }
+        finally
+        {
+            Cleanup(directory);
+        }
+    }
+
+    [Test]
     public async Task The_built_in_list_verb_names_the_sample_s_pipeline()
     {
         var directory = Scratch("list");

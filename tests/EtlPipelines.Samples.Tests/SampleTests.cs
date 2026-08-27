@@ -1,4 +1,5 @@
 using System.IO.Abstractions;
+using Microsoft.Data.Sqlite;
 using MiniExcelLib;
 using MiniExcelLib.OpenXml;
 
@@ -145,5 +146,47 @@ public class SampleTests
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
         result.Value.RowsRead.Should().Be(CsvToDatabase.SeedStage.Rows);
         result.Value.RowsWritten.Should().Be(CsvToDatabase.Pipeline.ExpectedRows);
+    }
+
+    [Test]
+    public async Task Archive_to_database_bundles_five_files_and_loads_five_tables()
+    {
+        //arrange
+        await using var scratch = new SampleScratch("archive-sqlite", (services, directory) =>
+            ArchiveToDatabase.Pipeline.AddPipeline(services, directory));
+
+        //act
+        var result = await scratch.RunAsync();
+
+        //assert
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
+
+        // seed, compress, extract, create-tables, then one dataflow per table.
+        result.Value.Stages.Should().HaveCount(4 + ArchiveToDatabase.Pipeline.Tables.Length);
+
+        var archive = scratch.File(ArchiveToDatabase.Pipeline.ArchiveFile);
+        archive.Refresh();
+        archive.Exists.Should().BeTrue("the pipeline bundles the five files into a real zip");
+
+        foreach (var table in ArchiveToDatabase.Pipeline.Tables)
+        {
+            var extracted = scratch.Directory
+                .SubDirectory(ArchiveToDatabase.Pipeline.ExtractedDirectory)
+                .File($"{table}.csv");
+            extracted.Refresh();
+            extracted.Exists.Should().BeTrue($"{table}.csv should have come back out of the archive");
+        }
+
+        await using var connection = new SqliteConnection(
+            ArchiveToDatabase.Pipeline.ConnectionString(scratch.Directory));
+        await connection.OpenAsync();
+
+        foreach (var table in ArchiveToDatabase.Pipeline.Tables)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*) FROM {table}";
+            var count = (long)(await command.ExecuteScalarAsync())!;
+            count.Should().Be(ArchiveToDatabase.SeedStage.RowsPerFile, $"{table} should hold every row its CSV carried");
+        }
     }
 }

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>EtlPipelines.Samples.ArchiveToDatabase</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Samples.Common\Samples.Common.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Csv\EtlPipelines.Csv.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Files\EtlPipelines.Files.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Sql.Sqlite\EtlPipelines.Sql.Sqlite.csproj" />
+  </ItemGroup>
+
+</Project>
