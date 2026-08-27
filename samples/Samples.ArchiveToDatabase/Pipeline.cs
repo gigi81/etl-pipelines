@@ -107,6 +107,14 @@ public static class Pipeline
                 builder.AddStage<CreateTablesStage>();
             }
 
+            Action<IPipelineBuilder> LoadTable(string table)
+            {
+                return b => b
+                    .TruncateTable(Connection, table)
+                    .FromCsv<Item>(extracted.File($"{table}.csv"))
+                    .ToSqlTable(Connection, table);
+            }
+
             // One file, one table, five times over - and the five have nothing to do with each other:
             // different tables, different source files, so there is no reason to make the fifth wait
             // on the first four. Each branch still runs its own Truncate/From/To in order - the
@@ -114,12 +122,7 @@ public static class Pipeline
             // branches themselves overlap. CreateTablesStage already left every table empty, so
             // TruncateTable has nothing to do here - it earns its place in a job run more than once
             // against a database it does not own, where "empty" cannot be assumed.
-            Action<IPipelineBuilder> LoadTable(string table) => b => b
-                .TruncateTable(Connection, table)
-                    .FromCsv<Item>(extracted.File($"{table}.csv"))
-                    .ToSqlTable(Connection, table);
-
-            builder.Parallel([.. Tables.Select(LoadTable)]);
+            builder.Parallel(Tables.Select(LoadTable).ToArray());
         });
     }
 }
