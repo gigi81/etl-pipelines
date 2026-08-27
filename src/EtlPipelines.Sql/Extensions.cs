@@ -190,6 +190,32 @@ public static class Extensions
         return builder.AddStage(new SqlCommandStage(connectionName, sql, CommandType.Text, options));
     }
 
+    /// <summary>Adds a stage that empties a table.</summary>
+    /// <param name="builder">The pipeline being composed.</param>
+    /// <param name="connectionName">The name the connection was registered under.</param>
+    /// <param name="table">The table to empty.</param>
+    /// <param name="configure">Command timeout and what the stage is called.</param>
+    /// <remarks>
+    /// Issued as <c>DELETE FROM</c> rather than a literal <c>TRUNCATE TABLE</c>, because not every
+    /// engine this library supports has one — SQLite has no <c>TRUNCATE</c> statement at all. Every
+    /// engine here supports an unqualified <c>DELETE FROM</c>, which is all "empty this table" needs;
+    /// what a real <c>TRUNCATE</c> additionally buys on engines that have one — skipping row-by-row
+    /// logging, resetting an identity column — is not guaranteed here. Reach for
+    /// <see cref="RunSql(IPipelineBuilder, string, string, Action{SqlCommandOptions})"/> directly for
+    /// an engine-specific <c>TRUNCATE</c> and those extra guarantees.
+    /// </remarks>
+    public static IPipelineBuilder TruncateTable(
+        this IPipelineBuilder builder,
+        string connectionName,
+        string table,
+        Action<SqlCommandOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
+
+        return builder.RunSql(connectionName, $"DELETE FROM {table}", configure);
+    }
+
     /// <summary>Adds a stage that runs a SQL script file.</summary>
     /// <param name="builder">The pipeline being composed.</param>
     /// <param name="connectionName">The name the connection was registered under.</param>

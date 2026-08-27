@@ -285,6 +285,39 @@ public sealed class SqlStageTests : IAsyncDisposable
         result.FirstError.Description.Should().Contain("DELETE FROM not_a_table");
     }
 
+    [Test]
+    public async Task Truncates_a_table_as_a_stage()
+    {
+        //arrange
+        await _host.ExecuteAsync("CREATE TABLE orders (Id INTEGER)");
+        await _host.ExecuteAsync("INSERT INTO orders (Id) VALUES (1), (2), (3)");
+
+        Registered().AddEtlPipeline(Pipeline, b => b.TruncateTable(Connection, "orders"));
+
+        //act
+        var result = await _host.RunAsync(Pipeline);
+
+        //assert
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
+        (await _host.ScalarAsync<long>("SELECT COUNT(*) FROM orders")).Should().Be(0);
+    }
+
+    [Test]
+    public async Task Truncating_an_already_empty_table_is_not_an_error()
+    {
+        //arrange
+        // SQLite has no TRUNCATE statement at all - this is the test that would catch TruncateTable
+        // reaching for one anyway.
+        await _host.ExecuteAsync("CREATE TABLE orders (Id INTEGER)");
+        Registered().AddEtlPipeline(Pipeline, b => b.TruncateTable(Connection, "orders"));
+
+        //act
+        var result = await _host.RunAsync(Pipeline);
+
+        //assert
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
+    }
+
     public sealed record Order
     {
         public long Id { get; set; }
