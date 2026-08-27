@@ -9,8 +9,9 @@ using Microsoft.Extensions.Logging;
 namespace EtlPipelines.Samples.ArchiveToDatabase;
 
 /// <summary>
-/// Writes the five CSV files this sample bundles up, standing in for whatever produced them before
-/// they reached this job - a nightly export, most likely, from five different tables of its own.
+/// Writes the five CSV files <see cref="Pipeline.SeedName"/> bundles up. The one stage of the setup
+/// pipeline, not the real job - standing in for whatever produced these files before a vendor zipped
+/// them up, most likely a nightly export from five tables of its own.
 /// </summary>
 public sealed class SeedStage : IPipelineStage
 {

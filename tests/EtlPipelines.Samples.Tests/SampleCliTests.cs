@@ -127,16 +127,39 @@ public class SampleCliTests
     }
 
     [Test]
-    public async Task Archive_to_database_runs_from_the_command_line()
+    public async Task Archive_to_database_runs_both_pipelines_in_order_when_none_is_named()
     {
         var directory = Scratch("archive-sqlite");
 
         try
         {
-            var exitCode = await ArchiveToDatabase.Program.RunAsync(["run", ArchiveToDatabase.Pipeline.Name, "--work-dir", directory]);
+            // No name, so this runs every registered pipeline in registration order - build-feed,
+            // which the real job depends on, then archive. Naming just "archive" here would fail,
+            // which is the point of registering the two separately.
+            var exitCode = await ArchiveToDatabase.Program.RunAsync(["run", "--work-dir", directory]);
 
             exitCode.Should().Be(0);
             File.Exists(Path.Combine(directory, ArchiveToDatabase.Pipeline.ArchiveFile)).Should().BeTrue();
+            File.Exists(Path.Combine(directory, "archive.db")).Should().BeTrue();
+        }
+        finally
+        {
+            Cleanup(directory);
+        }
+    }
+
+    [Test]
+    public async Task Archive_to_database_job_alone_fails_before_the_feed_exists()
+    {
+        var directory = Scratch("archive-job-only");
+
+        try
+        {
+            //act
+            var exitCode = await ArchiveToDatabase.Program.RunAsync(["run", ArchiveToDatabase.Pipeline.Name, "--work-dir", directory]);
+
+            //assert
+            exitCode.Should().Be(1, "the real job never builds its own input");
         }
         finally
         {
