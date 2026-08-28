@@ -100,22 +100,9 @@ public static class Pipeline
         return services.AddEtlPipeline(Name, builder =>
         {
             builder.WithOptions(options => options.BatchSize = 100)
-                .ExtractArchive(archive, extracted);
-
-            if (ownsDatabase)
-            {
-                builder.AddStage<CreateTablesStage>();
-            }
-
-            // One file, one table, five times over - and the five have nothing to do with each other:
-            // different tables, different source files, so there is no reason to make the fifth wait
-            // on the first four. Each branch still runs its own Truncate/From/To in order - the
-            // extraction above has always finished before any of them opens a file - only the five
-            // branches themselves overlap. CreateTablesStage already left every table empty when this
-            // job owns the database, so TruncateTable has nothing to do there - it earns its place
-            // when the database is not this job's own, where "empty" cannot be assumed.
-            builder.Parallel(Tables.Select(LoadTable).ToArray());
-
+                .ExtractArchive(archive, extracted)
+                .AddConditionalStage<CreateTablesStage>(ownsDatabase)
+                .Parallel(Tables.Select(LoadTable).ToArray());
             Action<IPipelineBuilder> LoadTable(string table)
             {
                 return b => b

@@ -73,12 +73,8 @@ public static class Pipeline
         {
             builder.WithOptions(options => options.BatchSize = 1_000)
                 // The file this job loads does not exist until something fetches it.
-                .AddStage<SeedStage>();
-
-            if (ownsDatabase)
-            {
-                builder.AddStage<CreateTableStage>();
-            }
+                .AddStage<SeedStage>()
+                .AddConditionalStage<CreateTableStage>(ownsDatabase);
 
             builder
             .FromCsv<Trade>(directory.File(InputFile))
