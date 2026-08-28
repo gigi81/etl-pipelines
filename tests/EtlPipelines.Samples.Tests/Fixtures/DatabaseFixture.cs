@@ -1,7 +1,7 @@
 using DotNet.Testcontainers.Containers;
 using TUnit.Core.Interfaces;
 
-namespace EtlPipelines.Samples.Tests;
+namespace EtlPipelines.Samples.Tests.Fixtures;
 
 /// <summary>The connection string of a database a test can run against.</summary>
 public interface IDatabaseFixture

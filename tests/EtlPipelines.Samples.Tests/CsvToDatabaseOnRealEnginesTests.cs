@@ -1,13 +1,10 @@
 using System.Data.Common;
+using EtlPipelines.Samples.Tests.Fixtures;
 using EtlPipelines.Sql.MySql;
 using EtlPipelines.Sql.Oracle;
 using EtlPipelines.Sql.PostgreSql;
 using EtlPipelines.Sql.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
-using Testcontainers.MsSql;
-using Testcontainers.MySql;
-using Testcontainers.Oracle;
-using Testcontainers.PostgreSql;
 
 namespace EtlPipelines.Samples.Tests;
 
@@ -74,12 +71,6 @@ public abstract class CsvToDatabaseOnRealEnginesTests<TFixture>
     }
 }
 
-public sealed class SqlServerFixture : DatabaseFixture<MsSqlContainer>
-{
-    protected override MsSqlContainer CreateContainer() =>
-        new MsSqlBuilder(ContainerImages.SqlServer).Build();
-}
-
 [InheritsTests]
 [ClassDataSource<SqlServerFixture>(Shared = SharedType.PerAssembly)]
 public sealed class SqlServerSampleTests(SqlServerFixture fixture)
@@ -93,12 +84,6 @@ public sealed class SqlServerSampleTests(SqlServerFixture fixture)
 
     protected override string CreateTableSql =>
         $"CREATE TABLE {CsvToDatabase.Pipeline.Table} (Id INT, Symbol NVARCHAR(10), Price DECIMAL(18,2), Quantity INT)";
-}
-
-public sealed class PostgreSqlFixture : DatabaseFixture<PostgreSqlContainer>
-{
-    protected override PostgreSqlContainer CreateContainer() =>
-        new PostgreSqlBuilder(ContainerImages.PostgreSql).Build();
 }
 
 [InheritsTests]
@@ -116,14 +101,6 @@ public sealed class PostgreSqlSampleTests(PostgreSqlFixture fixture)
         $"CREATE TABLE {CsvToDatabase.Pipeline.Table} (Id INT, Symbol TEXT, Price NUMERIC(18,2), Quantity INT)";
 }
 
-public sealed class MySqlFixture : DatabaseFixture<MySqlContainer>
-{
-    protected override MySqlContainer CreateContainer() =>
-        new MySqlBuilder(ContainerImages.MySql).WithCommand("--local-infile=1").Build();
-
-    public override string ConnectionString => $"{base.ConnectionString};AllowLoadLocalInfile=true";
-}
-
 [InheritsTests]
 [ClassDataSource<MySqlFixture>(Shared = SharedType.PerAssembly)]
 public sealed class MySqlSampleTests(MySqlFixture fixture)
@@ -139,10 +116,19 @@ public sealed class MySqlSampleTests(MySqlFixture fixture)
         $"CREATE TABLE {CsvToDatabase.Pipeline.Table} (Id INT, Symbol VARCHAR(10), Price DECIMAL(18,2), Quantity INT)";
 }
 
-public sealed class OracleFixture : DatabaseFixture<OracleContainer>
+[InheritsTests]
+[ClassDataSource<MariaDbFixture>(Shared = SharedType.PerAssembly)]
+public sealed class MariaDbSampleTests(MariaDbFixture fixture)
+    : CsvToDatabaseOnRealEnginesTests<MariaDbFixture>(fixture)
 {
-    protected override OracleContainer CreateContainer() =>
-        new OracleBuilder(ContainerImages.Oracle).Build();
+    protected override Func<CancellationToken, ValueTask<DbConnection>> Open() =>
+        MySqlExtensions.Open(Fixture.ConnectionString);
+
+    protected override Action<IServiceCollection, string> Register =>
+        (services, name) => services.AddMySqlConnection(name, Fixture.ConnectionString);
+
+    protected override string CreateTableSql =>
+        $"CREATE TABLE {CsvToDatabase.Pipeline.Table} (Id INT, Symbol VARCHAR(10), Price DECIMAL(18,2), Quantity INT)";
 }
 
 [InheritsTests]

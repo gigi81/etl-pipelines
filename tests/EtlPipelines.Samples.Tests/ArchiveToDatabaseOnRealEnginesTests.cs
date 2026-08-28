@@ -1,4 +1,5 @@
 using System.Data.Common;
+using EtlPipelines.Samples.Tests.Fixtures;
 using EtlPipelines.Sql.MySql;
 using EtlPipelines.Sql.Oracle;
 using EtlPipelines.Sql.PostgreSql;
@@ -114,6 +115,21 @@ public sealed class PostgreSqlArchiveTests(PostgreSqlFixture fixture)
 [ClassDataSource<MySqlFixture>(Shared = SharedType.PerAssembly)]
 public sealed class MySqlArchiveTests(MySqlFixture fixture)
     : ArchiveToDatabaseOnRealEnginesTests<MySqlFixture>(fixture)
+{
+    protected override Func<CancellationToken, ValueTask<DbConnection>> Open() =>
+        MySqlExtensions.Open(Fixture.ConnectionString);
+
+    protected override Action<IServiceCollection, string> Register =>
+        (services, name) => services.AddMySqlConnection(name, Fixture.ConnectionString);
+
+    protected override string CreateTableSql(string table) =>
+        $"CREATE TABLE {table} (Id INT, Name VARCHAR(50))";
+}
+
+[InheritsTests]
+[ClassDataSource<MariaDbFixture>(Shared = SharedType.PerAssembly)]
+public sealed class MariaDbArchiveTests(MariaDbFixture fixture)
+    : ArchiveToDatabaseOnRealEnginesTests<MariaDbFixture>(fixture)
 {
     protected override Func<CancellationToken, ValueTask<DbConnection>> Open() =>
         MySqlExtensions.Open(Fixture.ConnectionString);
