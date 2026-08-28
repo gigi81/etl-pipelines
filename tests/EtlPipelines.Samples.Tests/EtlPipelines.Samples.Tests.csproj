@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\samples\Samples.Common\Samples.Common.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Hosting\EtlPipelines.Hosting.csproj" />
     <ProjectReference Include="..\..\samples\Samples.CsvToExcel\Samples.CsvToExcel.csproj" />
     <ProjectReference Include="..\..\samples\Samples.SqlToWorkbook\Samples.SqlToWorkbook.csproj" />
     <ProjectReference Include="..\..\samples\Samples.ExcelToSql\Samples.ExcelToSql.csproj" />

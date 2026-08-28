@@ -1,5 +1,4 @@
 using EtlPipelines.Hosting;
-using EtlPipelines.Samples.Common;
 
 namespace EtlPipelines.Samples.CsvToExcel;
 
@@ -19,13 +18,17 @@ namespace EtlPipelines.Samples.CsvToExcel;
 /// </remarks>
 public static class Program
 {
+    private const string Description = "A CSV file filtered and reshaped into a workbook.";
+
     /// <summary>The process entry point.</summary>
     public static Task<int> Main(string[] args) => RunAsync(args);
 
     /// <summary>Runs the application and returns its exit code.</summary>
-    public static Task<int> RunAsync(string[] args) =>
-        new EtlPipelinesHost("A CSV file filtered and reshaped into a workbook.")
-            .UseSampleWorkspace(Pipeline.Name, (services, directory) =>
-                services.AddPipeline(directory))
+    public static Task<int> RunAsync(string[] args)
+    {
+        return new EtlPipelinesHost(Description)
+            .ConfigureServices((_, services, workspace) =>
+                services.AddPipeline(workspace))
             .RunAsync(args);
+    }
 }

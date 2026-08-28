@@ -3,7 +3,7 @@ using System.Globalization;
 using System.IO.Abstractions;
 using ErrorOr;
 using EtlPipelines.Abstractions.Execution;
-using EtlPipelines.Samples.Common;
+using EtlPipelines.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -16,7 +16,7 @@ public sealed class SeedStage : IPipelineStage
     private readonly ILogger<SeedStage> _logger;
 
     public SeedStage(
-        [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
+        [FromKeyedServices(EtlPipelinesHost.WorkspaceKey)] IDirectoryInfo directory,
         ILogger<SeedStage> logger)
     {
         _directory = directory;

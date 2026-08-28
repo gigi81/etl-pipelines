@@ -29,7 +29,6 @@
   </Folder>
   <Folder Name="/samples/">
     <File Path="samples/Directory.Build.props" />
-    <Project Path="samples/Samples.Common/Samples.Common.csproj" />
     <Project Path="samples/Samples.ArchiveToDatabase/Samples.ArchiveToDatabase.csproj" />
     <Project Path="samples/Samples.Branching/Samples.Branching.csproj" />
     <Project Path="samples/Samples.CsvToDatabase/Samples.CsvToDatabase.csproj" />

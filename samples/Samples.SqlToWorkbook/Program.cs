@@ -1,5 +1,4 @@
 using EtlPipelines.Hosting;
-using EtlPipelines.Samples.Common;
 
 namespace EtlPipelines.Samples.SqlToWorkbook;
 
@@ -19,13 +18,17 @@ namespace EtlPipelines.Samples.SqlToWorkbook;
 /// </remarks>
 public static class Program
 {
+    private const string Description = "Several queries becoming the sheets of one workbook.";
+
     /// <summary>The process entry point.</summary>
     public static Task<int> Main(string[] args) => RunAsync(args);
 
     /// <summary>Runs the application and returns its exit code.</summary>
-    public static Task<int> RunAsync(string[] args) =>
-        new EtlPipelinesHost("Several queries becoming the sheets of one workbook.")
-            .UseSampleWorkspace(Pipeline.Name, (services, directory) =>
-                services.AddPipeline(directory))
+    public static Task<int> RunAsync(string[] args)
+    {
+        return new EtlPipelinesHost(Description)
+            .ConfigureServices((_, services, workspace) =>
+                services.AddPipeline(workspace))
             .RunAsync(args);
+    }
 }

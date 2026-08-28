@@ -34,16 +34,16 @@ public static class Pipeline
     public const string ReportFile = "report.xlsx";
 
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
-    public static IServiceCollection AddPipeline(this IServiceCollection services, IDirectoryInfo directory)
+    public static IServiceCollection AddPipeline(this IServiceCollection services, IDirectoryInfo workspace)
     {
         return services.AddEtlPipeline(Name, builder => builder
             .WithOptions(options => options.BatchSize = 256)
             // The feed this job reads does not exist until something fetches it.
             .AddStage<SeedStage>()
-            .FromCsv<Reading>(directory.File(InputFile))
+            .FromCsv<Reading>(workspace.File(InputFile))
             .Branch(
                 // Untouched, exactly as it arrived.
-                archived => archived.ToCsv(directory.File(ArchiveFile)),
+                archived => archived.ToCsv(workspace.File(ArchiveFile)),
                 // The same rows, on their way to something a person will read.
                 reported => reported
                     .Where(reading => reading.Celsius > 0)
@@ -53,6 +53,6 @@ public static class Pipeline
                         TakenAt = reading.TakenAt,
                         Fahrenheit = Math.Round((reading.Celsius * 9 / 5) + 32, 2),
                     })
-                    .ToExcel(directory.File(ReportFile))));
+                    .ToExcel(workspace.File(ReportFile))));
     }
 }

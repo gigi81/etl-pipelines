@@ -1,7 +1,6 @@
 using System.IO.Abstractions;
 using EtlPipelines.Abstractions.Execution;
 using EtlPipelines.Hosting;
-using EtlPipelines.Samples.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -32,9 +31,9 @@ public sealed class SampleScratch : IAsyncDisposable
         services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Warning));
         services.AddSingleton(_fileSystem);
 
-        // Under the same key the samples' own command line registers it, so the seeders resolve it
+        // Under the same key EtlPipelinesHost.UseWorkspace registers it, so the seeders resolve it
         // here exactly as they do there.
-        services.AddKeyedSingleton(SampleWorkspace.Key, Directory);
+        services.AddKeyedSingleton(EtlPipelinesHost.WorkspaceKey, Directory);
         services.AddSingleton<PipelineRunner>();
         configure(services, Directory);
 

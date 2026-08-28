@@ -60,7 +60,7 @@ public static class Pipeline
     /// Registers both pipelines against the directory the run is working in.
     /// </summary>
     /// <param name="services">The container.</param>
-    /// <param name="directory">The directory the run reads and writes in.</param>
+    /// <param name="workspace">The directory the run reads and writes in.</param>
     /// <param name="configureConnection">
     /// Registers the connection under the name given. Left unset, a SQLite file in the workspace is
     /// used - which is the one thing that differs between loading into SQLite and loading into
@@ -68,12 +68,12 @@ public static class Pipeline
     /// </param>
     public static IServiceCollection AddPipeline(
         this IServiceCollection services,
-        IDirectoryInfo directory,
+        IDirectoryInfo workspace,
         Action<IServiceCollection, string>? configureConnection = null)
     {
-        var source = directory.SubDirectory(SourceDirectory);
-        var extracted = directory.SubDirectory(ExtractedDirectory);
-        var archive = directory.File(ArchiveFile);
+        var source = workspace.SubDirectory(SourceDirectory);
+        var extracted = workspace.SubDirectory(ExtractedDirectory);
+        var archive = workspace.File(ArchiveFile);
 
         // The vendor's side. Nothing here is the real job - CompressFiles is standing in for whatever
         // that vendor actually uses to bundle its export, no different from calling zip on a shell
@@ -89,7 +89,7 @@ public static class Pipeline
         }
         else
         {
-            services.AddSqliteConnection(Connection, ConnectionString(directory));
+            services.AddSqliteConnection(Connection, ConnectionString(workspace));
         }
 
         var ownsDatabase = configureConnection is null;
@@ -107,6 +107,15 @@ public static class Pipeline
                 builder.AddStage<CreateTablesStage>();
             }
 
+            // One file, one table, five times over - and the five have nothing to do with each other:
+            // different tables, different source files, so there is no reason to make the fifth wait
+            // on the first four. Each branch still runs its own Truncate/From/To in order - the
+            // extraction above has always finished before any of them opens a file - only the five
+            // branches themselves overlap. CreateTablesStage already left every table empty when this
+            // job owns the database, so TruncateTable has nothing to do there - it earns its place
+            // when the database is not this job's own, where "empty" cannot be assumed.
+            builder.Parallel(Tables.Select(LoadTable).ToArray());
+
             Action<IPipelineBuilder> LoadTable(string table)
             {
                 return b => b
@@ -114,15 +123,6 @@ public static class Pipeline
                     .FromCsv<Item>(extracted.File($"{table}.csv"))
                     .ToSqlTable(Connection, table);
             }
-
-            // One file, one table, five times over - and the five have nothing to do with each other:
-            // different tables, different source files, so there is no reason to make the fifth wait
-            // on the first four. Each branch still runs its own Truncate/From/To in order - the
-            // extraction above has always finished before any of them opens a file - only the five
-            // branches themselves overlap. CreateTablesStage already left every table empty, so
-            // TruncateTable has nothing to do here - it earns its place in a job run more than once
-            // against a database it does not own, where "empty" cannot be assumed.
-            builder.Parallel(Tables.Select(LoadTable).ToArray());
         });
     }
 }

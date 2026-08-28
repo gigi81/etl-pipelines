@@ -69,9 +69,9 @@ public static class Pipeline
     }
 
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
-    public static IServiceCollection AddPipeline(this IServiceCollection services, IDirectoryInfo directory)
+    public static IServiceCollection AddPipeline(this IServiceCollection services, IDirectoryInfo workspace)
     {
-        services.AddSqliteConnection(Connection, ConnectionString(directory));
+        services.AddSqliteConnection(Connection, ConnectionString(workspace));
 
         // Registering the dead-letter sink is the whole of the configuration: FromExcel looks for one
         // in the container. Without it a row that will not convert fails the run. Registered under
@@ -82,7 +82,7 @@ public static class Pipeline
         return services.AddEtlPipeline(Name, builder => builder
             // The workbook arrives, and the table it lands in is created, before any row moves.
             .AddStage<SeedStage>()
-            .FromExcel<SubmittedOrder>(directory.File(InputFile))
+            .FromExcel<SubmittedOrder>(workspace.File(InputFile))
             .Where(order => order.Amount > 0)
             .ToSqlTable(Connection, Table, options => options.Columns = ["Id", "Customer", "Amount"])
             // And a step after it, to say what the row counts cannot: how much of the workbook

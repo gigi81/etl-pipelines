@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.IO.Abstractions;
 using ErrorOr;
 using EtlPipelines.Abstractions.Execution;
-using EtlPipelines.Samples.Common;
+using EtlPipelines.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -16,7 +16,7 @@ public sealed class CheckStage : IPipelineStage
     private readonly ILogger<CheckStage> _logger;
 
     public CheckStage(
-        [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
+        [FromKeyedServices(EtlPipelinesHost.WorkspaceKey)] IDirectoryInfo directory,
         RejectedRows rejected,
         ILogger<CheckStage> logger)
     {

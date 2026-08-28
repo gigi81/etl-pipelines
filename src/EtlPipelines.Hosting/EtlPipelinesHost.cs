@@ -37,6 +37,7 @@ namespace EtlPipelines.Hosting;
 public sealed class EtlPipelinesHost
 {
     private readonly CommandHost _host;
+    private IDirectoryInfo? _workspace;
 
     /// <summary>Starts an application whose root command is described by <paramref name="description"/>.</summary>
     public EtlPipelinesHost(string description)
@@ -45,18 +46,21 @@ public sealed class EtlPipelinesHost
 
         _host = new CommandHost(description);
 
-        _host.RegisterServices((_, services) =>
+        _host.RegisterServices((result, services) =>
         {
             services.TryAddSingleton(FileSystem);
             services.TryAddSingleton<PipelineRunner>();
             services.TryAddSingleton<PipelineTraceLogger>();
             services.RegisterCommands();
+            services.AddKeyedSingleton(WorkspaceKey, GetWorkspace(result));
         });
 
-        // On the root command and recursive, so it reaches every verb and shows up in --help. It has
-        // to be read from the parse result rather than injected: logging is configured while the host
-        // is being built, long before any handler could ask for it.
+        // On the root command and recursive, so they reach every verb and show up in --help. Both
+        // have to be read from the parse result rather than injected: logging is configured, and the
+        // workspace directory created, while the host is being built, long before any handler could
+        // ask for either.
         _host.CommandBuilder.RootCommand.Add(VerboseOption);
+        _host.CommandBuilder.RootCommand.Add(WorkDirOption);
 
         // Resolving the listener is what starts it, and this runs before any command does.
         _host.ConfigureApplication((_, services) => services.GetRequiredService<PipelineTraceLogger>());
@@ -71,6 +75,21 @@ public sealed class EtlPipelinesHost
         Description = "Log at debug level, which includes the pipeline's own per-stage traces.",
         Recursive = true,
     };
+
+    /// <summary>The directory an application reads from and writes into, unless told otherwise.</summary>
+    public static Option<string?> WorkDirOption { get; } = new("--work-dir")
+    {
+        Description = "Directory to read and write in. Defaults to a new directory under the temp path.",
+        Recursive = true,
+    };
+
+    /// <summary>The key the working directory registers is resolved under.</summary>
+    /// <remarks>
+    /// A constant rather than a type of its own: the directory is an <see cref="IDirectoryInfo"/>,
+    /// which is far too general to register unkeyed — something else registering one of its own would
+    /// silently take over. Resolve it with <c>[FromKeyedServices(EtlPipelinesHost.WorkspaceKey)]</c>.
+    /// </remarks>
+    public const string WorkspaceKey = "workspace";
 
     /// <summary>
     /// The filesystem this host registers as <see cref="IFileSystem"/>.
@@ -103,6 +122,30 @@ public sealed class EtlPipelinesHost
 
         _host.RegisterServices(configure);
         return this;
+    }
+    
+    /// <summary>Registers the application's services, with the parsed command line to hand.</summary>
+    public EtlPipelinesHost ConfigureServices(Action<ParseResult, IServiceCollection, IDirectoryInfo> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        _host.RegisterServices((result, services) => configure(result, services, GetWorkspace(result)));
+        return this;
+    }
+    
+    private IDirectoryInfo GetWorkspace(ParseResult result)
+    {
+        if( _workspace is not null)
+            return _workspace;
+        
+        var path = result.GetValue(WorkDirOption);
+        var directory = path is not null
+            ? FileSystem.DirectoryInfo.New(path)
+            : FileSystem.Directory.CreateTempSubdirectory($"etl-workspace-{Guid.NewGuid():N}");
+        
+        directory.Create();
+        
+        return _workspace = directory;
     }
 
     /// <summary>Reaches the underlying generic host, for configuration and logging.</summary>

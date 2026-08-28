@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.IO.Abstractions;
 using ErrorOr;
 using EtlPipelines.Abstractions.Execution;
-using EtlPipelines.Samples.Common;
+using EtlPipelines.Hosting;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -23,7 +23,7 @@ public sealed class CreateTableStage : IPipelineStage
     private readonly ILogger<CreateTableStage> _logger;
 
     public CreateTableStage(
-        [FromKeyedServices(SampleWorkspace.Key)] IDirectoryInfo directory,
+        [FromKeyedServices(EtlPipelinesHost.WorkspaceKey)] IDirectoryInfo directory,
         ILogger<CreateTableStage> logger)
     {
         _directory = directory;

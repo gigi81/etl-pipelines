@@ -42,22 +42,22 @@ public static class Pipeline
     public const string OutputFile = "report.xlsx";
 
     /// <summary>The connection string for the sample's own database, inside its workspace.</summary>
-    public static string ConnectionString(IDirectoryInfo directory)
+    public static string ConnectionString(IDirectoryInfo workspace)
     {
-        return $"Data Source={directory.File("sales.db").FullName}";
+        return $"Data Source={workspace.File("sales.db").FullName}";
     }
 
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
-    public static IServiceCollection AddPipeline(this IServiceCollection services, IDirectoryInfo directory)
+    public static IServiceCollection AddPipeline(this IServiceCollection services, IDirectoryInfo workspace)
     {
         // The overload taking the connection string, because this database is a file in a directory
         // chosen when the command ran. An application whose database has a fixed address would call
         // AddSqliteConnection("sales") instead and let it come from ConnectionStrings:sales.
-        services.AddSqliteConnection(Connection, ConnectionString(directory));
+        services.AddSqliteConnection(Connection, ConnectionString(workspace));
 
         // One file object for every sheet: the workbook's sheet count is worked out while the
         // pipeline is composed, and it is keyed on the file it was given.
-        var report = directory.File(OutputFile);
+        var report = workspace.File(OutputFile);
 
         // Three sources, three sheets, one workbook. Each From/To pair is its own stage, and stages
         // run one after another, which is the ordering a single workbook needs. No mapping delegates:

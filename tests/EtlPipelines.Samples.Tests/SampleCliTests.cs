@@ -233,7 +233,7 @@ public class SampleCliTests
         // Nothing to point --work-dir at, because the whole point is passing no arguments: the
         // sample falls back to a directory of its own under the temp path, which is found and
         // removed afterwards rather than left behind.
-        var before = Directory.GetDirectories(Path.GetTempPath(), "etl-sample-sales-*");
+        var before = Directory.GetDirectories(Path.GetTempPath(), "etl-workspace-sales-*");
 
         try
         {
@@ -245,7 +245,7 @@ public class SampleCliTests
         }
         finally
         {
-            foreach (var left in Directory.GetDirectories(Path.GetTempPath(), "etl-sample-sales-*").Except(before))
+            foreach (var left in Directory.GetDirectories(Path.GetTempPath(), "etl-workspace-sales-*").Except(before))
             {
                 Cleanup(left);
             }
