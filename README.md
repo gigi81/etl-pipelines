@@ -696,23 +696,23 @@ Rejected rows go to a registered `IDeadLetterSink<TRow>`. Expected data-level fa
 
 ## Samples
 
-Runnable programs in [`samples/`](samples):
+Runnable programs in [`src/`](src), named `EtlPipelines.Samples.*`:
 
 | Sample | Shows |
 |---|---|
-| `Samples.CsvToExcel` | CSV in, filter and reshape, workbook out — the ordinary job |
-| `Samples.SqlToWorkbook` | three queries becoming three sheets of one workbook |
-| `Samples.ExcelToSql` | a hand-filled spreadsheet loaded into a table, bad rows set aside |
-| `Samples.CsvToDatabase` | one pipeline, five engines — only the registered connection changes |
-| `Samples.Branching` | archiving the raw rows while the same pass builds a report |
-| `Samples.ArchiveToDatabase` | a vendor's zip, built by its own pipeline, extracted and loaded into five tables by another |
+| `EtlPipelines.Samples.CsvToExcel` | CSV in, filter and reshape, workbook out — the ordinary job |
+| `EtlPipelines.Samples.SqlToWorkbook` | three queries becoming three sheets of one workbook |
+| `EtlPipelines.Samples.ExcelToSql` | a hand-filled spreadsheet loaded into a table, bad rows set aside |
+| `EtlPipelines.Samples.CsvToDatabase` | one pipeline, five engines — only the registered connection changes |
+| `EtlPipelines.Samples.Branching` | archiving the raw rows while the same pass builds a report |
+| `EtlPipelines.Samples.ArchiveToDatabase` | a vendor's zip, built by its own pipeline, extracted and loaded into five tables by another |
 
 Each is a command line application, and none of them writes a command: `run` and `list` come from
 `EtlPipelines.Hosting`. `--work-dir` says where to work, and defaults to a new directory under the
 temp path:
 
 ```bash
-dotnet run --project samples/Samples.SqlToWorkbook -- run report --work-dir ./out
+dotnet run --project src/EtlPipelines.Samples.SqlToWorkbook -- run report --work-dir ./out
 ```
 
 A sample has no input until it makes one, and that is **a stage of the pipeline** rather than
