@@ -15,6 +15,9 @@
     <Project Path="src/EtlPipelines/EtlPipelines.csproj" />
     <Project Path="src/EtlPipelines.Abstractions/EtlPipelines.Abstractions.csproj" />
     <Project Path="src/EtlPipelines.Core/EtlPipelines.Core.csproj" />
+    <Project Path="src/EtlPipelines.Hosting/EtlPipelines.Hosting.csproj" />
+  </Folder>
+  <Folder Name="/extensions/">
     <Project Path="src/EtlPipelines.Extensions.Csv/EtlPipelines.Extensions.Csv.csproj" />
     <Project Path="src/EtlPipelines.Extensions.Excel/EtlPipelines.Extensions.Excel.csproj" />
     <Project Path="src/EtlPipelines.Extensions.Files/EtlPipelines.Extensions.Files.csproj" />
@@ -26,13 +29,6 @@
     <Project Path="src/EtlPipelines.Extensions.Sql.PostgreSql/EtlPipelines.Extensions.Sql.PostgreSql.csproj" />
     <Project Path="src/EtlPipelines.Extensions.Sql.Sqlite/EtlPipelines.Extensions.Sql.Sqlite.csproj" />
     <Project Path="src/EtlPipelines.Extensions.Sql.SqlServer/EtlPipelines.Extensions.Sql.SqlServer.csproj" />
-    <Project Path="src/EtlPipelines.Hosting/EtlPipelines.Hosting.csproj" />
-    <Project Path="src/EtlPipelines.Samples.ArchiveToDatabase/EtlPipelines.Samples.ArchiveToDatabase.csproj" />
-    <Project Path="src/EtlPipelines.Samples.Branching/EtlPipelines.Samples.Branching.csproj" />
-    <Project Path="src/EtlPipelines.Samples.CsvToDatabase/EtlPipelines.Samples.CsvToDatabase.csproj" />
-    <Project Path="src/EtlPipelines.Samples.CsvToExcel/EtlPipelines.Samples.CsvToExcel.csproj" />
-    <Project Path="src/EtlPipelines.Samples.ExcelToSql/EtlPipelines.Samples.ExcelToSql.csproj" />
-    <Project Path="src/EtlPipelines.Samples.SqlToWorkbook/EtlPipelines.Samples.SqlToWorkbook.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <File Path="tests/Directory.Build.props" />
@@ -44,5 +40,13 @@
     <Project Path="tests/EtlPipelines.Extensions.Sql.Databases.Tests/EtlPipelines.Extensions.Sql.Databases.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Extensions.Sql.Tests/EtlPipelines.Extensions.Sql.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Samples.Tests/EtlPipelines.Samples.Tests.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="src/EtlPipelines.Samples.ArchiveToDatabase/EtlPipelines.Samples.ArchiveToDatabase.csproj" />
+    <Project Path="src/EtlPipelines.Samples.Branching/EtlPipelines.Samples.Branching.csproj" />
+    <Project Path="src/EtlPipelines.Samples.CsvToDatabase/EtlPipelines.Samples.CsvToDatabase.csproj" />
+    <Project Path="src/EtlPipelines.Samples.CsvToExcel/EtlPipelines.Samples.CsvToExcel.csproj" />
+    <Project Path="src/EtlPipelines.Samples.ExcelToSql/EtlPipelines.Samples.ExcelToSql.csproj" />
+    <Project Path="src/EtlPipelines.Samples.SqlToWorkbook/EtlPipelines.Samples.SqlToWorkbook.csproj" />
   </Folder>
 </Solution>
