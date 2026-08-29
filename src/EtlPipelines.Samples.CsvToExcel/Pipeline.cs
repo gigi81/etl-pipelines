@@ -1,7 +1,5 @@
 using System.IO.Abstractions;
 using EtlPipelines.Core;
-using EtlPipelines.Csv;
-using EtlPipelines.Excel;
 using EtlPipelines.Samples.CsvToExcel.Stages;
 using Microsoft.Extensions.DependencyInjection;
 

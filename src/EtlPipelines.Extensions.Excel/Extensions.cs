@@ -1,6 +1,8 @@
 using System.IO.Abstractions;
+using EtlPipelines.Excel;
 
-namespace EtlPipelines.Excel;
+// ReSharper disable once CheckNamespace
+namespace EtlPipelines;
 
 /// <summary>Shorthand for putting an Excel workbook at either end of a dataflow.</summary>
 /// <remarks>

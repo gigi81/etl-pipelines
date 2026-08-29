@@ -1,10 +1,12 @@
 using System.IO.Abstractions;
 using ErrorOr;
 using EtlPipelines.Abstractions.Building;
+using EtlPipelines.Files.Http;
 using EtlPipelines.Files.Http.Configuration;
 using EtlPipelines.Files.Http.Stages;
 
-namespace EtlPipelines.Files.Http;
+// ReSharper disable once CheckNamespace
+namespace EtlPipelines;
 
 /// <summary>Downloading files over HTTP as a pipeline stage.</summary>
 public static class Extensions

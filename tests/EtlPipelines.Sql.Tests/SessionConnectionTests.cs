@@ -1,4 +1,3 @@
-using System.Data;
 using System.Data.Common;
 using EtlPipelines.Sql.MySql;
 using EtlPipelines.Sql.Oracle;

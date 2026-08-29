@@ -1,8 +1,6 @@
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
-using EtlPipelines.Core;
 using EtlPipelines.Sql.Sqlite;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Sql.Tests;
 

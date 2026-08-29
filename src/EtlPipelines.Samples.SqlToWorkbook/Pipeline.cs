@@ -1,8 +1,6 @@
 using System.IO.Abstractions;
 using EtlPipelines.Core;
-using EtlPipelines.Excel;
 using EtlPipelines.Samples.SqlToWorkbook.Stages;
-using EtlPipelines.Sql;
 using EtlPipelines.Sql.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 

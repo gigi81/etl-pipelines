@@ -7,8 +7,8 @@
   <ItemGroup>
     <ProjectReference Include="..\EtlPipelines.Core\EtlPipelines.Core.csproj" />
     <ProjectReference Include="..\EtlPipelines.Hosting\EtlPipelines.Hosting.csproj" />
-    <ProjectReference Include="..\EtlPipelines.Csv\EtlPipelines.Csv.csproj" />
-    <ProjectReference Include="..\EtlPipelines.Sql.Sqlite\EtlPipelines.Sql.Sqlite.csproj" />
+    <ProjectReference Include="..\EtlPipelines.Extensions.Csv\EtlPipelines.Extensions.Csv.csproj" />
+    <ProjectReference Include="..\EtlPipelines.Extensions.Sql.Sqlite\EtlPipelines.Extensions.Sql.Sqlite.csproj" />
   </ItemGroup>
 
 </Project>

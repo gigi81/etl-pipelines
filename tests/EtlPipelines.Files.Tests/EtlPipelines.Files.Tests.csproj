@@ -14,9 +14,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\EtlPipelines.Files\EtlPipelines.Files.csproj" />
-    <ProjectReference Include="..\..\src\EtlPipelines.Files.Http\EtlPipelines.Files.Http.csproj" />
-    <ProjectReference Include="..\..\src\EtlPipelines.Files.Sftp\EtlPipelines.Files.Sftp.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Extensions.Files\EtlPipelines.Extensions.Files.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Extensions.Files.Http\EtlPipelines.Extensions.Files.Http.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Extensions.Files.Sftp\EtlPipelines.Extensions.Files.Sftp.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Core\EtlPipelines.Core.csproj" />
   </ItemGroup>
 

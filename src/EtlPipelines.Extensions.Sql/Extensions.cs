@@ -3,8 +3,10 @@ using System.Data;
 using System.Data.Common;
 using System.IO.Abstractions;
 using System.Reflection;
+using EtlPipelines.Sql;
 
-namespace EtlPipelines.Sql;
+// ReSharper disable once CheckNamespace
+namespace EtlPipelines;
 
 /// <summary>Shorthand for putting a database table at either end of a dataflow.</summary>
 /// <remarks>

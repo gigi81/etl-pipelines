@@ -5,7 +5,8 @@ using EtlPipelines.Files.Sftp.Configuration;
 using EtlPipelines.Files.Sftp.Selection;
 using EtlPipelines.Files.Sftp.Stages;
 
-namespace EtlPipelines.Files.Sftp;
+// ReSharper disable once CheckNamespace
+namespace EtlPipelines;
 
 /// <summary>Downloading and uploading files over SFTP as pipeline stages.</summary>
 public static class Extensions

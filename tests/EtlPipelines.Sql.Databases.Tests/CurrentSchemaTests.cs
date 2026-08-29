@@ -1,7 +1,6 @@
 using System.Data.Common;
 using EtlPipelines.Abstractions.Building;
 using EtlPipelines.Core;
-using EtlPipelines.Sql.Connections;
 using EtlPipelines.Sql.MySql;
 using EtlPipelines.Sql.Oracle;
 using EtlPipelines.Sql.PostgreSql;

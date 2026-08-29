@@ -1,7 +1,6 @@
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using EtlPipelines.Abstractions.Execution;
-using EtlPipelines.Core;
 
 namespace EtlPipelines.Files.Tests;
 

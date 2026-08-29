@@ -17,7 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\EtlPipelines.Excel\EtlPipelines.Excel.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Extensions.Excel\EtlPipelines.Extensions.Excel.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Core\EtlPipelines.Core.csproj" />
   </ItemGroup>
 

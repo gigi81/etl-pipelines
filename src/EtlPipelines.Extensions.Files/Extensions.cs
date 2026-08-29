@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 
-namespace EtlPipelines.Files;
+// ReSharper disable once CheckNamespace
+namespace EtlPipelines;
 
 /// <summary>Copying, moving, compressing and extracting files as pipeline stages.</summary>
 /// <remarks>

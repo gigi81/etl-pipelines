@@ -16,17 +16,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\EtlPipelines.Sql\EtlPipelines.Sql.csproj" />
-    <ProjectReference Include="..\..\src\EtlPipelines.Sql.Sqlite\EtlPipelines.Sql.Sqlite.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Extensions.Sql\EtlPipelines.Extensions.Sql.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Extensions.Sql.Sqlite\EtlPipelines.Extensions.Sql.Sqlite.csproj" />
     <!--
       The provider packages, for their script parsers alone. Splitting a file into batches is pure
       text work needing no server, and it is the part most likely to be got wrong - so it is tested
       here, where it runs on every CI leg, rather than behind a container.
     -->
-    <ProjectReference Include="..\..\src\EtlPipelines.Sql.SqlServer\EtlPipelines.Sql.SqlServer.csproj" />
-    <ProjectReference Include="..\..\src\EtlPipelines.Sql.MySql\EtlPipelines.Sql.MySql.csproj" />
-    <ProjectReference Include="..\..\src\EtlPipelines.Sql.PostgreSql\EtlPipelines.Sql.PostgreSql.csproj" />
-    <ProjectReference Include="..\..\src\EtlPipelines.Sql.Oracle\EtlPipelines.Sql.Oracle.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Extensions.Sql.SqlServer\EtlPipelines.Extensions.Sql.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Extensions.Sql.MySql\EtlPipelines.Extensions.Sql.MySql.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Extensions.Sql.PostgreSql\EtlPipelines.Extensions.Sql.PostgreSql.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Extensions.Sql.Oracle\EtlPipelines.Extensions.Sql.Oracle.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Core\EtlPipelines.Core.csproj" />
   </ItemGroup>
 

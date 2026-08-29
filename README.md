@@ -12,14 +12,14 @@ overlap rather than run one after another.
 | Package | For |
 |---|---|
 | `EtlPipelines.Core` | The runtime and the builder. Start here. |
-| `EtlPipelines.Csv` | CSV source and sink, built on CsvHelper. |
-| `EtlPipelines.Excel` | Excel (`.xlsx`) source and sink, built on MiniExcel. |
-| `EtlPipelines.Files` | Copy, move, compress and extract files as pipeline stages. No third-party dependency. |
-| `EtlPipelines.Files.Http` | Downloads files over HTTP. |
-| `EtlPipelines.Files.Sftp` | Uploads and downloads files over SFTP, built on SSH.NET. |
+| `EtlPipelines.Extensions.Csv` | CSV source and sink, built on CsvHelper. |
+| `EtlPipelines.Extensions.Excel` | Excel (`.xlsx`) source and sink, built on MiniExcel. |
+| `EtlPipelines.Extensions.Files` | Copy, move, compress and extract files as pipeline stages. No third-party dependency. |
+| `EtlPipelines.Extensions.Files.Http` | Downloads files over HTTP. |
+| `EtlPipelines.Extensions.Files.Sftp` | Uploads and downloads files over SFTP, built on SSH.NET. |
 | `EtlPipelines.Hosting` | Runs your pipelines as a command line application. |
-| `EtlPipelines.Sql` | Source and sink for any ADO.NET provider. |
-| `EtlPipelines.Sql.Sqlite` .`SqlServer` .`PostgreSql` .`MySql` .`Oracle` | One per engine: the driver, and that engine's bulk-load fast path. |
+| `EtlPipelines.Extensions.Sql` | Source and sink for any ADO.NET provider. |
+| `EtlPipelines.Extensions.Sql.Sqlite` .`SqlServer` .`PostgreSql` .`MySql` .`Oracle` | One per engine: the driver, and that engine's bulk-load fast path. |
 | `EtlPipelines.Abstractions` | The contracts alone, for a library that defines ports without referencing the engine. Pulled in by the others. |
 
 ## Quick start
@@ -165,7 +165,7 @@ Two things worth knowing:
 
 ## CSV files
 
-`EtlPipelines.Csv` is a separate package, so the core runtime takes no CsvHelper dependency.
+`EtlPipelines.Extensions.Csv` is a separate package, so the core runtime takes no CsvHelper dependency.
 
 ```csharp
 builder.FromCsv<Order>(fileSystem.FileInfo.New("orders.csv"))
@@ -204,7 +204,7 @@ for the full `CsvConfiguration`, and `ConfigureContext` for registering class ma
 
 ## Excel files
 
-`EtlPipelines.Excel` reads and writes `.xlsx` worksheets through
+`EtlPipelines.Extensions.Excel` reads and writes `.xlsx` worksheets through
 [MiniExcel](https://github.com/mini-software/MiniExcel) (Apache-2.0). It is a separate package, and it
 takes `MiniExcel.OpenXml` rather than the `MiniExcel` meta-package — that one also pulls in a second
 CSV implementation, next to the CsvHelper-based one this repo already ships.
@@ -267,9 +267,9 @@ back-pressure knob between the pipeline and the disk.
 ## Files
 
 Every real ETL job starts before the first row: a vendor drops a `.tar.gz` on an SFTP server, a
-partner publishes a CSV at a URL, a finance team writes to a network share. `EtlPipelines.Files`
+partner publishes a CSV at a URL, a finance team writes to a network share. `EtlPipelines.Extensions.Files`
 covers copy, move, compress and extract with no third-party dependency — zip, tar and gzip are all in
-the .NET shared framework. `EtlPipelines.Files.Http` and `EtlPipelines.Files.Sftp` are separate
+the .NET shared framework. `EtlPipelines.Extensions.Files.Http` and `EtlPipelines.Extensions.Files.Sftp` are separate
 packages for the same reason the SQL provider packages are: reference the one you need.
 
 ```csharp
@@ -422,7 +422,7 @@ falls back to copy-then-delete across volumes, and a share is always a different
 
 ## SQL databases
 
-`EtlPipelines.Sql` works against any ADO.NET provider, and a package per engine adds that engine's
+`EtlPipelines.Extensions.Sql` works against any ADO.NET provider, and a package per engine adds that engine's
 driver and bulk-load path. Reference the one you need — a SQLite job never pulls in the Oracle driver.
 
 Name a database once, and refer to it by that name from then on:
