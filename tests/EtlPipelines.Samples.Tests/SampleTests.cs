@@ -1,4 +1,5 @@
 using System.IO.Abstractions;
+using EtlPipelines.Sql.Sqlite;
 using Microsoft.Data.Sqlite;
 using MiniExcelLib;
 using MiniExcelLib.OpenXml;
@@ -137,7 +138,12 @@ public class SampleTests
     {
         //arrange
         await using var scratch = new SampleScratch("csv-sqlite", (services, directory) =>
-            CsvToDatabase.Pipeline.AddPipeline(services, directory));
+        {
+            services.AddSqliteConnection(
+                CsvToDatabase.Pipeline.Connection,
+                CsvToDatabase.Pipeline.ConnectionString(directory));
+            CsvToDatabase.Pipeline.AddPipeline(services, directory);
+        });
 
         //act
         var result = await scratch.RunAsync();
@@ -153,7 +159,12 @@ public class SampleTests
     {
         //arrange
         await using var scratch = new SampleScratch("archive-sqlite", (services, directory) =>
-            ArchiveToDatabase.Pipeline.AddPipeline(services, directory));
+        {
+            services.AddSqliteConnection(
+                ArchiveToDatabase.Pipeline.Connection,
+                ArchiveToDatabase.Pipeline.ConnectionString(directory));
+            ArchiveToDatabase.Pipeline.AddPipeline(services, directory);
+        });
 
         var archive = scratch.File(ArchiveToDatabase.Pipeline.ArchiveFile);
 
@@ -213,7 +224,12 @@ public class SampleTests
     {
         //arrange
         await using var scratch = new SampleScratch("archive-no-feed", (services, directory) =>
-            ArchiveToDatabase.Pipeline.AddPipeline(services, directory));
+        {
+            services.AddSqliteConnection(
+                ArchiveToDatabase.Pipeline.Connection,
+                ArchiveToDatabase.Pipeline.ConnectionString(directory));
+            ArchiveToDatabase.Pipeline.AddPipeline(services, directory);
+        });
 
         //act
         // The real job never builds its own input - running it before build-feed is exactly the

@@ -43,7 +43,10 @@ public abstract class CsvToDatabaseOnRealEnginesTests<TFixture>
         // The engine is the only thing that changes: the same registration the sample's own command
         // line uses, handed a different Add...Connection.
         await using var scratch = new SampleScratch("csv-db", (services, directory) =>
-            CsvToDatabase.Pipeline.AddPipeline(services, directory, Register, ParameterPrefix));
+        {
+            CsvToDatabase.Pipeline.AddPipeline(services, directory, createTable: false, parameterPrefix: ParameterPrefix);
+            Register(services, CsvToDatabase.Pipeline.Connection);
+        });
 
         // The table, in this engine's own dialect. Handing the pipeline a connection is what tells it
         // not to create one itself, so this is the whole of the arrangement - the file it loads is put

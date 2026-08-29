@@ -1,4 +1,5 @@
 using EtlPipelines.Hosting;
+using EtlPipelines.Sql.Sqlite;
 
 namespace EtlPipelines.Samples.CsvToDatabase;
 
@@ -28,7 +29,9 @@ public static class Program
     {
         return new EtlPipelinesHost(Description)
             .ConfigureServices((_, services, workspace) =>
-                services.AddPipeline(workspace))
+                services
+                    .AddSqliteConnection(Pipeline.Connection, Pipeline.ConnectionString(workspace))
+                    .AddPipeline(workspace))
             .RunAsync(args);
     }
 }

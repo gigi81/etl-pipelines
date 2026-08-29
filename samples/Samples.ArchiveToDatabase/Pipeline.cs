@@ -4,7 +4,6 @@ using EtlPipelines.Core;
 using EtlPipelines.Csv;
 using EtlPipelines.Files;
 using EtlPipelines.Sql;
-using EtlPipelines.Sql.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Samples.ArchiveToDatabase;
@@ -61,15 +60,16 @@ public static class Pipeline
     /// </summary>
     /// <param name="services">The container.</param>
     /// <param name="workspace">The directory the run reads and writes in.</param>
-    /// <param name="configureConnection">
-    /// Registers the connection under the name given. Left unset, a SQLite file in the workspace is
-    /// used - which is the one thing that differs between loading into SQLite and loading into
-    /// another engine.
+    /// <param name="createTables">
+    /// Whether the real job should create its own tables. Left at the default, true, for the
+    /// sample's own database; the caller sets it false once it has registered a connection to a
+    /// database whose schema already exists - the connection itself is always the caller's job, not
+    /// this method's, which is what lets the same registration load into any engine.
     /// </param>
     public static IServiceCollection AddPipeline(
         this IServiceCollection services,
         IDirectoryInfo workspace,
-        Action<IServiceCollection, string>? configureConnection = null)
+        bool createTables = true)
     {
         var source = workspace.SubDirectory(SourceDirectory);
         var extracted = workspace.SubDirectory(ExtractedDirectory);
@@ -82,18 +82,7 @@ public static class Pipeline
         services.AddEtlPipeline(SeedName, builder => builder
             .AddStage<SeedStage>()
             .CompressFiles(source, "*.csv", archive));
-
-        if (configureConnection is not null)
-        {
-            configureConnection(services, Connection);
-        }
-        else
-        {
-            services.AddSqliteConnection(Connection, ConnectionString(workspace));
-        }
-
-        var ownsDatabase = configureConnection is null;
-
+        
         // The real job. It knows nothing about how feed.zip came to exist - only that it should, by
         // the time this runs - which is exactly the assumption a job receiving a vendor's export
         // actually gets to make.
@@ -101,7 +90,7 @@ public static class Pipeline
         {
             builder.WithOptions(options => options.BatchSize = 100)
                 .ExtractArchive(archive, extracted)
-                .AddConditionalStage<CreateTablesStage>(ownsDatabase)
+                .AddConditionalStage<CreateTablesStage>(createTables)
                 .Parallel(Tables.Select(LoadTable).ToArray());
             Action<IPipelineBuilder> LoadTable(string table)
             {

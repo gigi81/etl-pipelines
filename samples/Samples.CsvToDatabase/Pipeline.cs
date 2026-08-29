@@ -2,7 +2,6 @@ using System.IO.Abstractions;
 using EtlPipelines.Core;
 using EtlPipelines.Csv;
 using EtlPipelines.Sql;
-using EtlPipelines.Sql.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Samples.CsvToDatabase;
@@ -44,9 +43,11 @@ public static class Pipeline
     /// <summary>Registers the pipeline against the directory the run is working in.</summary>
     /// <param name="services">The container.</param>
     /// <param name="directory">The directory the run reads and writes in.</param>
-    /// <param name="configureConnection">
-    /// Registers the connection under the name given. Left unset, a SQLite file in the workspace is
-    /// used — which is the one thing that differs between loading into SQLite and loading into Oracle.
+    /// <param name="createTable">
+    /// Whether the pipeline should create its own table. Left at the default, true, for the sample's
+    /// own database; the caller sets it false once it has registered a connection to a database whose
+    /// schema already exists - the connection itself is always the caller's job, not this method's,
+    /// which is what lets the same registration load into any engine.
     /// </param>
     /// <param name="parameterPrefix">
     /// The bind marker this engine wants — Oracle uses a colon where most use an at sign. Only
@@ -55,37 +56,22 @@ public static class Pipeline
     public static IServiceCollection AddPipeline(
         this IServiceCollection services,
         IDirectoryInfo directory,
-        Action<IServiceCollection, string>? configureConnection = null,
+        bool createTable = true,
         string? parameterPrefix = null)
     {
-        if (configureConnection is not null)
-        {
-            configureConnection(services, Connection);
-        }
-        else
-        {
-            services.AddSqliteConnection(Connection, ConnectionString(directory));
-        }
-
-        var ownsDatabase = configureConnection is null;
-
         return services.AddEtlPipeline(Name, builder =>
         {
             builder.WithOptions(options => options.BatchSize = 1_000)
                 // The file this job loads does not exist until something fetches it.
                 .AddStage<SeedStage>()
-                .AddConditionalStage<CreateTableStage>(ownsDatabase);
-
-            builder
-            .FromCsv<Trade>(directory.File(InputFile))
-            .Where(trade => trade.Quantity > 0)
-            .ToSqlTable(Connection, Table, options =>
-            {
-                if (parameterPrefix is not null)
+                .AddConditionalStage<CreateTableStage>(createTable)
+                .FromCsv<Trade>(directory.File(InputFile))
+                .Where(trade => trade.Quantity > 0)
+                .ToSqlTable(Connection, Table, options =>
                 {
-                    options.ParameterPrefix = parameterPrefix;
-                }
-            });
+                    if (parameterPrefix is not null)
+                        options.ParameterPrefix = parameterPrefix;
+                });
         });
     }
 }

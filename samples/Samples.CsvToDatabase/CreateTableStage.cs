@@ -1,16 +1,13 @@
 using System.Diagnostics;
-using System.IO.Abstractions;
 using ErrorOr;
 using EtlPipelines.Abstractions.Execution;
-using EtlPipelines.Hosting;
-using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.DependencyInjection;
+using EtlPipelines.Sql;
 using Microsoft.Extensions.Logging;
 
 namespace EtlPipelines.Samples.CsvToDatabase;
 
 /// <summary>
-/// Creates the destination table in the sample's own SQLite database.
+/// Creates the destination table in the sample's own database.
 /// </summary>
 /// <remarks>
 /// A stage of its own, and one the pipeline only adds when it brought its own database: a caller that
@@ -19,14 +16,10 @@ namespace EtlPipelines.Samples.CsvToDatabase;
 /// </remarks>
 public sealed class CreateTableStage : IPipelineStage
 {
-    private readonly IDirectoryInfo _directory;
     private readonly ILogger<CreateTableStage> _logger;
 
-    public CreateTableStage(
-        [FromKeyedServices(EtlPipelinesHost.WorkspaceKey)] IDirectoryInfo directory,
-        ILogger<CreateTableStage> logger)
+    public CreateTableStage(ILogger<CreateTableStage> logger)
     {
-        _directory = directory;
         _logger = logger;
     }
 
@@ -40,8 +33,11 @@ public sealed class CreateTableStage : IPipelineStage
     {
         var started = Stopwatch.StartNew();
 
-        await using var connection = new SqliteConnection(Pipeline.ConnectionString(_directory));
-        await connection.OpenAsync(cancellationToken);
+        // Resolved from the run's own connection, the same way TruncateTableStage does - whichever
+        // engine AddPipeline's caller registered under Pipeline.Connection, not SQLite by assumption.
+        await using var connection = await context.Services
+            .GetRequiredDbConnectionFactory(Pipeline.Connection)
+            .OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText =

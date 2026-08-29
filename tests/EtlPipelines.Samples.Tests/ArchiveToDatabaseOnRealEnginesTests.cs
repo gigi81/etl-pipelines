@@ -46,7 +46,10 @@ public abstract class ArchiveToDatabaseOnRealEnginesTests<TFixture>
         // not to create its own tables, so creating them here is the whole of the arrangement - the
         // feed itself is built by the sample's own setup pipeline below.
         await using var scratch = new SampleScratch("archive-db", (services, directory) =>
-            ArchiveToDatabase.Pipeline.AddPipeline(services, directory, Register));
+        {
+            ArchiveToDatabase.Pipeline.AddPipeline(services, directory, false);
+            Register(services, ArchiveToDatabase.Pipeline.Connection);
+        });
 
         await using (var connection = await Open()(CancellationToken.None))
         {
