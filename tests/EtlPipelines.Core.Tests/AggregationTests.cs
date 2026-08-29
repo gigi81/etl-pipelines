@@ -99,7 +99,11 @@ public class AggregationTests
 
         //assert
         sink.Rows.Should().NotBeEmpty("a sorted aggregate is only semi-blocking");
-        source.Produced.Should().Be(500, "the source is still gated, so input is provably not exhausted");
+
+        // Not exactly 500: GatedSource never lets more than 500 out before Release, but nothing
+        // pins down how far it has gotten by the moment the sink's first row appears - only that it
+        // cannot yet be all 1,000, which is the "provably not exhausted" this test is about.
+        source.Produced.Should().BeLessThanOrEqualTo(500, "the gate never lets more than 500 rows out before Release is called");
 
         source.Release();
         var result = await run;
