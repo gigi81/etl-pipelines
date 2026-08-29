@@ -18,6 +18,7 @@
     <Project Path="src/EtlPipelines.Hosting/EtlPipelines.Hosting.csproj" />
   </Folder>
   <Folder Name="/extensions/">
+    <Project Path="src/EtlPipelines.Extensions.Cli/EtlPipelines.Extensions.Cli.csproj" />
     <Project Path="src/EtlPipelines.Extensions.Csv/EtlPipelines.Extensions.Csv.csproj" />
     <Project Path="src/EtlPipelines.Extensions.Excel/EtlPipelines.Extensions.Excel.csproj" />
     <Project Path="src/EtlPipelines.Extensions.Files/EtlPipelines.Extensions.Files.csproj" />
@@ -33,6 +34,7 @@
   <Folder Name="/tests/">
     <File Path="tests/Directory.Build.props" />
     <Project Path="tests/EtlPipelines.Core.Tests/EtlPipelines.Core.Tests.csproj" />
+    <Project Path="tests/EtlPipelines.Extensions.Cli.Tests/EtlPipelines.Extensions.Cli.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Extensions.Csv.Tests/EtlPipelines.Extensions.Csv.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Extensions.Excel.Tests/EtlPipelines.Extensions.Excel.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Extensions.Files.Servers.Tests/EtlPipelines.Extensions.Files.Servers.Tests.csproj" />
