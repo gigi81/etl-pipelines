@@ -6,8 +6,13 @@
       NU5104 fires here for the same reason it fires in EtlPipelines.Extensions.Excel: this package's
       dependency graph reaches MiniExcel's prerelease through that project, and the repo turns warnings
       into errors. Remove this the moment MiniExcel 2.0 ships stable and Excel's own suppression goes.
+
+      CS1591 fires here for the same reason it fires in EtlPipelines.Hosting: the Albatross.CommandLine
+      source generator it pulls in emits public, undocumented command classes into every project that
+      references Hosting - this one included, empty as its own source is - and this repo turns warnings
+      into errors. See EtlPipelines.Hosting.csproj for the longer version of this.
     -->
-    <NoWarn>$(NoWarn);NU5104</NoWarn>
+    <NoWarn>$(NoWarn);NU5104;CS1591</NoWarn>
   </PropertyGroup>
 
   <!--
@@ -17,13 +22,14 @@
     all: this package's own DLL stays empty, and installing it pulls in every one it depends on.
 
     The wildcard is deliberate: every connector already follows the EtlPipelines.Extensions.* naming
-    convention, so a new one lands here the moment it exists, with nothing to edit in this file. Core
-    and Abstractions are named explicitly because there is exactly one of each and neither matches a
-    naming pattern worth writing a glob for.
+    convention, so a new one lands here the moment it exists, with nothing to edit in this file. Core,
+    Abstractions and Hosting are named explicitly because there is exactly one of each and none
+    matches a naming pattern worth writing a glob for.
   -->
   <ItemGroup>
-    <ProjectReference Include="..\EtlPipelines.Core\EtlPipelines.Core.csproj" />
     <ProjectReference Include="..\EtlPipelines.Abstractions\EtlPipelines.Abstractions.csproj" />
+    <ProjectReference Include="..\EtlPipelines.Core\EtlPipelines.Core.csproj" />
+    <ProjectReference Include="..\EtlPipelines.Hosting\EtlPipelines.Hosting.csproj" />
     <ProjectReference Include="..\EtlPipelines.Extensions.*\EtlPipelines.Extensions.*.csproj" />
   </ItemGroup>
 

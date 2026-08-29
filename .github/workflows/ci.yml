@@ -53,8 +53,8 @@ jobs:
       # (ORA-01109). One workflow owning the containers keeps that from happening again.
       #
       # --ignore-exit-code 8 is "zero tests ran". With the Docker tests filtered out
-      # EtlPipelines.Sql.Databases.Tests has nothing left to run, which MTP reports as an error; it is
-      # the expected outcome here, not a failure.
+      # EtlPipelines.Extensions.Sql.Databases.Tests has nothing left to run, which MTP reports as an
+      # error; it is the expected outcome here, not a failure.
       - name: Run tests
         shell: bash
         run: >

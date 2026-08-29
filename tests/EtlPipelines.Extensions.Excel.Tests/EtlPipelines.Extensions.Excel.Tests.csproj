@@ -2,6 +2,13 @@
 
   <PropertyGroup>
     <IsPackable>false</IsPackable>
+    <!--
+      Left at the project's pre-rename name: the library it tests names its own types
+      EtlPipelines.Excel.*, not EtlPipelines.Extensions.Excel.* - only the package identity moved. The
+      default RootNamespace (derived from this project's own name) would collide with the static
+      class named EtlPipelines.Extensions that every connector's Extensions.cs declares.
+    -->
+    <RootNamespace>EtlPipelines.Excel.Tests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\EtlPipelines.Extensions.Csv\EtlPipelines.Extensions.Csv.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Extensions.Excel\EtlPipelines.Extensions.Excel.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Core\EtlPipelines.Core.csproj" />
   </ItemGroup>
 
