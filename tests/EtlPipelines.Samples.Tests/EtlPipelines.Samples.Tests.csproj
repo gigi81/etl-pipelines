@@ -18,12 +18,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\EtlPipelines.Hosting\EtlPipelines.Hosting.csproj" />
-    <ProjectReference Include="..\..\samples\Samples.CsvToExcel\Samples.CsvToExcel.csproj" />
-    <ProjectReference Include="..\..\samples\Samples.SqlToWorkbook\Samples.SqlToWorkbook.csproj" />
-    <ProjectReference Include="..\..\samples\Samples.ExcelToSql\Samples.ExcelToSql.csproj" />
-    <ProjectReference Include="..\..\samples\Samples.Branching\Samples.Branching.csproj" />
-    <ProjectReference Include="..\..\samples\Samples.CsvToDatabase\Samples.CsvToDatabase.csproj" />
-    <ProjectReference Include="..\..\samples\Samples.ArchiveToDatabase\Samples.ArchiveToDatabase.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Samples.CsvToExcel\EtlPipelines.Samples.CsvToExcel.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Samples.SqlToWorkbook\EtlPipelines.Samples.SqlToWorkbook.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Samples.ExcelToSql\EtlPipelines.Samples.ExcelToSql.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Samples.Branching\EtlPipelines.Samples.Branching.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Samples.CsvToDatabase\EtlPipelines.Samples.CsvToDatabase.csproj" />
+    <ProjectReference Include="..\..\src\EtlPipelines.Samples.ArchiveToDatabase\EtlPipelines.Samples.ArchiveToDatabase.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Sql.SqlServer\EtlPipelines.Sql.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Sql.PostgreSql\EtlPipelines.Sql.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\EtlPipelines.Sql.MySql\EtlPipelines.Sql.MySql.csproj" />

@@ -8,4 +8,23 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <!--
+    Samples live under src/ alongside the packages, named EtlPipelines.Samples.*, but they are
+    runnable programs rather than libraries: unlike everything else here they are not packed, and
+    they are held to the same "must build clean" bar without needing XML doc comments on every
+    member.
+  -->
+  <PropertyGroup Condition="$(MSBuildProjectName.StartsWith('EtlPipelines.Samples.'))">
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup Condition="$(MSBuildProjectName.StartsWith('EtlPipelines.Samples.'))">
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="TestableIO.System.IO.Abstractions.Wrappers" />
+    <PackageReference Include="TestableIO.System.IO.Abstractions.Extensions" />
+  </ItemGroup>
+
 </Project>
