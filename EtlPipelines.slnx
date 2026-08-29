@@ -37,12 +37,12 @@
   <Folder Name="/tests/">
     <File Path="tests/Directory.Build.props" />
     <Project Path="tests/EtlPipelines.Core.Tests/EtlPipelines.Core.Tests.csproj" />
-    <Project Path="tests/EtlPipelines.Csv.Tests/EtlPipelines.Csv.Tests.csproj" />
-    <Project Path="tests/EtlPipelines.Excel.Tests/EtlPipelines.Excel.Tests.csproj" />
-    <Project Path="tests/EtlPipelines.Files.Servers.Tests/EtlPipelines.Files.Servers.Tests.csproj" />
-    <Project Path="tests/EtlPipelines.Files.Tests/EtlPipelines.Files.Tests.csproj" />
+    <Project Path="tests/EtlPipelines.Extensions.Csv.Tests/EtlPipelines.Extensions.Csv.Tests.csproj" />
+    <Project Path="tests/EtlPipelines.Extensions.Excel.Tests/EtlPipelines.Extensions.Excel.Tests.csproj" />
+    <Project Path="tests/EtlPipelines.Extensions.Files.Servers.Tests/EtlPipelines.Extensions.Files.Servers.Tests.csproj" />
+    <Project Path="tests/EtlPipelines.Extensions.Files.Tests/EtlPipelines.Extensions.Files.Tests.csproj" />
+    <Project Path="tests/EtlPipelines.Extensions.Sql.Databases.Tests/EtlPipelines.Extensions.Sql.Databases.Tests.csproj" />
+    <Project Path="tests/EtlPipelines.Extensions.Sql.Tests/EtlPipelines.Extensions.Sql.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Samples.Tests/EtlPipelines.Samples.Tests.csproj" />
-    <Project Path="tests/EtlPipelines.Sql.Databases.Tests/EtlPipelines.Sql.Databases.Tests.csproj" />
-    <Project Path="tests/EtlPipelines.Sql.Tests/EtlPipelines.Sql.Tests.csproj" />
   </Folder>
 </Solution>

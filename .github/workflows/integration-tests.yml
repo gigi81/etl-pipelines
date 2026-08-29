@@ -42,7 +42,7 @@ jobs:
       - name: File servers
         shell: bash
         run: >
-          dotnet test tests/EtlPipelines.Files.Servers.Tests/EtlPipelines.Files.Servers.Tests.csproj
+          dotnet test tests/EtlPipelines.Extensions.Files.Servers.Tests/EtlPipelines.Extensions.Files.Servers.Tests.csproj
           --configuration Release --no-build
           --results-directory ./TestResults
           --report-trx --report-trx-filename "{asm}-integration.trx"
@@ -55,7 +55,7 @@ jobs:
       - name: Bulk loaders against every engine
         shell: bash
         run: >
-          dotnet test tests/EtlPipelines.Sql.Databases.Tests/EtlPipelines.Sql.Databases.Tests.csproj
+          dotnet test tests/EtlPipelines.Extensions.Sql.Databases.Tests/EtlPipelines.Extensions.Sql.Databases.Tests.csproj
           --configuration Release --no-build
           --results-directory ./TestResults
           --report-trx --report-trx-filename "{asm}-integration.trx"

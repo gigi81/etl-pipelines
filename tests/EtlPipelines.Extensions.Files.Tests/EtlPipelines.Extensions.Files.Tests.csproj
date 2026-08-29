@@ -2,6 +2,13 @@
 
   <PropertyGroup>
     <IsPackable>false</IsPackable>
+    <!--
+      Left at the project's pre-rename name: the libraries it tests name their own types
+      EtlPipelines.Files*, not EtlPipelines.Extensions.Files* - only the package identity moved. The
+      default RootNamespace (derived from this project's own name) would collide with the static
+      class named EtlPipelines.Extensions that every connector's Extensions.cs declares.
+    -->
+    <RootNamespace>EtlPipelines.Files.Tests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
