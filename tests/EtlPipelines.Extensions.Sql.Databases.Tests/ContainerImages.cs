@@ -1,4 +1,4 @@
-namespace EtlPipelines.Sql.Databases.Tests;
+namespace EtlPipelines.Extensions.Sql.Databases.Tests;
 
 /// <summary>
 /// The container images the database tests run against.

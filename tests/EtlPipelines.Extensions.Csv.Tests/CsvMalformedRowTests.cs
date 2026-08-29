@@ -1,8 +1,9 @@
 using System.IO.Abstractions;
 using EtlPipelines.Abstractions.Configuration;
+using EtlPipelines.Csv;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Csv.Tests;
+namespace EtlPipelines.Extensions.Csv.Tests;
 
 /// <summary>
 /// What happens to rows a CSV file cannot parse.

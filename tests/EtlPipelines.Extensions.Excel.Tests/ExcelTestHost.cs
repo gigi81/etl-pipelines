@@ -5,7 +5,7 @@ using EtlPipelines.Abstractions.Execution;
 using EtlPipelines.Core;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Excel.Tests;
+namespace EtlPipelines.Extensions.Excel.Tests;
 
 /// <summary>
 /// A container plus a filesystem, wired the way an application would wire them.

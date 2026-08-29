@@ -1,6 +1,7 @@
+using EtlPipelines.Excel;
 using MiniExcelLib.OpenXml;
 
-namespace EtlPipelines.Excel.Tests;
+namespace EtlPipelines.Extensions.Excel.Tests;
 
 /// <summary>
 /// Several sources converging into one workbook, a sheet each.

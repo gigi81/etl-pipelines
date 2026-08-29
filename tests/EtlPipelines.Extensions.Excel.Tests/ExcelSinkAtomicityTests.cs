@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
+using EtlPipelines.Excel;
 
-namespace EtlPipelines.Excel.Tests;
+namespace EtlPipelines.Extensions.Excel.Tests;
 
 /// <summary>
 /// The target workbook must never be seen half-written.

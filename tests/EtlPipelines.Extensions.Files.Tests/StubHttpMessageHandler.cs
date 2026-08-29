@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace EtlPipelines.Files.Tests;
+namespace EtlPipelines.Extensions.Files.Tests;
 
 /// <summary>A handler that answers every request from a caller-supplied function, so tests never touch a real socket.</summary>
 internal sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler

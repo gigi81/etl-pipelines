@@ -1,7 +1,7 @@
 using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Files.Tests;
+namespace EtlPipelines.Extensions.Files.Tests;
 
 public sealed class HttpDownloadTests
 {

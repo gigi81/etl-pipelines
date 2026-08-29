@@ -9,7 +9,7 @@ using Testcontainers.MySql;
 using Testcontainers.Oracle;
 using Testcontainers.PostgreSql;
 
-namespace EtlPipelines.Sql.Databases.Tests;
+namespace EtlPipelines.Extensions.Sql.Databases.Tests;
 
 public sealed class SqlServerFixture : DatabaseFixture<MsSqlContainer>
 {

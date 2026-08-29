@@ -1,7 +1,7 @@
 using EtlPipelines.Abstractions.Configuration;
 using EtlPipelines.Abstractions.Ports;
 
-namespace EtlPipelines.Excel.Tests;
+namespace EtlPipelines.Extensions.Excel.Tests;
 
 /// <summary>Feeds a fixed array of rows into a pipeline.</summary>
 public sealed class ArraySource<TRow>(IReadOnlyList<TRow> rows) : IDataSource<TRow>

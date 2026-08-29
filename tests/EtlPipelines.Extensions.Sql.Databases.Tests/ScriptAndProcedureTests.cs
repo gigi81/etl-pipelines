@@ -2,13 +2,14 @@ using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using EtlPipelines.Abstractions.Building;
 using EtlPipelines.Core;
+using EtlPipelines.Sql;
 using EtlPipelines.Sql.MySql;
 using EtlPipelines.Sql.Oracle;
 using EtlPipelines.Sql.PostgreSql;
 using EtlPipelines.Sql.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Sql.Databases.Tests;
+namespace EtlPipelines.Extensions.Sql.Databases.Tests;
 
 /// <summary>
 /// Running a script file and a stored procedure against each real engine.

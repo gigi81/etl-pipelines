@@ -1,4 +1,5 @@
 using System.Data.Common;
+using EtlPipelines.Sql;
 using EtlPipelines.Sql.MySql;
 using EtlPipelines.Sql.Oracle;
 using EtlPipelines.Sql.PostgreSql;
@@ -6,7 +7,7 @@ using EtlPipelines.Sql.Sqlite;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Sql.Tests;
+namespace EtlPipelines.Extensions.Sql.Tests;
 
 /// <summary>
 /// Statements run on a connection as it opens, and the named settings built on them.

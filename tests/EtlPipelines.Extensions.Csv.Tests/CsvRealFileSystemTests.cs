@@ -1,6 +1,6 @@
 using System.IO.Abstractions;
 
-namespace EtlPipelines.Csv.Tests;
+namespace EtlPipelines.Extensions.Csv.Tests;
 
 /// <summary>
 /// The same pipelines against the real disk.

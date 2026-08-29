@@ -3,7 +3,7 @@ using System.IO.Abstractions;
 using EtlPipelines.Abstractions.Ports;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Csv.Tests;
+namespace EtlPipelines.Extensions.Csv.Tests;
 
 /// <summary>Reading and writing CSV through pipelines resolved from a container.</summary>
 public sealed class CsvRoundTripTests

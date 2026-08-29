@@ -1,6 +1,6 @@
 using System.IO.Abstractions.TestingHelpers;
 
-namespace EtlPipelines.Files.Tests;
+namespace EtlPipelines.Extensions.Files.Tests;
 
 public sealed class FileSelectionTests
 {

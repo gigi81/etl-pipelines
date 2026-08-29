@@ -1,7 +1,7 @@
 using System.Reflection;
 using EtlPipelines.Sql.Sqlite;
 
-namespace EtlPipelines.Sql.Tests;
+namespace EtlPipelines.Extensions.Sql.Tests;
 
 /// <summary>
 /// Running a script compiled into an assembly rather than deployed beside it.
@@ -15,7 +15,7 @@ public sealed class EmbeddedScriptTests : IAsyncDisposable
     private const string Pipeline = "maintenance";
     private const string Connection = "orders";
 
-    private const string FullName = "EtlPipelines.Sql.Tests.Scripts.create-orders.sql";
+    private const string FullName = "EtlPipelines.Extensions.Sql.Tests.Scripts.create-orders.sql";
 
     private static readonly Assembly Here = typeof(EmbeddedScriptTests).Assembly;
 

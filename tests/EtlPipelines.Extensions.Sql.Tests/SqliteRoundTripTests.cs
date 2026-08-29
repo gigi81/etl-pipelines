@@ -1,6 +1,6 @@
 using System.Data;
 
-namespace EtlPipelines.Sql.Tests;
+namespace EtlPipelines.Extensions.Sql.Tests;
 
 /// <summary>
 /// Reading from and writing to a real database, through SQLite.

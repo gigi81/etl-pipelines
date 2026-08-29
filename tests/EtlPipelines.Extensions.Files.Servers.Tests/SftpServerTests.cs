@@ -4,7 +4,7 @@ using EtlPipelines.Files.Sftp;
 using EtlPipelines.Files.Sftp.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Files.Servers.Tests;
+namespace EtlPipelines.Extensions.Files.Servers.Tests;
 
 [Category("Docker")]
 [ClassDataSource<SftpFixture>(Shared = SharedType.PerAssembly)]

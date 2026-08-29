@@ -9,7 +9,7 @@ using MySqlConnector;
 using Npgsql;
 using Oracle.ManagedDataAccess.Client;
 
-namespace EtlPipelines.Sql.Databases.Tests;
+namespace EtlPipelines.Extensions.Sql.Databases.Tests;
 
 /// <summary>
 /// Reading and writing unqualified names against a schema other than the connecting user's.
