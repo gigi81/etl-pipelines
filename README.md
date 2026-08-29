@@ -11,7 +11,8 @@ overlap rather than run one after another.
 
 | Package | For |
 |---|---|
-| `EtlPipelines.Core` | The runtime and the builder. Start here. |
+| `EtlPipelines` | Meta-package: pulls in the runtime, the abstractions and every connector below. The easy way to get everything without naming each package. |
+| `EtlPipelines.Core` | The runtime and the builder. Reference this alone to pick connectors one at a time instead. |
 | `EtlPipelines.Extensions.Csv` | CSV source and sink, built on CsvHelper. |
 | `EtlPipelines.Extensions.Excel` | Excel (`.xlsx`) source and sink, built on MiniExcel. |
 | `EtlPipelines.Extensions.Files` | Copy, move, compress and extract files as pipeline stages. No third-party dependency. |
