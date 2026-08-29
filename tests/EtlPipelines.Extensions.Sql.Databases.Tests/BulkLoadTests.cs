@@ -3,7 +3,7 @@ using System.Data.Common;
 using EtlPipelines.Core;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Sql.Databases.Tests;
+namespace EtlPipelines.Extensions.Sql.Databases.Tests;
 
 /// <summary>
 /// What every provider package has to get right, run against its real engine.

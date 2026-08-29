@@ -3,7 +3,7 @@ using EtlPipelines.Sql.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Sql.Tests;
+namespace EtlPipelines.Extensions.Sql.Tests;
 
 /// <summary>
 /// Naming a database once and referring to it by name after that.

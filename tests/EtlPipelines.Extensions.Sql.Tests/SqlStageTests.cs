@@ -2,7 +2,7 @@ using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using EtlPipelines.Sql.Sqlite;
 
-namespace EtlPipelines.Sql.Tests;
+namespace EtlPipelines.Extensions.Sql.Tests;
 
 /// <summary>
 /// Running a script file and a stored procedure as stages of a pipeline.

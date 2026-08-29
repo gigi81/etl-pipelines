@@ -1,8 +1,8 @@
-namespace EtlPipelines.Files.Servers.Tests;
+namespace EtlPipelines.Extensions.Files.Servers.Tests;
 
 /// <summary>
 /// The container images the file-server tests run against, pinned for the same reason
-/// <c>EtlPipelines.Sql.Databases.Tests.ContainerImages</c> pins its own: a test run should only change
+/// <c>EtlPipelines.Extensions.Sql.Databases.Tests.ContainerImages</c> pins its own: a test run should only change
 /// what it tests as a visible edit here, not as a side effect of a dependency bump.
 /// </summary>
 public static class ContainerImages

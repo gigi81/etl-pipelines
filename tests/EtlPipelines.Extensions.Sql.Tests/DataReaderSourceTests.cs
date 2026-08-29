@@ -1,9 +1,9 @@
 using System.Data;
 using System.Data.Common;
 using EtlPipelines.Core;
-using EtlPipelines.Sql.Tests.Fixtures;
+using EtlPipelines.Extensions.Sql.Tests.Fixtures;
 
-namespace EtlPipelines.Sql.Tests;
+namespace EtlPipelines.Extensions.Sql.Tests;
 
 /// <summary>Bridging an ADO.NET reader into a pipeline.</summary>
 public class DataReaderSourceTests

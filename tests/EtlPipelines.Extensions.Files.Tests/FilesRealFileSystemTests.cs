@@ -1,6 +1,6 @@
 using System.IO.Abstractions;
 
-namespace EtlPipelines.Files.Tests;
+namespace EtlPipelines.Extensions.Files.Tests;
 
 /// <summary>
 /// A few of the same operations against the real disk.

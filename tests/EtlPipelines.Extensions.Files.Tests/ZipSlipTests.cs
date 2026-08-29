@@ -3,7 +3,7 @@ using System.IO.Abstractions.TestingHelpers;
 using System.IO.Compression;
 using System.Text;
 
-namespace EtlPipelines.Files.Tests;
+namespace EtlPipelines.Extensions.Files.Tests;
 
 /// <summary>
 /// Every entry name here is something a well-behaved archiver would never write, and something a

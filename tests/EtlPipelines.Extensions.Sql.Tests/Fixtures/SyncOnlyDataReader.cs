@@ -1,6 +1,6 @@
 using System.Data;
 
-namespace EtlPipelines.Sql.Tests.Fixtures;
+namespace EtlPipelines.Extensions.Sql.Tests.Fixtures;
 
 /// <summary>
 /// A bare <see cref="IDataReader"/> that does not derive from <c>DbDataReader</c>, so it exercises

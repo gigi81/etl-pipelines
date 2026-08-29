@@ -1,5 +1,6 @@
 using EtlPipelines.Abstractions.Building;
 using EtlPipelines.Core;
+using EtlPipelines.Sql;
 using EtlPipelines.Sql.MySql;
 using EtlPipelines.Sql.Oracle;
 using EtlPipelines.Sql.PostgreSql;
@@ -7,7 +8,7 @@ using EtlPipelines.Sql.SqlServer;
 using EtlPipelines.Sql.Statements;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Sql.Databases.Tests;
+namespace EtlPipelines.Extensions.Sql.Databases.Tests;
 
 /// <summary>
 /// Proves that <c>TruncateTable</c>'s default statement - real <c>TRUNCATE TABLE</c> - is syntax each

@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
+using EtlPipelines.Csv;
 
-namespace EtlPipelines.Csv.Tests;
+namespace EtlPipelines.Extensions.Csv.Tests;
 
 /// <summary>
 /// The target file must never be seen half-written.

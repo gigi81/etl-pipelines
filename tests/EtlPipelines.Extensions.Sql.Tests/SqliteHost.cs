@@ -6,7 +6,7 @@ using EtlPipelines.Sql.Sqlite;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Sql.Tests;
+namespace EtlPipelines.Extensions.Sql.Tests;
 
 /// <summary>
 /// A container plus a private SQLite database, wired the way an application would wire them.

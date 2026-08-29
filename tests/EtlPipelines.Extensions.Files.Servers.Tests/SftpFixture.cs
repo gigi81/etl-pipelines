@@ -2,11 +2,11 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using TUnit.Core.Interfaces;
 
-namespace EtlPipelines.Files.Servers.Tests;
+namespace EtlPipelines.Extensions.Files.Servers.Tests;
 
 /// <summary>
 /// One <c>atmoz/sftp</c> container, shared for the whole test project the same way
-/// <c>EtlPipelines.Sql.Databases.Tests.DatabaseFixture</c> shares a database.
+/// <c>EtlPipelines.Extensions.Sql.Databases.Tests.DatabaseFixture</c> shares a database.
 /// </summary>
 /// <remarks>
 /// Created with a fixed user (<see cref="UserName"/>/<see cref="Password"/>) and one writable

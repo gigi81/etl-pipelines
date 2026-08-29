@@ -1,6 +1,6 @@
 using System.IO.Abstractions;
 
-namespace EtlPipelines.Excel.Tests;
+namespace EtlPipelines.Extensions.Excel.Tests;
 
 /// <summary>
 /// The same pipelines against the real disk.

@@ -3,12 +3,14 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <!--
-      Left at the project's pre-rename name: the library it tests names its own types
-      EtlPipelines.Excel.*, not EtlPipelines.Extensions.Excel.* - only the package identity moved. The
-      default RootNamespace (derived from this project's own name) would collide with the static
-      class named EtlPipelines.Extensions that every connector's Extensions.cs declares.
+      This project's own namespace, EtlPipelines.Extensions.Excel.Tests, is a warning-level ambiguity
+      (CS0435) against the static class literally named EtlPipelines.Extensions that
+      EtlPipelines.Extensions.Excel's own Extensions.cs declares. The compiler already resolves it
+      correctly - the namespace declared in source wins over the imported type - so this only silences
+      the diagnostic; TreatWarningsAsErrors is what would otherwise turn a correct resolution into a
+      build failure.
     -->
-    <RootNamespace>EtlPipelines.Excel.Tests</RootNamespace>
+    <NoWarn>$(NoWarn);CS0435</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

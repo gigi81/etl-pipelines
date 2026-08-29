@@ -5,7 +5,7 @@ using EtlPipelines.Abstractions.Execution;
 using EtlPipelines.Core;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Csv.Tests;
+namespace EtlPipelines.Extensions.Csv.Tests;
 
 /// <summary>
 /// A container plus a filesystem, wired the way an application would wire them.

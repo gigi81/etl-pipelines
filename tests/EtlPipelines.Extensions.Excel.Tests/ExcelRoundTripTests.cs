@@ -1,6 +1,7 @@
 using System.Globalization;
+using EtlPipelines.Excel;
 
-namespace EtlPipelines.Excel.Tests;
+namespace EtlPipelines.Extensions.Excel.Tests;
 
 /// <summary>Writing a worksheet and reading it back.</summary>
 public class ExcelRoundTripTests

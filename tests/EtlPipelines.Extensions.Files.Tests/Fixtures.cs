@@ -2,7 +2,7 @@ using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using EtlPipelines.Abstractions.Execution;
 
-namespace EtlPipelines.Files.Tests;
+namespace EtlPipelines.Extensions.Files.Tests;
 
 /// <summary>Shared helpers for building pipelines against an in-memory filesystem.</summary>
 internal static class Fixtures

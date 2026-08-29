@@ -4,7 +4,7 @@ using EtlPipelines.Files.Sftp.Connections;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Files.Tests;
+namespace EtlPipelines.Extensions.Files.Tests;
 
 public sealed class SftpRegistrationTests
 {

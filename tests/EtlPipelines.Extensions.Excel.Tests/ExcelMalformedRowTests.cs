@@ -1,8 +1,9 @@
 using System.IO.Abstractions;
 using EtlPipelines.Abstractions.Configuration;
+using EtlPipelines.Excel;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Excel.Tests;
+namespace EtlPipelines.Extensions.Excel.Tests;
 
 /// <summary>
 /// What happens to rows a worksheet cannot be converted into.

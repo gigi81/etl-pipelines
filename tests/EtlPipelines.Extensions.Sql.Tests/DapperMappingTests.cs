@@ -1,4 +1,4 @@
-namespace EtlPipelines.Sql.Tests;
+namespace EtlPipelines.Extensions.Sql.Tests;
 
 /// <summary>
 /// Reading rows without writing a mapping delegate.
