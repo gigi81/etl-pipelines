@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Meta-package for EtlPipelines: references the runtime, the abstractions, and every EtlPipelines.Extensions.* connector, so installing this one package pulls in all of them.</Description>
+    <!--
+      NU5104 fires here for the same reason it fires in EtlPipelines.Extensions.Excel: this package's
+      dependency graph reaches MiniExcel's prerelease through that project, and the repo turns warnings
+      into errors. Remove this the moment MiniExcel 2.0 ships stable and Excel's own suppression goes.
+    -->
+    <NoWarn>$(NoWarn);NU5104</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    No source of its own - this project only references. The SDK's pack target turns a
+    ProjectReference to another packable project into a NuGet dependency on that project's package
+    (matching version) rather than merging its DLL in here, which is what makes a meta-package work at
+    all: this package's own DLL stays empty, and installing it pulls in every one it depends on.
+
+    The wildcard is deliberate: every connector already follows the EtlPipelines.Extensions.* naming
+    convention, so a new one lands here the moment it exists, with nothing to edit in this file. Core
+    and Abstractions are named explicitly because there is exactly one of each and neither matches a
+    naming pattern worth writing a glob for.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\EtlPipelines.Core\EtlPipelines.Core.csproj" />
+    <ProjectReference Include="..\EtlPipelines.Abstractions\EtlPipelines.Abstractions.csproj" />
+    <ProjectReference Include="..\EtlPipelines.Extensions.*\EtlPipelines.Extensions.*.csproj" />
+  </ItemGroup>
+
+</Project>
