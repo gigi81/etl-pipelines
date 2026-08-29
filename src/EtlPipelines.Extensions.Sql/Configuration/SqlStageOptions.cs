@@ -1,4 +1,4 @@
-namespace EtlPipelines.Sql.Configuration;
+namespace EtlPipelines.Extensions.Sql.Configuration;
 
 /// <summary>Settings shared by the stages that hand SQL to the server rather than moving rows.</summary>
 public abstract class SqlStageOptions : SqlOptions

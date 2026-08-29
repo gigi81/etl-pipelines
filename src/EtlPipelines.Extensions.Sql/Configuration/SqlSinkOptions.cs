@@ -1,4 +1,4 @@
-namespace EtlPipelines.Sql.Configuration;
+namespace EtlPipelines.Extensions.Sql.Configuration;
 
 /// <summary>Settings for writing to a database table.</summary>
 public sealed class SqlSinkOptions : SqlOptions

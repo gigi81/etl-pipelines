@@ -1,6 +1,6 @@
 using System.IO.Abstractions.TestingHelpers;
-using EtlPipelines.Files.Sftp;
-using EtlPipelines.Files.Sftp.Connections;
+using EtlPipelines.Extensions.Files.Sftp;
+using EtlPipelines.Extensions.Files.Sftp.Connections;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Renci.SshNet;

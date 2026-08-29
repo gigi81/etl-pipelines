@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.IO.Abstractions;
 
-namespace EtlPipelines.Files.Stages;
+namespace EtlPipelines.Extensions.Files.Stages;
 
 /// <summary>Compresses one file, or every file a selection matches, into an archive.</summary>
 public sealed class CompressStage : IPipelineStage

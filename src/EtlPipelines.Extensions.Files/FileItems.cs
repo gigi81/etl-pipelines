@@ -1,6 +1,6 @@
 using System.IO.Abstractions;
 
-namespace EtlPipelines.Files;
+namespace EtlPipelines.Extensions.Files;
 
 /// <summary>
 /// Reads back what a file stage produced, published into <see cref="PipelineContext.Items"/> - whose

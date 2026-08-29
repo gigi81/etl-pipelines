@@ -1,6 +1,6 @@
 using System.IO.Abstractions;
 using EtlPipelines.Samples.ArchiveToDatabase.Stages;
-using EtlPipelines.Sql.Sqlite;
+using EtlPipelines.Extensions.Sql.Sqlite;
 using Microsoft.Data.Sqlite;
 using MiniExcelLib;
 using MiniExcelLib.OpenXml;

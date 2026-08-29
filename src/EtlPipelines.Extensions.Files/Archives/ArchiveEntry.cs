@@ -1,4 +1,4 @@
-namespace EtlPipelines.Files.Archives;
+namespace EtlPipelines.Extensions.Files.Archives;
 
 /// <summary>What kind of thing one archive entry represents, unified across the formats this package reads.</summary>
 internal enum ArchiveEntryKind

@@ -1,6 +1,6 @@
-using EtlPipelines.Files.Sftp;
-using EtlPipelines.Files.Sftp.Configuration;
-using EtlPipelines.Files.Sftp.Connections;
+using EtlPipelines.Extensions.Files.Sftp;
+using EtlPipelines.Extensions.Files.Sftp.Configuration;
+using EtlPipelines.Extensions.Files.Sftp.Connections;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 

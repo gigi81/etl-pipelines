@@ -1,7 +1,7 @@
 using System.IO.Abstractions;
 using Renci.SshNet;
 
-namespace EtlPipelines.Files.Sftp.Configuration;
+namespace EtlPipelines.Extensions.Files.Sftp.Configuration;
 
 /// <summary>Settings for one named SFTP connection.</summary>
 public sealed class SftpConnectionOptions

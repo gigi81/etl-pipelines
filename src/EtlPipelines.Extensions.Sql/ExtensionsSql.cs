@@ -3,7 +3,7 @@ using System.Data;
 using System.Data.Common;
 using System.IO.Abstractions;
 using System.Reflection;
-using EtlPipelines.Sql;
+using EtlPipelines.Extensions.Sql;
 
 // ReSharper disable once CheckNamespace
 namespace EtlPipelines;
@@ -16,7 +16,7 @@ namespace EtlPipelines;
 /// an <c>openConnection</c> delegate stays available for a database whose address is only known at
 /// run time.
 /// </remarks>
-public static class Extensions
+public static class ExtensionsSql
 {
     /// <summary>Begins a dataflow reading the results of a query, over a named connection.</summary>
     /// <param name="builder">The pipeline being composed.</param>

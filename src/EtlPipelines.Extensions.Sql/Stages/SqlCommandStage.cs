@@ -2,7 +2,7 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
 
-namespace EtlPipelines.Sql.Stages;
+namespace EtlPipelines.Extensions.Sql.Stages;
 
 /// <summary>
 /// Runs one command — a statement or a stored procedure — as a stage of a pipeline.

@@ -1,6 +1,6 @@
-using EtlPipelines.Sql.Connections;
+using EtlPipelines.Extensions.Sql.Connections;
 
-namespace EtlPipelines.Sql.MySql;
+namespace EtlPipelines.Extensions.Sql.MySql;
 
 /// <summary>Settings applied to every MySql connection a named registration opens.</summary>
 public sealed class MySqlConnectionOptions : DbConnectionOptions

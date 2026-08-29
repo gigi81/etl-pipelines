@@ -1,4 +1,4 @@
-namespace EtlPipelines.Cli.Stages;
+namespace EtlPipelines.Extensions.Cli.Stages;
 
 /// <summary>
 /// Wraps a stage so it fails clearly on any platform but Windows, instead of the wrapped stage

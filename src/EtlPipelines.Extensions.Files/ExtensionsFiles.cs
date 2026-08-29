@@ -10,7 +10,7 @@ namespace EtlPipelines;
 /// filesystem it belongs to, so a stage never has to construct one, and a test passes
 /// <c>mockFileSystem.FileInfo.New(...)</c> and everything downstream follows.
 /// </remarks>
-public static class Extensions
+public static class ExtensionsFiles
 {
     /// <summary>Copies one file to another.</summary>
     public static IPipelineBuilder CopyFile(

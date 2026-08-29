@@ -1,5 +1,5 @@
 using System.Data.Common;
-using EtlPipelines.Sql.Sqlite;
+using EtlPipelines.Extensions.Sql.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 

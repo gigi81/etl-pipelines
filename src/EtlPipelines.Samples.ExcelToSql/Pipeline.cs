@@ -3,7 +3,7 @@ using ErrorOr;
 using EtlPipelines.Abstractions.Configuration;
 using EtlPipelines.Core;
 using EtlPipelines.Samples.ExcelToSql.Stages;
-using EtlPipelines.Sql.Sqlite;
+using EtlPipelines.Extensions.Sql.Sqlite;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 

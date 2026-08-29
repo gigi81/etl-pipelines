@@ -1,6 +1,6 @@
 using System.IO.Abstractions;
 
-namespace EtlPipelines.Files.Selection;
+namespace EtlPipelines.Extensions.Files.Selection;
 
 /// <summary>Which local files a stage works on.</summary>
 /// <remarks>

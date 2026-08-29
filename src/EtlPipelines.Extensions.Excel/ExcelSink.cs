@@ -3,7 +3,7 @@ using System.Threading.Channels;
 using MiniExcelLib;
 using MiniExcelLib.OpenXml;
 
-namespace EtlPipelines.Excel;
+namespace EtlPipelines.Extensions.Excel;
 
 /// <summary>
 /// Writes rows to a worksheet in an Excel (<c>.xlsx</c>) workbook.

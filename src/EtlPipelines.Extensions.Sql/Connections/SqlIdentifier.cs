@@ -1,4 +1,4 @@
-namespace EtlPipelines.Sql.Connections;
+namespace EtlPipelines.Extensions.Sql.Connections;
 
 /// <summary>Checks that a name is safe to put into a statement.</summary>
 /// <remarks>

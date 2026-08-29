@@ -1,4 +1,4 @@
-namespace EtlPipelines.Files.Archives;
+namespace EtlPipelines.Extensions.Files.Archives;
 
 /// <summary>Detects an <see cref="ArchiveFormat"/> from a file name, shared by compress and extract.</summary>
 internal static class ArchiveFormats

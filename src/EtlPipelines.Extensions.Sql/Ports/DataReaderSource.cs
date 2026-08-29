@@ -2,7 +2,7 @@ using Dapper;
 using System.Data;
 using System.Data.Common;
 
-namespace EtlPipelines.Sql.Ports;
+namespace EtlPipelines.Extensions.Sql.Ports;
 
 /// <summary>
 /// An <see cref="IDataSource{TRow}"/> that pulls rows from an ADO.NET <see cref="IDataReader"/>.

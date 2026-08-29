@@ -1,6 +1,6 @@
 using System.IO.Abstractions;
 
-namespace EtlPipelines.Files.Selection;
+namespace EtlPipelines.Extensions.Files.Selection;
 
 /// <summary>Selects every file in a directory matching a pattern of <c>*</c> and <c>?</c>.</summary>
 public sealed class PatternFileSelection : IFileSelection

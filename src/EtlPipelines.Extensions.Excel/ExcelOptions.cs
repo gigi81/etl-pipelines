@@ -1,7 +1,7 @@
 using System.Globalization;
 using MiniExcelLib.OpenXml;
 
-namespace EtlPipelines.Excel;
+namespace EtlPipelines.Extensions.Excel;
 
 /// <summary>Settings shared by the Excel source and sink.</summary>
 public abstract class ExcelOptions

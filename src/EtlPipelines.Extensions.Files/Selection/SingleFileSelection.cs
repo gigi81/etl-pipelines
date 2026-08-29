@@ -1,6 +1,6 @@
 using System.IO.Abstractions;
 
-namespace EtlPipelines.Files.Selection;
+namespace EtlPipelines.Extensions.Files.Selection;
 
 /// <summary>Selects exactly one named file.</summary>
 public sealed class SingleFileSelection : IFileSelection

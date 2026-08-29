@@ -1,6 +1,6 @@
 using System.Data.Common;
 
-namespace EtlPipelines.Sql.Configuration;
+namespace EtlPipelines.Extensions.Sql.Configuration;
 
 /// <summary>Settings for running a statement or a stored procedure.</summary>
 public sealed class SqlCommandOptions : SqlStageOptions

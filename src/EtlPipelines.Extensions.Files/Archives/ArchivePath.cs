@@ -1,6 +1,6 @@
 using System.IO.Abstractions;
 
-namespace EtlPipelines.Files.Archives;
+namespace EtlPipelines.Extensions.Files.Archives;
 
 /// <summary>
 /// Resolves one archive entry's name against the directory it is being extracted into, refusing any

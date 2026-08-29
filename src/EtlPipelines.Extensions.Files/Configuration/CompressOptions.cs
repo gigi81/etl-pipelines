@@ -1,6 +1,6 @@
 using System.IO.Compression;
 
-namespace EtlPipelines.Files.Configuration;
+namespace EtlPipelines.Extensions.Files.Configuration;
 
 /// <summary>Settings for compressing one file or every file matching a pattern into an archive.</summary>
 public sealed class CompressOptions : FileSelectionOptions

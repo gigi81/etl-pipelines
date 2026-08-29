@@ -1,6 +1,6 @@
-using EtlPipelines.Sql.Statements;
+using EtlPipelines.Extensions.Sql.Statements;
 
-namespace EtlPipelines.Sql.Sqlite;
+namespace EtlPipelines.Extensions.Sql.Sqlite;
 
 /// <summary>Empties a table the way SQLite actually can: there is no <c>TRUNCATE</c> statement at all.</summary>
 public sealed class SqliteTruncateStatement : ITruncateStatement

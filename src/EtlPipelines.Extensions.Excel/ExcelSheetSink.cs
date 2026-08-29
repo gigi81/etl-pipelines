@@ -1,7 +1,7 @@
 using System.IO.Abstractions;
 using System.Threading.Channels;
 
-namespace EtlPipelines.Excel;
+namespace EtlPipelines.Extensions.Excel;
 
 /// <summary>
 /// Writes rows to one sheet of a workbook that several stages are building together.

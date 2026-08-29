@@ -5,7 +5,7 @@ using System.Threading.Channels;
 using MiniExcelLib;
 using MiniExcelLib.OpenXml;
 
-namespace EtlPipelines.Excel;
+namespace EtlPipelines.Extensions.Excel;
 
 /// <summary>
 /// The sheets one workbook is going to be built from, counted while the pipeline is composed.

@@ -1,8 +1,8 @@
-using EtlPipelines.Files.Sftp.Configuration;
+using EtlPipelines.Extensions.Files.Sftp.Configuration;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 
-namespace EtlPipelines.Files.Sftp.Connections;
+namespace EtlPipelines.Extensions.Files.Sftp.Connections;
 
 /// <summary>Opens SFTP clients for one named connection, from configuration read at connect time.</summary>
 public sealed class SftpConnectionFactory : ISftpConnectionFactory

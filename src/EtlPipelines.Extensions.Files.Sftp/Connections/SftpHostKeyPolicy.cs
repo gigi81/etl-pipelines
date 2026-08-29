@@ -1,7 +1,7 @@
-using EtlPipelines.Files.Sftp.Configuration;
+using EtlPipelines.Extensions.Files.Sftp.Configuration;
 using Renci.SshNet.Common;
 
-namespace EtlPipelines.Files.Sftp.Connections;
+namespace EtlPipelines.Extensions.Files.Sftp.Connections;
 
 /// <summary>
 /// Decides whether to trust a host key SSH.NET presents during connect, and remembers what was

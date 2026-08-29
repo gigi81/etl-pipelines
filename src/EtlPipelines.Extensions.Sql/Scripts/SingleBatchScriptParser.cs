@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 
-namespace EtlPipelines.Sql.Scripts;
+namespace EtlPipelines.Extensions.Sql.Scripts;
 
 /// <summary>
 /// Hands the file over whole, as one batch.

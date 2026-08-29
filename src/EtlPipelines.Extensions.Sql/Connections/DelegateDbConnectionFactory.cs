@@ -1,6 +1,6 @@
 using System.Data.Common;
 
-namespace EtlPipelines.Sql.Connections;
+namespace EtlPipelines.Extensions.Sql.Connections;
 
 /// <summary>An <see cref="IDbConnectionFactory"/> built from a delegate.</summary>
 /// <remarks>

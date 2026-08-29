@@ -1,4 +1,4 @@
-namespace EtlPipelines.Files.Configuration;
+namespace EtlPipelines.Extensions.Files.Configuration;
 
 /// <summary>What a file stage does when its target already exists.</summary>
 public enum OverwritePolicy

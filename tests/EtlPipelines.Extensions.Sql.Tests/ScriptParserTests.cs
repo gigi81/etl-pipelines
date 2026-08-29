@@ -1,6 +1,6 @@
-using EtlPipelines.Sql.MySql;
-using EtlPipelines.Sql.Oracle;
-using EtlPipelines.Sql.SqlServer;
+using EtlPipelines.Extensions.Sql.MySql;
+using EtlPipelines.Extensions.Sql.Oracle;
+using EtlPipelines.Extensions.Sql.SqlServer;
 
 namespace EtlPipelines.Extensions.Sql.Tests;
 

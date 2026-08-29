@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.IO.Abstractions;
 
-namespace EtlPipelines.Files.Stages;
+namespace EtlPipelines.Extensions.Files.Stages;
 
 /// <summary>The knobs a <see cref="FileTransferStage"/> needs, gathered from whichever of
 /// <see cref="FileCopyOptions"/> or <see cref="FileMoveOptions"/> the caller configured.</summary>

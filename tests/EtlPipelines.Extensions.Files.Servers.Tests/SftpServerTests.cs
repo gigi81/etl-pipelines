@@ -1,7 +1,7 @@
 using System.IO.Abstractions.TestingHelpers;
 using EtlPipelines.Core;
-using EtlPipelines.Files.Sftp;
-using EtlPipelines.Files.Sftp.Configuration;
+using EtlPipelines.Extensions.Files.Sftp;
+using EtlPipelines.Extensions.Files.Sftp.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Extensions.Files.Servers.Tests;

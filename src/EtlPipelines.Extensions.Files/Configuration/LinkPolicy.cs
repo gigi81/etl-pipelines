@@ -1,4 +1,4 @@
-namespace EtlPipelines.Files.Configuration;
+namespace EtlPipelines.Extensions.Files.Configuration;
 
 /// <summary>
 /// What extraction does with a tar entry that names a symbolic or hard link, or a device or FIFO

@@ -1,8 +1,11 @@
+using EtlPipelines.Extensions.Cli.Stages;
+using EtlPipelines.Extensions.Cli.Configuration;
+
 // ReSharper disable once CheckNamespace
 namespace EtlPipelines;
 
 /// <summary>Runs external programs - including PowerShell scripts - as pipeline stages.</summary>
-public static class Extensions
+public static class ExtensionsCli
 {
     private const string Pwsh = "pwsh";
     private const string WindowsPowerShell = "powershell.exe";

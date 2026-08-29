@@ -2,7 +2,7 @@ using System.Data.Common;
 using EtlPipelines.Abstractions.Building;
 using EtlPipelines.Abstractions.Execution;
 using EtlPipelines.Core;
-using EtlPipelines.Sql.Sqlite;
+using EtlPipelines.Extensions.Sql.Sqlite;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 

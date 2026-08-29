@@ -1,4 +1,4 @@
-using EtlPipelines.Excel;
+using EtlPipelines.Extensions.Excel;
 using MiniExcelLib.OpenXml;
 
 namespace EtlPipelines.Extensions.Excel.Tests;

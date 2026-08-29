@@ -1,9 +1,9 @@
 using System.Data.Common;
-using EtlPipelines.Sql;
-using EtlPipelines.Sql.MySql;
-using EtlPipelines.Sql.Oracle;
-using EtlPipelines.Sql.PostgreSql;
-using EtlPipelines.Sql.Sqlite;
+using EtlPipelines.Extensions.Sql;
+using EtlPipelines.Extensions.Sql.MySql;
+using EtlPipelines.Extensions.Sql.Oracle;
+using EtlPipelines.Extensions.Sql.PostgreSql;
+using EtlPipelines.Extensions.Sql.Sqlite;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 

@@ -2,7 +2,7 @@ using System.IO.Abstractions;
 using MiniExcelLib;
 using MiniExcelLib.OpenXml;
 
-namespace EtlPipelines.Excel;
+namespace EtlPipelines.Extensions.Excel;
 
 /// <summary>
 /// Reads rows from a worksheet in an Excel (<c>.xlsx</c>) workbook.

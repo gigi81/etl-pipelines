@@ -1,10 +1,10 @@
 using Renci.SshNet;
 
-namespace EtlPipelines.Files.Sftp.Connections;
+namespace EtlPipelines.Extensions.Files.Sftp.Connections;
 
 /// <summary>Opens connected SFTP clients for one named connection.</summary>
 /// <remarks>
-/// Shaped after <c>EtlPipelines.Sql.Connections.IDbConnectionFactory</c> for the same reason: an
+/// Shaped after <c>EtlPipelines.Extensions.Sql.Connections.IDbConnectionFactory</c> for the same reason: an
 /// <see cref="ISftpClient"/> is not thread-safe and holds a socket, so the factory is what is safe to
 /// register as a singleton, and each caller owns and disposes the client it is given.
 /// </remarks>

@@ -1,9 +1,9 @@
-namespace EtlPipelines.Cli;
+namespace EtlPipelines.Extensions.Cli;
 
 /// <summary>What a stage is called when the caller did not say.</summary>
 /// <remarks>
 /// Collapses whitespace and truncates to a short, report-friendly length - the same rule
-/// <c>EtlPipelines.Sql.Stages.SqlCommandStage</c> uses for an unnamed statement, so an unnamed
+/// <c>EtlPipelines.Extensions.Sql.Stages.SqlCommandStage</c> uses for an unnamed statement, so an unnamed
 /// command reads the same way in a run's report regardless of which extension produced it.
 /// </remarks>
 internal static class CommandName

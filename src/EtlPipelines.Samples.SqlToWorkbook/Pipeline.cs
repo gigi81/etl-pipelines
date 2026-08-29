@@ -1,7 +1,7 @@
 using System.IO.Abstractions;
 using EtlPipelines.Core;
 using EtlPipelines.Samples.SqlToWorkbook.Stages;
-using EtlPipelines.Sql.Sqlite;
+using EtlPipelines.Extensions.Sql.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Samples.SqlToWorkbook;

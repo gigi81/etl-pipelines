@@ -1,7 +1,7 @@
 using System.IO.Abstractions;
 using CsvHelper;
 
-namespace EtlPipelines.Csv;
+namespace EtlPipelines.Extensions.Csv;
 
 /// <summary>
 /// Reads rows from a CSV file.

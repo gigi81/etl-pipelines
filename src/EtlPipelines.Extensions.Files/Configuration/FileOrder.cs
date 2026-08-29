@@ -1,4 +1,4 @@
-namespace EtlPipelines.Files.Configuration;
+namespace EtlPipelines.Extensions.Files.Configuration;
 
 /// <summary>
 /// What a multi-file selection is sorted by before a stage acts on it.

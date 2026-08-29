@@ -1,15 +1,15 @@
 using System.IO.Abstractions;
 using EtlPipelines.Abstractions.Building;
-using EtlPipelines.Files.Selection;
-using EtlPipelines.Files.Sftp.Configuration;
-using EtlPipelines.Files.Sftp.Selection;
-using EtlPipelines.Files.Sftp.Stages;
+using EtlPipelines.Extensions.Files.Selection;
+using EtlPipelines.Extensions.Files.Sftp.Configuration;
+using EtlPipelines.Extensions.Files.Sftp.Selection;
+using EtlPipelines.Extensions.Files.Sftp.Stages;
 
 // ReSharper disable once CheckNamespace
 namespace EtlPipelines;
 
 /// <summary>Downloading and uploading files over SFTP as pipeline stages.</summary>
-public static class Extensions
+public static class ExtensionsFilesSftp
 {
     /// <summary>Downloads the single remote file at <paramref name="remotePath"/>.</summary>
     public static IPipelineBuilder DownloadFromSftp(

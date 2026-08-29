@@ -1,4 +1,4 @@
-namespace EtlPipelines.Files.Stages;
+namespace EtlPipelines.Extensions.Files.Stages;
 
 /// <summary>Whether a <see cref="FileTransferStage"/> copies or moves.</summary>
 public enum FileTransferMode

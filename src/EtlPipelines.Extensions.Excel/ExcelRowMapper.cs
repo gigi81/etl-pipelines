@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Reflection;
 using MiniExcelLib.Core.Attributes;
 
-namespace EtlPipelines.Excel;
+namespace EtlPipelines.Extensions.Excel;
 
 /// <summary>
 /// Turns one worksheet row, arriving as a column-name to cell-value map, into a row object.

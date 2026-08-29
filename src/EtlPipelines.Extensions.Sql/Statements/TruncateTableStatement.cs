@@ -1,4 +1,4 @@
-namespace EtlPipelines.Sql.Statements;
+namespace EtlPipelines.Extensions.Sql.Statements;
 
 /// <summary>
 /// Real <c>TRUNCATE TABLE</c> — what every engine this library supports runs, except SQLite.

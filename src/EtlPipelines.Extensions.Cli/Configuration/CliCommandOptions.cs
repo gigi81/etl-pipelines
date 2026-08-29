@@ -1,4 +1,4 @@
-namespace EtlPipelines.Cli.Configuration;
+namespace EtlPipelines.Extensions.Cli.Configuration;
 
 /// <summary>Settings for running one external command as a pipeline stage.</summary>
 public sealed class CliCommandOptions

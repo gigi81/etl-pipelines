@@ -1,6 +1,6 @@
-using EtlPipelines.Files.Configuration;
+using EtlPipelines.Extensions.Files.Configuration;
 
-namespace EtlPipelines.Files.Sftp.Configuration;
+namespace EtlPipelines.Extensions.Files.Sftp.Configuration;
 
 /// <summary>Settings for downloading one or more files over SFTP.</summary>
 public sealed class SftpDownloadOptions : FileWriteOptions

@@ -1,12 +1,12 @@
-using EtlPipelines.Sql.Connections;
-using EtlPipelines.Sql.Loading;
-using EtlPipelines.Sql.Ports;
-using EtlPipelines.Sql.Statements;
+using EtlPipelines.Extensions.Sql.Connections;
+using EtlPipelines.Extensions.Sql.Loading;
+using EtlPipelines.Extensions.Sql.Ports;
+using EtlPipelines.Extensions.Sql.Statements;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using System.Data.Common;
 
-namespace EtlPipelines.Sql.Sqlite;
+namespace EtlPipelines.Extensions.Sql.Sqlite;
 
 /// <summary>Opens SQLite connections for a pipeline.</summary>
 /// <remarks>
@@ -16,7 +16,7 @@ namespace EtlPipelines.Sql.Sqlite;
 /// one SQLite commits per statement and a large load crawls.
 /// <para>
 /// An <see cref="ITruncateStatement"/> <b>is</b> registered here, unlike the loader: SQLite has no
-/// <c>TRUNCATE</c> statement at all, so <see cref="Extensions.TruncateTable"/> would otherwise send it
+/// <c>TRUNCATE</c> statement at all, so <see cref="ExtensionsSql.TruncateTable"/> would otherwise send it
 /// one it cannot run. <see cref="SqliteTruncateStatement"/> issues <c>DELETE FROM</c> instead.
 /// </para>
 /// </remarks>

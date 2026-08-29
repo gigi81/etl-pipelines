@@ -1,4 +1,4 @@
-namespace EtlPipelines.Sql.Connections;
+namespace EtlPipelines.Extensions.Sql.Connections;
 
 /// <summary>Settings applied to every connection a named registration opens.</summary>
 public class DbConnectionOptions

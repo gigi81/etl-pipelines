@@ -1,8 +1,8 @@
-using EtlPipelines.Sql.Scripts;
+using EtlPipelines.Extensions.Sql.Scripts;
 using System.Runtime.CompilerServices;
 using System.Text;
 
-namespace EtlPipelines.Sql.SqlServer;
+namespace EtlPipelines.Extensions.Sql.SqlServer;
 
 /// <summary>
 /// Splits a script into batches the way sqlcmd does: a line holding nothing but <c>GO</c> ends the

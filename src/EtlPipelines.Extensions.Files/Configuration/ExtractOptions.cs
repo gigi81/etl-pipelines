@@ -1,4 +1,4 @@
-namespace EtlPipelines.Files.Configuration;
+namespace EtlPipelines.Extensions.Files.Configuration;
 
 /// <summary>Settings for extracting an archive.</summary>
 public sealed class ExtractOptions : FileWriteOptions

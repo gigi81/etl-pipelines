@@ -1,6 +1,6 @@
-using EtlPipelines.Sql.Connections;
+using EtlPipelines.Extensions.Sql.Connections;
 
-namespace EtlPipelines.Sql.PostgreSql;
+namespace EtlPipelines.Extensions.Sql.PostgreSql;
 
 /// <summary>Settings applied to every PostgreSql connection a named registration opens.</summary>
 public sealed class PostgreSqlConnectionOptions : DbConnectionOptions

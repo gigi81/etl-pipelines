@@ -1,6 +1,6 @@
 using System.Data;
 
-namespace EtlPipelines.Sql.Configuration;
+namespace EtlPipelines.Extensions.Sql.Configuration;
 
 /// <summary>Settings for reading from a database.</summary>
 public sealed class SqlSourceOptions : SqlOptions

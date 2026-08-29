@@ -1,6 +1,6 @@
 using System.IO.Abstractions;
 using EtlPipelines.Abstractions.Configuration;
-using EtlPipelines.Csv;
+using EtlPipelines.Extensions.Csv;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Extensions.Csv.Tests;

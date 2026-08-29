@@ -1,4 +1,4 @@
-namespace EtlPipelines.Files.Configuration;
+namespace EtlPipelines.Extensions.Files.Configuration;
 
 /// <summary>
 /// An archive format these stages can read and write, all of them from the .NET shared framework -

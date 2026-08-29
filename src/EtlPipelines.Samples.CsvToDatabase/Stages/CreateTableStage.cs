@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using ErrorOr;
 using EtlPipelines.Abstractions.Execution;
-using EtlPipelines.Sql;
+using EtlPipelines.Extensions.Sql;
 using Microsoft.Extensions.Logging;
 
 namespace EtlPipelines.Samples.CsvToDatabase.Stages;

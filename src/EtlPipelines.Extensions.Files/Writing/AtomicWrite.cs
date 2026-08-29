@@ -1,6 +1,6 @@
 using System.IO.Abstractions;
 
-namespace EtlPipelines.Files.Writing;
+namespace EtlPipelines.Extensions.Files.Writing;
 
 /// <summary>Whether <see cref="AtomicWrite.WriteAsync"/> actually wrote its target.</summary>
 public enum FileWriteOutcome
@@ -14,7 +14,7 @@ public enum FileWriteOutcome
 
 /// <summary>
 /// The only place in these packages that promotes a file into its final name. Generalises
-/// <c>EtlPipelines.Csv.CsvSink</c>'s temp-sibling-then-rename: stream into a temporary file beside the
+/// <c>EtlPipelines.Extensions.Csv.CsvSink</c>'s temp-sibling-then-rename: stream into a temporary file beside the
 /// target, close the handle, then rename it into place. Applies to a downloaded file, an uploaded-then-
 /// verified copy, each extracted archive entry, and the finished archive a compress stage produces.
 /// </summary>

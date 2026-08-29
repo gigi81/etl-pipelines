@@ -1,6 +1,6 @@
 using System.IO.Abstractions;
 
-namespace EtlPipelines.Sql.Scripts;
+namespace EtlPipelines.Extensions.Sql.Scripts;
 
 /// <summary>Reads a script from a file.</summary>
 public sealed class FileSqlScriptSource : ISqlScriptSource

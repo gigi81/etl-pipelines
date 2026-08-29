@@ -1,23 +1,23 @@
-using CliWrap.Buffered;
-using CliWrap.Exceptions;
 using System.ComponentModel;
 using System.Diagnostics;
+using CliWrap.Buffered;
+using CliWrap.Exceptions;
 
-namespace EtlPipelines.Cli.Stages;
+namespace EtlPipelines.Extensions.Cli.Stages;
 
 /// <summary>
 /// Runs one external command as a stage of a pipeline.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The general-purpose counterpart of <c>EtlPipelines.Sql.Stages.SqlCommandStage</c>: a stage that
+/// The general-purpose counterpart of <c>EtlPipelines.Extensions.Sql.Stages.SqlCommandStage</c>: a stage that
 /// moves no rows through the framework but hands work to a process outside it. Row counts are
 /// reported as zero for the same reason - the command's own effects were never a batch here.
 /// </para>
 /// <para>
 /// Run with CliWrap's own exit-code validation switched off; this stage inspects
 /// <see cref="CliWrap.CommandResult.ExitCode"/> itself against
-/// <see cref="CliCommandOptions.SuccessExitCodes"/>; a non-zero code that isn't in that set becomes
+/// <see cref="Configuration.CliCommandOptions.SuccessExitCodes"/>; a non-zero code that isn't in that set becomes
 /// an <see cref="ErrorOr{TValue}"/> failure carrying the process's own stderr (or stdout, if it wrote
 /// nothing to stderr), rather than an exception.
 /// </para>
@@ -28,7 +28,7 @@ public sealed class CliCommandStage : IPipelineStage
 
     private readonly string _targetFilePath;
     private readonly IReadOnlyList<string> _arguments;
-    private readonly CliCommandOptions _options;
+    private readonly Configuration.CliCommandOptions _options;
 
     /// <summary>Runs <paramref name="targetFilePath"/> with <paramref name="arguments"/>.</summary>
     /// <param name="targetFilePath">The executable to run.</param>
@@ -37,13 +37,13 @@ public sealed class CliCommandStage : IPipelineStage
     public CliCommandStage(
         string targetFilePath,
         IEnumerable<string>? arguments = null,
-        CliCommandOptions? options = null)
+        Configuration.CliCommandOptions? options = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(targetFilePath);
 
         _targetFilePath = targetFilePath;
         _arguments = arguments as IReadOnlyList<string> ?? [.. arguments ?? []];
-        _options = options ?? new CliCommandOptions();
+        _options = options ?? new Configuration.CliCommandOptions();
 
         Name = _options.Name ?? CommandName.Truncate(string.Join(' ', new[] { targetFilePath }.Concat(_arguments)));
     }
@@ -67,7 +67,7 @@ public sealed class CliCommandStage : IPipelineStage
         var token = linked?.Token ?? cancellationToken;
 
         // Fully qualified: CliWrap.Cli would otherwise resolve against this project's own
-        // EtlPipelines.Cli namespace, which encloses this file, rather than the CliWrap package.
+        // EtlPipelines.Extensions.Cli namespace, which encloses this file, rather than the CliWrap package.
         var command = CliWrap.Cli.Wrap(_targetFilePath)
             .WithArguments(_arguments)
             .WithValidation(CommandResultValidation.None);

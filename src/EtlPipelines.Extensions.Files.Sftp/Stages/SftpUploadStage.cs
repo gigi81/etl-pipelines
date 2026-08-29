@@ -3,14 +3,14 @@ using System.IO.Abstractions;
 using System.Net.Sockets;
 using ErrorOr;
 using EtlPipelines.Abstractions.Execution;
-using EtlPipelines.Files.Configuration;
-using EtlPipelines.Files.Selection;
-using EtlPipelines.Files.Sftp.Configuration;
-using EtlPipelines.Files.Sftp.Connections;
+using EtlPipelines.Extensions.Files.Configuration;
+using EtlPipelines.Extensions.Files.Selection;
+using EtlPipelines.Extensions.Files.Sftp.Configuration;
+using EtlPipelines.Extensions.Files.Sftp.Connections;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 
-namespace EtlPipelines.Files.Sftp.Stages;
+namespace EtlPipelines.Extensions.Files.Sftp.Stages;
 
 /// <summary>Uploads one local file, or every file a selection matches, over SFTP.</summary>
 public sealed class SftpUploadStage : IPipelineStage

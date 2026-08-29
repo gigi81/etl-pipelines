@@ -1,12 +1,12 @@
-using EtlPipelines.Sql.Connections;
-using EtlPipelines.Sql.Loading;
-using EtlPipelines.Sql.Ports;
+using EtlPipelines.Extensions.Sql.Connections;
+using EtlPipelines.Extensions.Sql.Loading;
+using EtlPipelines.Extensions.Sql.Ports;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using System.Data.Common;
 
-namespace EtlPipelines.Sql.PostgreSql;
+namespace EtlPipelines.Extensions.Sql.PostgreSql;
 
 /// <summary>Loads batches through PostgreSQL's binary <c>COPY</c>.</summary>
 /// <remarks>

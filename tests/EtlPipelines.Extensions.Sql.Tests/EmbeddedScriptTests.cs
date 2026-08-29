@@ -1,5 +1,5 @@
 using System.Reflection;
-using EtlPipelines.Sql.Sqlite;
+using EtlPipelines.Extensions.Sql.Sqlite;
 
 namespace EtlPipelines.Extensions.Sql.Tests;
 

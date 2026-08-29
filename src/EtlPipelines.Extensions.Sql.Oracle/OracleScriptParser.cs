@@ -1,9 +1,9 @@
-using EtlPipelines.Sql.Scripts;
+using EtlPipelines.Extensions.Sql.Scripts;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Text;
 
-namespace EtlPipelines.Sql.Oracle;
+namespace EtlPipelines.Extensions.Sql.Oracle;
 
 /// <summary>
 /// Splits a script the way SQL*Plus does, on whichever terminator the file uses.

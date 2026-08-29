@@ -2,12 +2,12 @@ using System.Diagnostics;
 using System.IO.Abstractions;
 using ErrorOr;
 using EtlPipelines.Abstractions.Execution;
-using EtlPipelines.Files.Configuration;
-using EtlPipelines.Files.Http.Configuration;
-using EtlPipelines.Files.Writing;
+using EtlPipelines.Extensions.Files.Configuration;
+using EtlPipelines.Extensions.Files.Http.Configuration;
+using EtlPipelines.Extensions.Files.Writing;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Files.Http.Stages;
+namespace EtlPipelines.Extensions.Files.Http.Stages;
 
 /// <summary>Downloads one or more files over HTTP.</summary>
 public sealed class HttpDownloadStage : IPipelineStage

@@ -1,4 +1,4 @@
-namespace EtlPipelines.Files.Configuration;
+namespace EtlPipelines.Extensions.Files.Configuration;
 
 /// <summary>Settings shared by every file stage that selects many files from a directory by pattern.</summary>
 public abstract class FileSelectionOptions : FileWriteOptions

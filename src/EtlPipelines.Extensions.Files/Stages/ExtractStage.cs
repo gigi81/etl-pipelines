@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.IO.Abstractions;
 using System.IO.Compression;
 
-namespace EtlPipelines.Files.Stages;
+namespace EtlPipelines.Extensions.Files.Stages;
 
 /// <summary>Extracts an archive into a directory.</summary>
 public sealed class ExtractStage : IPipelineStage

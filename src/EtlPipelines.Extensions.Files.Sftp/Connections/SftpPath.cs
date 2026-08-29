@@ -1,4 +1,4 @@
-namespace EtlPipelines.Files.Sftp.Connections;
+namespace EtlPipelines.Extensions.Files.Sftp.Connections;
 
 /// <summary>Remote path handling - always <c>/</c>-separated, regardless of the host OS this process runs on.</summary>
 internal static class SftpPath

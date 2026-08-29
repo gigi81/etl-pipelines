@@ -1,8 +1,8 @@
-using EtlPipelines.Sql.Scripts;
+using EtlPipelines.Extensions.Sql.Scripts;
 using System.Runtime.CompilerServices;
 using System.Text;
 
-namespace EtlPipelines.Sql.MySql;
+namespace EtlPipelines.Extensions.Sql.MySql;
 
 /// <summary>
 /// Splits a script on its current delimiter, which the script itself may change.

@@ -1,5 +1,5 @@
 using System.IO.Abstractions;
-using EtlPipelines.Excel;
+using EtlPipelines.Extensions.Excel;
 
 // ReSharper disable once CheckNamespace
 namespace EtlPipelines;
@@ -11,7 +11,7 @@ namespace EtlPipelines;
 /// ever having to construct one — it has no dependency on a concrete filesystem at all — and it means
 /// a test passes <c>mockFileSystem.FileInfo.New("orders.xlsx")</c> and everything downstream follows.
 /// </remarks>
-public static class Extensions
+public static class ExtensionsExcel
 {
     /// <summary>Begins a dataflow reading from a worksheet.</summary>
     /// <param name="builder">The pipeline being composed.</param>

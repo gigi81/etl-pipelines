@@ -1,6 +1,6 @@
 using System.Data.Common;
 
-namespace EtlPipelines.Sql.Connections;
+namespace EtlPipelines.Extensions.Sql.Connections;
 
 /// <summary>
 /// Runs a fixed set of statements on every connection another factory opens.

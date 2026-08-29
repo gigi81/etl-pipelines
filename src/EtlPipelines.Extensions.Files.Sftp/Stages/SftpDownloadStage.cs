@@ -3,17 +3,17 @@ using System.IO.Abstractions;
 using System.Net.Sockets;
 using ErrorOr;
 using EtlPipelines.Abstractions.Execution;
-using EtlPipelines.Files.Configuration;
-using EtlPipelines.Files.Selection;
-using EtlPipelines.Files.Sftp.Configuration;
-using EtlPipelines.Files.Sftp.Connections;
-using EtlPipelines.Files.Sftp.Selection;
-using EtlPipelines.Files.Writing;
+using EtlPipelines.Extensions.Files.Configuration;
+using EtlPipelines.Extensions.Files.Selection;
+using EtlPipelines.Extensions.Files.Sftp.Configuration;
+using EtlPipelines.Extensions.Files.Sftp.Connections;
+using EtlPipelines.Extensions.Files.Sftp.Selection;
+using EtlPipelines.Extensions.Files.Writing;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 using Renci.SshNet.Sftp;
 
-namespace EtlPipelines.Files.Sftp.Stages;
+namespace EtlPipelines.Extensions.Files.Sftp.Stages;
 
 /// <summary>Downloads one remote file, or every remote file matching a pattern.</summary>
 public sealed class SftpDownloadStage : IPipelineStage

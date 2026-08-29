@@ -2,11 +2,11 @@ using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using EtlPipelines.Abstractions.Building;
 using EtlPipelines.Core;
-using EtlPipelines.Sql;
-using EtlPipelines.Sql.MySql;
-using EtlPipelines.Sql.Oracle;
-using EtlPipelines.Sql.PostgreSql;
-using EtlPipelines.Sql.SqlServer;
+using EtlPipelines.Extensions.Sql;
+using EtlPipelines.Extensions.Sql.MySql;
+using EtlPipelines.Extensions.Sql.Oracle;
+using EtlPipelines.Extensions.Sql.PostgreSql;
+using EtlPipelines.Extensions.Sql.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Extensions.Sql.Databases.Tests;

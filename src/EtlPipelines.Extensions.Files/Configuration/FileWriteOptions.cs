@@ -1,4 +1,4 @@
-namespace EtlPipelines.Files.Configuration;
+namespace EtlPipelines.Extensions.Files.Configuration;
 
 /// <summary>Settings shared by every file stage that writes a target - locally or, for the Sftp
 /// satellite, remotely.</summary>

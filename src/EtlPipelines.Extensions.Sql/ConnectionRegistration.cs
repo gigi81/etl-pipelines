@@ -2,7 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Data.Common;
 
-namespace EtlPipelines.Sql;
+namespace EtlPipelines.Extensions.Sql;
 
 /// <summary>
 /// Registers named database connections, and resolves them again when a pipeline is composed.

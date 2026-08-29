@@ -1,13 +1,13 @@
-using EtlPipelines.Sql.Connections;
-using EtlPipelines.Sql.Loading;
-using EtlPipelines.Sql.Ports;
-using EtlPipelines.Sql.Scripts;
+using EtlPipelines.Extensions.Sql.Connections;
+using EtlPipelines.Extensions.Sql.Loading;
+using EtlPipelines.Extensions.Sql.Ports;
+using EtlPipelines.Extensions.Sql.Scripts;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using MySqlConnector;
 using System.Data.Common;
 
-namespace EtlPipelines.Sql.MySql;
+namespace EtlPipelines.Extensions.Sql.MySql;
 
 /// <summary>Loads batches through <see cref="MySqlBulkCopy"/>. Serves MariaDB as well as MySQL.</summary>
 /// <remarks>

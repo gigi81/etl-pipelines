@@ -1,5 +1,5 @@
 using EtlPipelines.Hosting;
-using EtlPipelines.Sql.Sqlite;
+using EtlPipelines.Extensions.Sql.Sqlite;
 
 namespace EtlPipelines.Samples.CsvToDatabase;
 

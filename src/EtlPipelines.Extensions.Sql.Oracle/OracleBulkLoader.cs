@@ -1,13 +1,13 @@
-using EtlPipelines.Sql.Connections;
-using EtlPipelines.Sql.Loading;
-using EtlPipelines.Sql.Ports;
-using EtlPipelines.Sql.Scripts;
+using EtlPipelines.Extensions.Sql.Connections;
+using EtlPipelines.Extensions.Sql.Loading;
+using EtlPipelines.Extensions.Sql.Ports;
+using EtlPipelines.Extensions.Sql.Scripts;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Oracle.ManagedDataAccess.Client;
 using System.Data.Common;
 
-namespace EtlPipelines.Sql.Oracle;
+namespace EtlPipelines.Extensions.Sql.Oracle;
 
 /// <summary>Loads batches through ODP.NET array binding.</summary>
 /// <remarks>

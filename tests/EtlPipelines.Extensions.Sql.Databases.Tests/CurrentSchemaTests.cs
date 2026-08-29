@@ -1,9 +1,9 @@
 using System.Data.Common;
 using EtlPipelines.Abstractions.Building;
 using EtlPipelines.Core;
-using EtlPipelines.Sql.MySql;
-using EtlPipelines.Sql.Oracle;
-using EtlPipelines.Sql.PostgreSql;
+using EtlPipelines.Extensions.Sql.MySql;
+using EtlPipelines.Extensions.Sql.Oracle;
+using EtlPipelines.Extensions.Sql.PostgreSql;
 using Microsoft.Extensions.DependencyInjection;
 using MySqlConnector;
 using Npgsql;

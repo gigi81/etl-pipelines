@@ -1,6 +1,6 @@
 using System.Reflection;
 
-namespace EtlPipelines.Sql.Scripts;
+namespace EtlPipelines.Extensions.Sql.Scripts;
 
 /// <summary>
 /// Reads a script compiled into an assembly as an embedded resource.

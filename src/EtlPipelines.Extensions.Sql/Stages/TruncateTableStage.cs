@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Data.Common;
 using System.Diagnostics;
 
-namespace EtlPipelines.Sql.Stages;
+namespace EtlPipelines.Extensions.Sql.Stages;
 
 /// <summary>
 /// Empties a table as a stage of a pipeline, using whichever statement the connection's engine

@@ -1,10 +1,10 @@
 using System.Data.Common;
 using EtlPipelines.Samples.ArchiveToDatabase.Stages;
 using EtlPipelines.Samples.Tests.Fixtures;
-using EtlPipelines.Sql.MySql;
-using EtlPipelines.Sql.Oracle;
-using EtlPipelines.Sql.PostgreSql;
-using EtlPipelines.Sql.SqlServer;
+using EtlPipelines.Extensions.Sql.MySql;
+using EtlPipelines.Extensions.Sql.Oracle;
+using EtlPipelines.Extensions.Sql.PostgreSql;
+using EtlPipelines.Extensions.Sql.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Samples.Tests;

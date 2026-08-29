@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Data.Common;
 using System.Diagnostics;
 
-namespace EtlPipelines.Sql.Stages;
+namespace EtlPipelines.Extensions.Sql.Stages;
 
 /// <summary>
 /// Runs a SQL script file as a stage of a pipeline.

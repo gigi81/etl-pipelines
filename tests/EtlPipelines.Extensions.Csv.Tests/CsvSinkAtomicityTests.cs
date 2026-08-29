@@ -1,5 +1,5 @@
 using System.IO.Abstractions;
-using EtlPipelines.Csv;
+using EtlPipelines.Extensions.Csv;
 
 namespace EtlPipelines.Extensions.Csv.Tests;
 

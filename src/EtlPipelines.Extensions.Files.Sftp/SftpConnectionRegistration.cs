@@ -1,13 +1,13 @@
-using EtlPipelines.Files.Sftp.Configuration;
-using EtlPipelines.Files.Sftp.Connections;
+using EtlPipelines.Extensions.Files.Sftp.Configuration;
+using EtlPipelines.Extensions.Files.Sftp.Connections;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EtlPipelines.Files.Sftp;
+namespace EtlPipelines.Extensions.Files.Sftp;
 
 /// <summary>Registers named SFTP connections, and resolves them again when a pipeline is composed.</summary>
 /// <remarks>
-/// Follows <c>EtlPipelines.Sql.ConnectionRegistration</c>'s shape: a connection string is the wrong
+/// Follows <c>EtlPipelines.Extensions.Sql.ConnectionRegistration</c>'s shape: a connection string is the wrong
 /// currency for SFTP (host, port, credentials, host key), so the section is <c>Sftp:&lt;name&gt;</c>
 /// rather than <c>ConnectionStrings</c>, but the name still doubles as the configuration key and
 /// configuration is still read lazily, the first time a run connects rather than at registration.

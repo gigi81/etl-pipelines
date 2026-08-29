@@ -1,4 +1,4 @@
-namespace EtlPipelines.Sql.Statements;
+namespace EtlPipelines.Extensions.Sql.Statements;
 
 /// <summary>
 /// Produces the statement that empties a table, for whichever engine one connection actually talks to.

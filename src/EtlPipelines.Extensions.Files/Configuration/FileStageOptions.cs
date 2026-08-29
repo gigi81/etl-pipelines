@@ -1,4 +1,4 @@
-namespace EtlPipelines.Files.Configuration;
+namespace EtlPipelines.Extensions.Files.Configuration;
 
 /// <summary>Settings shared by every file stage in this package and its Http and Sftp satellites.</summary>
 public abstract class FileStageOptions
@@ -11,7 +11,7 @@ public abstract class FileStageOptions
 
     /// <summary>
     /// The key later stages read this stage's output back under, through
-    /// <see cref="EtlPipelines.Files.FileItems"/>. Defaults to the stage's own <see cref="Name"/>.
+    /// <see cref="EtlPipelines.Extensions.Files.FileItems"/>. Defaults to the stage's own <see cref="Name"/>.
     /// </summary>
     public string? PublishAs { get; set; }
 

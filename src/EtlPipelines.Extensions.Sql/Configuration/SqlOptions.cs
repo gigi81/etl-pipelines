@@ -1,4 +1,4 @@
-namespace EtlPipelines.Sql.Configuration;
+namespace EtlPipelines.Extensions.Sql.Configuration;
 
 /// <summary>Settings shared by the SQL source and sink.</summary>
 public abstract class SqlOptions

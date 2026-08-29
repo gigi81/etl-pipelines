@@ -1,4 +1,4 @@
-namespace EtlPipelines.Sql.Scripts;
+namespace EtlPipelines.Extensions.Sql.Scripts;
 
 /// <summary>
 /// Where a script is read from.

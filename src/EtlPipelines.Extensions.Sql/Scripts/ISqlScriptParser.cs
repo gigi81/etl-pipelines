@@ -1,4 +1,4 @@
-namespace EtlPipelines.Sql.Scripts;
+namespace EtlPipelines.Extensions.Sql.Scripts;
 
 /// <summary>
 /// Splits a script into the batches a server will accept one at a time.

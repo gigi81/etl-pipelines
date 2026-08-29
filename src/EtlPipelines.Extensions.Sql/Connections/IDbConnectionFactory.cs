@@ -1,6 +1,6 @@
 using System.Data.Common;
 
-namespace EtlPipelines.Sql.Connections;
+namespace EtlPipelines.Extensions.Sql.Connections;
 
 /// <summary>
 /// Opens connections to one database.

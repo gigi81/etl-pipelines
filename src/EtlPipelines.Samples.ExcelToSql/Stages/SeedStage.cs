@@ -3,7 +3,7 @@ using System.Globalization;
 using System.IO.Abstractions;
 using ErrorOr;
 using EtlPipelines.Abstractions.Execution;
-using EtlPipelines.Excel;
+using EtlPipelines.Extensions.Excel;
 using EtlPipelines.Hosting;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;

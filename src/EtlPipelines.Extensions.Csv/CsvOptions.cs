@@ -3,7 +3,7 @@ using System.Text;
 using CsvHelper;
 using CsvHelper.Configuration;
 
-namespace EtlPipelines.Csv;
+namespace EtlPipelines.Extensions.Csv;
 
 /// <summary>Settings shared by the CSV source and sink.</summary>
 public abstract class CsvOptions

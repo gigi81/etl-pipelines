@@ -1,6 +1,6 @@
-using EtlPipelines.Sql.Connections;
+using EtlPipelines.Extensions.Sql.Connections;
 
-namespace EtlPipelines.Sql.Oracle;
+namespace EtlPipelines.Extensions.Sql.Oracle;
 
 /// <summary>Settings applied to every Oracle connection a named registration opens.</summary>
 public sealed class OracleConnectionOptions : DbConnectionOptions

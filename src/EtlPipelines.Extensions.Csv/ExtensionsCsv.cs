@@ -1,5 +1,5 @@
 using System.IO.Abstractions;
-using EtlPipelines.Csv;
+using EtlPipelines.Extensions.Csv;
 
 // ReSharper disable once CheckNamespace
 namespace EtlPipelines;
@@ -11,7 +11,7 @@ namespace EtlPipelines;
 /// ever having to construct one — it has no dependency on a concrete filesystem at all — and it means
 /// a test passes <c>mockFileSystem.FileInfo.New("orders.csv")</c> and everything downstream follows.
 /// </remarks>
-public static class Extensions
+public static class ExtensionsCsv
 {
     /// <summary>Begins a dataflow reading from a CSV file.</summary>
     /// <param name="builder">The pipeline being composed.</param>

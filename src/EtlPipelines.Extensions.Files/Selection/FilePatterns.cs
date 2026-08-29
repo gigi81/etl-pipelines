@@ -1,6 +1,6 @@
 using System.IO.Enumeration;
 
-namespace EtlPipelines.Files.Selection;
+namespace EtlPipelines.Extensions.Files.Selection;
 
 /// <summary>
 /// The glob matcher <see cref="PatternFileSelection"/> uses, exposed so the Sftp satellite package

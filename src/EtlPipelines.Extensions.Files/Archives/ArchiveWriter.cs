@@ -1,7 +1,7 @@
 using System.Formats.Tar;
 using System.IO.Compression;
 
-namespace EtlPipelines.Files.Archives;
+namespace EtlPipelines.Extensions.Files.Archives;
 
 /// <summary>
 /// Writes zip and tar archives entry by entry, streaming throughout - never through
