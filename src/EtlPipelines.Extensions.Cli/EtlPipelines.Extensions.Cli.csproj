@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Runs external executables and PowerShell scripts as pipeline stages, built on CliWrap.</Description>
+  </PropertyGroup>
+
+  <!--
+    Deliberately references the abstractions only, not the EtlPipelines.Core runtime - the same
+    convention every connector in this library follows.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\EtlPipelines.Abstractions\EtlPipelines.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      CliWrap wraps process start, stdout/stderr capture and exit-code handling across
+      Windows/Linux/macOS, so this package does not reimplement Process plumbing itself.
+    -->
+    <PackageReference Include="CliWrap" />
+    <!-- A script file is named as IFileInfo, the same currency the file connectors use. -->
+    <PackageReference Include="TestableIO.System.IO.Abstractions" />
+    <PackageReference Include="TestableIO.System.IO.Abstractions.Extensions" />
+  </ItemGroup>
+
+</Project>

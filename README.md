@@ -13,6 +13,7 @@ overlap rather than run one after another.
 |---|---|
 | `EtlPipelines` | Meta-package: pulls in the runtime, the abstractions and every connector below. The easy way to get everything without naming each package. |
 | `EtlPipelines.Core` | The runtime and the builder. Reference this alone to pick connectors one at a time instead. |
+| `EtlPipelines.Extensions.Cli` | Runs external commands and PowerShell scripts as pipeline stages, built on CliWrap. |
 | `EtlPipelines.Extensions.Csv` | CSV source and sink, built on CsvHelper. |
 | `EtlPipelines.Extensions.Excel` | Excel (`.xlsx`) source and sink, built on MiniExcel. |
 | `EtlPipelines.Extensions.Files` | Copy, move, compress and extract files as pipeline stages. No third-party dependency. |
@@ -420,6 +421,44 @@ falls back to copy-then-delete across volumes, and a share is always a different
 > a pattern has matched anything. When a dataflow must consume a dynamically discovered file, extract
 > or download it to a *known* path first and name that path, the way the example at the top of this
 > section does.
+
+## Command line
+
+`EtlPipelines.Extensions.Cli`, built on [CliWrap](https://github.com/Tyrrrz/CliWrap), runs an
+external program as a stage — the same `AddStage`-level shape `RunSql` uses, moving no rows through
+the framework because the work happens in a process outside it:
+
+```csharp
+services.AddEtlPipeline("nightly", b => b
+    .RunCommand("tar", ["-czf", archive.FullName, "-C", staging.FullName, "."]));
+```
+
+A non-zero exit code fails the stage, with the process's own stderr (or stdout, if it wrote nothing
+to stderr) carried in the error. `CliCommandOptions` adjusts the working directory, environment
+variables, a timeout, which exit codes count as success, and — through `Configure` — anything else
+CliWrap's own `Command` exposes.
+
+### PowerShell scripts
+
+Two convenience methods run a `.ps1` file with `-File`, so its arguments bind to the script's own
+`param()` block the way running it from a shell would, rather than being pasted into a `-Command`
+string:
+
+```csharp
+// script.ps1:
+//   param($Environment)
+//   Write-Output "Deploying to $Environment"
+
+services.AddEtlPipeline("deploy", b => b
+    .RunPowerShellScript(scripts.File("script.ps1"), ["production"]));
+```
+
+`RunPowerShellScript` runs `pwsh` — PowerShell 7+, cross-platform — and is the one to reach for by
+default. `RunWindowsPowerShellScript` runs the legacy, Windows-only `powershell.exe` instead, for a
+script that specifically needs Windows PowerShell 5.1's behaviour; on any other platform it fails
+immediately, at run time, with a clear "requires Windows" error rather than attempting to start a
+program that was never going to be there. Neither method installs or detects PowerShell — both
+assume it is already on the machine, the same way `RunCommand` assumes its own target executable is.
 
 ## SQL databases
 
