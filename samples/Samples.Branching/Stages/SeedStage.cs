@@ -7,7 +7,7 @@ using EtlPipelines.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace EtlPipelines.Samples.Branching;
+namespace EtlPipelines.Samples.Branching.Stages;
 
 /// <summary>Stands in for the sensor feed this job would normally be reading.</summary>
 public sealed class SeedStage : IPipelineStage

@@ -4,26 +4,27 @@ using EtlPipelines.Abstractions.Execution;
 using EtlPipelines.Sql;
 using Microsoft.Extensions.Logging;
 
-namespace EtlPipelines.Samples.ArchiveToDatabase;
+namespace EtlPipelines.Samples.CsvToDatabase.Stages;
 
 /// <summary>
-/// Creates the five destination tables in the sample's own database.
+/// Creates the destination table in the sample's own database.
 /// </summary>
 /// <remarks>
 /// A stage of its own, and one the pipeline only adds when it brought its own database: a caller that
-/// registered another engine has already created the tables, in whatever dialect that engine wants.
+/// registered another engine has already created the table, in whatever dialect that engine wants.
+/// Conditionally adding a step is the ordinary way to say that.
 /// </remarks>
-public sealed class CreateTablesStage : IPipelineStage
+public sealed class CreateTableStage : IPipelineStage
 {
-    private readonly ILogger<CreateTablesStage> _logger;
+    private readonly ILogger<CreateTableStage> _logger;
 
-    public CreateTablesStage(ILogger<CreateTablesStage> logger)
+    public CreateTableStage(ILogger<CreateTableStage> logger)
     {
         _logger = logger;
     }
 
     /// <summary>The name this step appears under in the run's report.</summary>
-    public string Name => "create-tables";
+    public string Name => "create-table";
 
     /// <inheritdoc />
     public async ValueTask<ErrorOr<StageResult>> ExecuteAsync(
@@ -38,14 +39,13 @@ public sealed class CreateTablesStage : IPipelineStage
             .GetRequiredDbConnectionFactory(Pipeline.Connection)
             .OpenAsync(cancellationToken);
 
-        foreach (var table in Pipeline.Tables)
-        {
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"DROP TABLE IF EXISTS {table}; CREATE TABLE {table} (Id INTEGER, Name TEXT)";
-            await command.ExecuteNonQueryAsync(cancellationToken);
-        }
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"DROP TABLE IF EXISTS {Pipeline.Table}; " +
+            $"CREATE TABLE {Pipeline.Table} (Id INTEGER, Symbol TEXT, Price NUMERIC, Quantity INTEGER)";
 
-        _logger.LogInformation("Created {Count} tables", Pipeline.Tables.Length);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        _logger.LogInformation("Created {Table}", Pipeline.Table);
 
         return new StageResult(Name, 0, 0, 0, started.Elapsed);
     }

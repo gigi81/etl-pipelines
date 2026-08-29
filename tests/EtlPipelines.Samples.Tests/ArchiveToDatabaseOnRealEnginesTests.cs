@@ -1,4 +1,5 @@
 using System.Data.Common;
+using EtlPipelines.Samples.ArchiveToDatabase.Stages;
 using EtlPipelines.Samples.Tests.Fixtures;
 using EtlPipelines.Sql.MySql;
 using EtlPipelines.Sql.Oracle;
@@ -79,7 +80,7 @@ public abstract class ArchiveToDatabaseOnRealEnginesTests<TFixture>
             await using var count = check.CreateCommand();
             count.CommandText = $"SELECT COUNT(*) FROM {table}";
             Convert.ToInt64(await count.ExecuteScalarAsync())
-                .Should().Be(ArchiveToDatabase.SeedStage.RowsPerFile, $"{table} should hold every row its CSV carried");
+                .Should().Be(SeedStage.RowsPerFile, $"{table} should hold every row its CSV carried");
         }
     }
 }

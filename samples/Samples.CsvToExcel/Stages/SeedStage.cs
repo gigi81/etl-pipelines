@@ -6,7 +6,7 @@ using EtlPipelines.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace EtlPipelines.Samples.CsvToExcel;
+namespace EtlPipelines.Samples.CsvToExcel.Stages;
 
 /// <summary>
 /// Stands in for whatever normally drops the file: an export, an upload, a partner feed.

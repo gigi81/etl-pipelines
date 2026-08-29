@@ -9,7 +9,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace EtlPipelines.Samples.ExcelToSql;
+namespace EtlPipelines.Samples.ExcelToSql.Stages;
 
 /// <summary>
 /// The workbook somebody filled in, and the table it is loaded into.

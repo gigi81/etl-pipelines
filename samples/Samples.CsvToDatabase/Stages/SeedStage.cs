@@ -6,7 +6,7 @@ using EtlPipelines.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace EtlPipelines.Samples.CsvToDatabase;
+namespace EtlPipelines.Samples.CsvToDatabase.Stages;
 
 /// <summary>
 /// The file this sample loads, and the SQLite table it loads into when nobody supplies one.

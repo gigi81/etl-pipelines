@@ -2,6 +2,7 @@ using System.IO.Abstractions;
 using EtlPipelines.Core;
 using EtlPipelines.Csv;
 using EtlPipelines.Excel;
+using EtlPipelines.Samples.Branching.Stages;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Samples.Branching;

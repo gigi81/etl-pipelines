@@ -3,6 +3,7 @@ using EtlPipelines.Abstractions.Building;
 using EtlPipelines.Core;
 using EtlPipelines.Csv;
 using EtlPipelines.Files;
+using EtlPipelines.Samples.ArchiveToDatabase.Stages;
 using EtlPipelines.Sql;
 using Microsoft.Extensions.DependencyInjection;
 

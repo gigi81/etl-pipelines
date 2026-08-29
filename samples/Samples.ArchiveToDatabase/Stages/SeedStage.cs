@@ -6,7 +6,7 @@ using EtlPipelines.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace EtlPipelines.Samples.ArchiveToDatabase;
+namespace EtlPipelines.Samples.ArchiveToDatabase.Stages;
 
 /// <summary>
 /// Writes the five CSV files <see cref="Pipeline.SeedName"/> bundles up. The one stage of the setup

@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using EtlPipelines.Core;
 using EtlPipelines.Csv;
+using EtlPipelines.Samples.CsvToDatabase.Stages;
 using EtlPipelines.Sql;
 using Microsoft.Extensions.DependencyInjection;
 

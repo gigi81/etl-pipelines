@@ -1,4 +1,5 @@
 using System.IO.Abstractions;
+using EtlPipelines.Samples.ArchiveToDatabase.Stages;
 using EtlPipelines.Sql.Sqlite;
 using Microsoft.Data.Sqlite;
 using MiniExcelLib;
@@ -75,8 +76,8 @@ public class SampleTests
         (await importer.GetSheetNamesAsync(report.OpenRead()))
             .Should().Equal(["Orders", "By region", "Customers"], "sheets keep the order they were declared");
 
-        importer.Query<SqlToWorkbook.Order>(report.OpenRead(), sheetName: "Orders").Should().HaveCount(SqlToWorkbook.SeedStage.Rows);
-        importer.Query<SqlToWorkbook.Customer>(report.OpenRead(), sheetName: "Customers").Should().HaveCount(SqlToWorkbook.SeedStage.Rows);
+        importer.Query<SqlToWorkbook.Order>(report.OpenRead(), sheetName: "Orders").Should().HaveCount(SqlToWorkbook.Stages.SeedStage.Rows);
+        importer.Query<SqlToWorkbook.Customer>(report.OpenRead(), sheetName: "Customers").Should().HaveCount(SqlToWorkbook.Stages.SeedStage.Rows);
     }
 
     [Test]
@@ -114,7 +115,7 @@ public class SampleTests
 
         //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-        result.Value.RowsRead.Should().Be(Branching.SeedStage.Rows, "the source is read once however many branches there are");
+        result.Value.RowsRead.Should().Be(Branching.Stages.SeedStage.Rows, "the source is read once however many branches there are");
 
         var archive = scratch.File(Branching.Pipeline.ArchiveFile);
         var report = scratch.File(Branching.Pipeline.ReportFile);
@@ -128,7 +129,7 @@ public class SampleTests
         var reported = MiniExcel.Importers.GetOpenXmlImporter()
             .Query<Branching.ReadingReport>(report.OpenRead()).Count();
 
-        archived.Should().Be(Branching.SeedStage.Rows);
+        archived.Should().Be(Branching.Stages.SeedStage.Rows);
         reported.Should().BeLessThan(archived).And.BeGreaterThan(0);
         result.Value.RowsWritten.Should().Be(archived + reported);
     }
@@ -150,7 +151,7 @@ public class SampleTests
 
         //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-        result.Value.RowsRead.Should().Be(CsvToDatabase.SeedStage.Rows);
+        result.Value.RowsRead.Should().Be(CsvToDatabase.Stages.SeedStage.Rows);
         result.Value.RowsWritten.Should().Be(CsvToDatabase.Pipeline.ExpectedRows);
     }
 
@@ -215,7 +216,7 @@ public class SampleTests
             await using var command = connection.CreateCommand();
             command.CommandText = $"SELECT COUNT(*) FROM {table}";
             var count = (long)(await command.ExecuteScalarAsync())!;
-            count.Should().Be(ArchiveToDatabase.SeedStage.RowsPerFile, $"{table} should hold every row its CSV carried");
+            count.Should().Be(SeedStage.RowsPerFile, $"{table} should hold every row its CSV carried");
         }
     }
 

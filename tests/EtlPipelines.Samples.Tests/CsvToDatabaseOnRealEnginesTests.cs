@@ -1,4 +1,5 @@
 using System.Data.Common;
+using EtlPipelines.Samples.CsvToDatabase.Stages;
 using EtlPipelines.Samples.Tests.Fixtures;
 using EtlPipelines.Sql.MySql;
 using EtlPipelines.Sql.Oracle;
@@ -63,7 +64,7 @@ public abstract class CsvToDatabaseOnRealEnginesTests<TFixture>
 
         //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-        result.Value.RowsRead.Should().Be(CsvToDatabase.SeedStage.Rows);
+        result.Value.RowsRead.Should().Be(SeedStage.Rows);
         result.Value.RowsWritten.Should().Be(CsvToDatabase.Pipeline.ExpectedRows);
 
         await using var check = await Open()(CancellationToken.None);

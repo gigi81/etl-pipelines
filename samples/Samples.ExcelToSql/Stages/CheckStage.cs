@@ -6,7 +6,7 @@ using EtlPipelines.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace EtlPipelines.Samples.ExcelToSql;
+namespace EtlPipelines.Samples.ExcelToSql.Stages;
 
 /// <summary>Reports what the load left behind, once every row has been through.</summary>
 public sealed class CheckStage : IPipelineStage

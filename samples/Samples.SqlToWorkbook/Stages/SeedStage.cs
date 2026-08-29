@@ -7,7 +7,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace EtlPipelines.Samples.SqlToWorkbook;
+namespace EtlPipelines.Samples.SqlToWorkbook.Stages;
 
 /// <summary>
 /// Fills the database this sample reports on.
