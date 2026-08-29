@@ -1,6 +1,4 @@
-using System.IO.Abstractions.TestingHelpers;
 using System.Net;
-using System.Net.Http;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EtlPipelines.Files.Tests;

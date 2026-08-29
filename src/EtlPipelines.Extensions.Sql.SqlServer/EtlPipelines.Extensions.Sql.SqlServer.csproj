@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\EtlPipelines.Sql\EtlPipelines.Sql.csproj" />
+    <ProjectReference Include="..\EtlPipelines.Extensions.Sql\EtlPipelines.Extensions.Sql.csproj" />
   </ItemGroup>
 
   <ItemGroup>

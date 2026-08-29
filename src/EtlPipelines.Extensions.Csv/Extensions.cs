@@ -1,6 +1,8 @@
 using System.IO.Abstractions;
+using EtlPipelines.Csv;
 
-namespace EtlPipelines.Csv;
+// ReSharper disable once CheckNamespace
+namespace EtlPipelines;
 
 /// <summary>Shorthand for putting a CSV file at either end of a dataflow.</summary>
 /// <remarks>
