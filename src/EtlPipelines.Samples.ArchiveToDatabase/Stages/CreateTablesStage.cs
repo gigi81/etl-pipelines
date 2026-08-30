@@ -41,7 +41,13 @@ public sealed class CreateTablesStage : IPipelineStage
         foreach (var table in Pipeline.Tables)
         {
             await using var command = connection.CreateCommand();
+
+            // S2077 wants a parameterized query, but DDL has no bind variables for table names anyway,
+            // and Pipeline.Tables is this sample's own hardcoded list - never row data or other input
+            // an attacker could reach.
+#pragma warning disable S2077
             command.CommandText = $"DROP TABLE IF EXISTS {table}; CREATE TABLE {table} (Id INTEGER, Name TEXT)";
+#pragma warning restore S2077
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 

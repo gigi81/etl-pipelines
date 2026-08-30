@@ -206,7 +206,13 @@ public sealed class ExcelSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsy
         {
             // The export is reading a channel that may never be completed by a run that gave up, so
             // it is cancelled rather than awaited to a finish.
+            // _export and _cancellation are always set together in InitializeAsync, so the check
+            // above also proves _cancellation is set - but the compiler cannot see that invariant
+            // across two independently nullable fields, and correctly still flags it without the
+            // operator, so S8969 disagrees with the compiler's own nullable analysis here.
+#pragma warning disable S8969
             await _cancellation!.CancelAsync().ConfigureAwait(false);
+#pragma warning restore S8969
 
             try
             {
@@ -232,7 +238,12 @@ public sealed class ExcelSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsy
     {
         try
         {
+            // Only reached from WriteAsync, past its own "_export is null" guard - true, but not
+            // something the compiler's nullable analysis carries across the call, so it still flags
+            // a removal here, and the compiler wins the disagreement with S8969.
+#pragma warning disable S8969
             await _export!.ConfigureAwait(false);
+#pragma warning restore S8969
         }
         catch (Exception exception)
         {

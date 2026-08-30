@@ -69,7 +69,14 @@ public sealed class OracleBulkLoader : IBulkLoader
         // Oracle binds with a colon, not an at sign.
         var columnList = string.Join(", ", columns);
         var binds = string.Join(", ", columns.Select((_, i) => $":p{i}"));
+
+        // S2077 wants a parameterized query, but table and column names are identifiers, not values -
+        // no engine lets a bind variable stand in for one. They come from SqlSinkOptions, set by the
+        // pipeline's own author, not from row data or any other place an attacker could reach; every
+        // value that actually is data is bound below through ArrayBindCount, not interpolated here.
+#pragma warning disable S2077
         command.CommandText = $"INSERT INTO {table} ({columnList}) VALUES ({binds})";
+#pragma warning restore S2077
 
         // The whole point: one execution carrying every row in the batch.
         command.ArrayBindCount = count;
