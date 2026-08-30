@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>JSON source and sink for EtlPipelines, built on System.Text.Json.</Description>
+  </PropertyGroup>
+
+  <!--
+    Deliberately references the abstractions only, not the EtlPipelines.Core runtime. Every type a
+    connector needs - the ports, the lifecycle interfaces, and the builder interfaces - lives in
+    Abstractions, so a connector never depends on the execution engine.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\EtlPipelines.Abstractions\EtlPipelines.Abstractions.csproj" />
+  </ItemGroup>
+
+  <!--
+    No PackageReference for System.Text.Json: it ships in the shared framework, unlike CsvHelper or
+    MiniExcel, which is why this project has no third-party dependency at all.
+  -->
+  <ItemGroup>
+    <!--
+      Every filesystem call goes through IFileSystem so the connector can be tested against an
+      in-memory filesystem. Wrappers supplies the concrete FileSystem used by default; Extensions
+      supplies the IFileInfo/IDirectoryInfo conveniences that keep the call sites readable.
+    -->
+    <PackageReference Include="TestableIO.System.IO.Abstractions" />
+    <PackageReference Include="TestableIO.System.IO.Abstractions.Extensions" />
+  </ItemGroup>
+
+</Project>

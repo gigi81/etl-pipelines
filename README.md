@@ -19,6 +19,7 @@ overlap rather than run one after another.
 | `EtlPipelines.Extensions.Files` | Copy, move, compress and extract files as pipeline stages. No third-party dependency. |
 | `EtlPipelines.Extensions.Files.Http` | Downloads files over HTTP. |
 | `EtlPipelines.Extensions.Files.Sftp` | Uploads and downloads files over SFTP, built on SSH.NET. |
+| `EtlPipelines.Extensions.Json` | JSON source and sink - JSON Lines or a single array - built on System.Text.Json. |
 | `EtlPipelines.Hosting` | Runs your pipelines as a command line application. |
 | `EtlPipelines.Extensions.Sql` | Source and sink for any ADO.NET provider. |
 | `EtlPipelines.Extensions.Sql.Sqlite` .`SqlServer` .`PostgreSql` .`MySql` .`Oracle` | One per engine: the driver, and that engine's bulk-load fast path. |
@@ -203,6 +204,63 @@ mean the same thing wherever it is processed.
 
 Both option types also expose `HasHeaderRecord`, `Delimiter`, `Encoding`, a `Configure` escape hatch
 for the full `CsvConfiguration`, and `ConfigureContext` for registering class maps.
+
+## JSON files
+
+`EtlPipelines.Extensions.Json` reads and writes JSON files - either JSON Lines (NDJSON, one record per
+line) or a single JSON array - through `System.Text.Json`. It is a separate package with no
+third-party dependency at all: System.Text.Json ships in the shared framework.
+
+```csharp
+builder.FromJsonLines<Order>(fileSystem.FileInfo.New("orders.json"))
+       .Select(o => new OrderDto(o.Id, o.Customer, o.Amount * 100))
+       .ToJsonLines(fileSystem.FileInfo.New("out.json"));
+```
+
+The two shapes are two separate method pairs - `FromJsonLines`/`ToJsonLines` and
+`FromJsonArray`/`ToJsonArray` - rather than one pair taking a format flag, each backed by its own
+source and sink type (`JsonLinesSource`/`JsonLinesSink` and `JsonArraySource`/`JsonArraySink`). A line
+is a recovery boundary a malformed array element does not have, so the two read loops are genuinely
+different rather than one loop with a fork in it; splitting the types keeps that difference from
+leaking into a setting that only does something for one of them.
+
+Files are named as `IFileInfo`, and everything the [CSV section](#csv-files) says about files as
+`IFileInfo` and about the atomic write applies here too - for the array shape, atomicity also keeps a
+downstream reader from ever seeing a file missing its closing `]`. Two things differ.
+
+**Only JSON Lines can recover from a malformed row.** `JsonLinesSource` skips a line it cannot parse,
+counts it on `MalformedRows`, and hands the raw text to a registered `IDeadLetterSink<string>` - set
+`JsonLinesSourceOptions.SkipMalformedRows = false` to stop on the first one instead - subject to the
+same `RowsFailed` limitation the CSV section calls out. `JsonArraySource` has no such boundary: there
+is no way to skip past one broken element and keep parsing the rest of the array, so a malformed
+element always fails the run, and `JsonArraySourceOptions` has no `SkipMalformedRows` to even ask it
+not to.
+
+**Property naming defaults to camelCase**, from `JsonSerializerDefaults.Web`, because that is what a
+JSON file produced outside .NET almost always looks like; matching on read is case-insensitive, so a
+file this library wrote itself round-trips regardless of casing. `SerializerOptions`, on the shared
+`JsonOptions` base every options type here derives from, is a plain, mutable `JsonSerializerOptions`
+instance seeded from those defaults - deliberately not the shared `JsonSerializerOptions.Web`
+singleton, which comes back already read-only - so it can be reconfigured freely: naming policy,
+converters, indentation.
+
+### Reading an array that is not at the document's root
+
+A real API response rarely is just `[...]` - more often it is an envelope, `{"result": {"rows":
+[...]}}`. `JsonArraySourceOptions.Path` names the walk down to the array, outermost property first:
+
+```csharp
+builder.FromJsonArray<Order>(
+    fileSystem.FileInfo.New("response.json"),
+    new JsonArraySourceOptions { Path = ["result", "rows"] });
+```
+
+Rows still arrive one at a time rather than the file being buffered whole - `JsonArraySource` re-walks
+the path on every chunk that arrives until it finds the array, rather than loading the document to
+navigate it, so only the (typically small) wrapper content ahead of the array is held in memory, not
+the array itself. A property along the way that is missing, or that does not lead to a JSON object and
+finally a JSON array, fails the run. There is no equivalent on the sink side: `ToJsonArray` always
+writes the array as the whole file.
 
 ## Excel files
 

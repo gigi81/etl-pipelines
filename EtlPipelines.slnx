@@ -24,6 +24,7 @@
     <Project Path="src/EtlPipelines.Extensions.Files/EtlPipelines.Extensions.Files.csproj" />
     <Project Path="src/EtlPipelines.Extensions.Files.Http/EtlPipelines.Extensions.Files.Http.csproj" />
     <Project Path="src/EtlPipelines.Extensions.Files.Sftp/EtlPipelines.Extensions.Files.Sftp.csproj" />
+    <Project Path="src/EtlPipelines.Extensions.Json/EtlPipelines.Extensions.Json.csproj" />
     <Project Path="src/EtlPipelines.Extensions.Sql/EtlPipelines.Extensions.Sql.csproj" />
     <Project Path="src/EtlPipelines.Extensions.Sql.MySql/EtlPipelines.Extensions.Sql.MySql.csproj" />
     <Project Path="src/EtlPipelines.Extensions.Sql.Oracle/EtlPipelines.Extensions.Sql.Oracle.csproj" />
@@ -39,6 +40,7 @@
     <Project Path="tests/EtlPipelines.Extensions.Excel.Tests/EtlPipelines.Extensions.Excel.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Extensions.Files.Servers.Tests/EtlPipelines.Extensions.Files.Servers.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Extensions.Files.Tests/EtlPipelines.Extensions.Files.Tests.csproj" />
+    <Project Path="tests/EtlPipelines.Extensions.Json.Tests/EtlPipelines.Extensions.Json.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Extensions.Sql.Databases.Tests/EtlPipelines.Extensions.Sql.Databases.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Extensions.Sql.Tests/EtlPipelines.Extensions.Sql.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Samples.Tests/EtlPipelines.Samples.Tests.csproj" />
