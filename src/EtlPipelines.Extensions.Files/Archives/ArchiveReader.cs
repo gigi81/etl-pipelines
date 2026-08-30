@@ -37,7 +37,7 @@ internal static class ArchiveReader
         Func<ArchiveEntry, Stream?, CancellationToken, ValueTask<ErrorOr<Success>>> onEntry,
         CancellationToken cancellationToken)
     {
-        using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
+        await using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
 
         foreach (var entry in archive.Entries)
         {
@@ -69,7 +69,7 @@ internal static class ArchiveReader
 
     private static ArchiveEntryKind ClassifyZipEntry(ZipArchiveEntry entry)
     {
-        if (entry.FullName.EndsWith('/') && entry.Length == 0 && entry.CompressedLength == 0)
+        if (entry.FullName.EndsWith('/') && entry is { Length: 0, CompressedLength: 0 })
         {
             return ArchiveEntryKind.Directory;
         }
@@ -92,9 +92,7 @@ internal static class ArchiveReader
     {
         await using var reader = new TarReader(stream, leaveOpen: true);
 
-        TarEntry? entry;
-
-        while ((entry = await reader.GetNextEntryAsync(copyData: false, cancellationToken).ConfigureAwait(false)) != null)
+        while (await reader.GetNextEntryAsync(copyData: false, cancellationToken).ConfigureAwait(false) is { } entry)
         {
             var kind = ClassifyTarEntry(entry.EntryType);
             var info = new ArchiveEntry(entry.Name, kind, entry.Length);
