@@ -1,9 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <IsPackable>false</IsPackable>
-  </PropertyGroup>
-
   <ItemGroup>
     <!-- Compiled into the assembly, so the embedded-script tests have a real resource to find. -->
     <EmbeddedResource Include="Scripts\**\*.sql" />
