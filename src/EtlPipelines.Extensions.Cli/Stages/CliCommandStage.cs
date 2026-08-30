@@ -60,11 +60,17 @@ public sealed class CliCommandStage : IPipelineStage
 
         var started = Stopwatch.StartNew();
 
-        using var linked = _options.Timeout is { } timeout
-            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-            : null;
-        linked?.CancelAfter(_options.Timeout!.Value);
-        var token = linked?.Token ?? cancellationToken;
+        CancellationTokenSource? linked = null;
+        var token = cancellationToken;
+
+        if (_options.Timeout is { } timeout)
+        {
+            linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            linked.CancelAfter(timeout);
+            token = linked.Token;
+        }
+
+        using var linkedScope = linked;
 
         // Fully qualified: CliWrap.Cli would otherwise resolve against this project's own
         // EtlPipelines.Extensions.Cli namespace, which encloses this file, rather than the CliWrap package.
@@ -124,8 +130,13 @@ public sealed class CliCommandStage : IPipelineStage
         return new StageResult(Name, 0, 0, 0, started.Elapsed);
     }
 
-    private static string Tail(BufferedCommandResult result) =>
-        !string.IsNullOrWhiteSpace(result.StandardError) ? result.StandardError.Trim()
-        : !string.IsNullOrWhiteSpace(result.StandardOutput) ? result.StandardOutput.Trim()
-        : "(no output)";
+    private static string Tail(BufferedCommandResult result)
+    {
+        if (!string.IsNullOrWhiteSpace(result.StandardError))
+        {
+            return result.StandardError.Trim();
+        }
+
+        return !string.IsNullOrWhiteSpace(result.StandardOutput) ? result.StandardOutput.Trim() : "(no output)";
+    }
 }

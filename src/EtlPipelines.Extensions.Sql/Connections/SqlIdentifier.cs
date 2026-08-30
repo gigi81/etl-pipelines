@@ -18,7 +18,12 @@ public static class SqlIdentifier
     /// </exception>
     public static string Require(string value, string parameterName)
     {
+        // S3236 wants this argument dropped so CallerArgumentExpression fills it in - but that would
+        // report "value", this method's own parameter, instead of parameterName: the name Require's
+        // caller actually passed in, which is the whole point of taking it as a parameter here.
+#pragma warning disable S3236
         ArgumentException.ThrowIfNullOrWhiteSpace(value, parameterName);
+#pragma warning restore S3236
 
         if (!char.IsLetter(value[0]))
         {

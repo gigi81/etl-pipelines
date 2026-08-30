@@ -237,29 +237,6 @@ public static class ExtensionsSql
         Action<SqlScriptOptions>? configure = null) =>
         builder.RunSqlScript(connectionName, new FileSqlScriptSource(script), configure);
 
-    /// <summary>Adds a stage that runs a SQL script compiled into an assembly.</summary>
-    /// <param name="builder">The pipeline being composed.</param>
-    /// <param name="connectionName">The name the connection was registered under.</param>
-    /// <param name="assembly">The assembly the script is embedded in.</param>
-    /// <param name="resourceName">
-    /// The resource's logical name, or the tail of it: <c>create-staging.sql</c> finds
-    /// <c>My.App.Scripts.create-staging.sql</c> as long as nothing else ends the same way.
-    /// </param>
-    /// <param name="configure">Command timeout and what the stage is called.</param>
-    /// <remarks>
-    /// A script that ships inside the application rather than beside it: nothing to copy on deploy
-    /// and nothing to go missing between the build and the run. The file has to be marked as an
-    /// <c>EmbeddedResource</c> in its project; when the name does not match, the error lists what the
-    /// assembly actually holds.
-    /// </remarks>
-    public static IPipelineBuilder RunEmbeddedSqlScript(
-        this IPipelineBuilder builder,
-        string connectionName,
-        Assembly assembly,
-        string resourceName,
-        Action<SqlScriptOptions>? configure = null) =>
-        builder.RunSqlScript(connectionName, new EmbeddedSqlScriptSource(assembly, resourceName), configure);
-
     /// <summary>Adds a stage that runs a SQL script from wherever <paramref name="script"/> reads it.</summary>
     /// <param name="builder">The pipeline being composed.</param>
     /// <param name="connectionName">The name the connection was registered under.</param>
@@ -282,4 +259,27 @@ public static class ExtensionsSql
 
         return builder.AddStage(new SqlScriptStage(connectionName, script, options));
     }
+
+    /// <summary>Adds a stage that runs a SQL script compiled into an assembly.</summary>
+    /// <param name="builder">The pipeline being composed.</param>
+    /// <param name="connectionName">The name the connection was registered under.</param>
+    /// <param name="assembly">The assembly the script is embedded in.</param>
+    /// <param name="resourceName">
+    /// The resource's logical name, or the tail of it: <c>create-staging.sql</c> finds
+    /// <c>My.App.Scripts.create-staging.sql</c> as long as nothing else ends the same way.
+    /// </param>
+    /// <param name="configure">Command timeout and what the stage is called.</param>
+    /// <remarks>
+    /// A script that ships inside the application rather than beside it: nothing to copy on deploy
+    /// and nothing to go missing between the build and the run. The file has to be marked as an
+    /// <c>EmbeddedResource</c> in its project; when the name does not match, the error lists what the
+    /// assembly actually holds.
+    /// </remarks>
+    public static IPipelineBuilder RunEmbeddedSqlScript(
+        this IPipelineBuilder builder,
+        string connectionName,
+        Assembly assembly,
+        string resourceName,
+        Action<SqlScriptOptions>? configure = null) =>
+        builder.RunSqlScript(connectionName, new EmbeddedSqlScriptSource(assembly, resourceName), configure);
 }

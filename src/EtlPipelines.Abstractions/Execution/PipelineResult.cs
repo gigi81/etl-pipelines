@@ -40,26 +40,11 @@ public sealed record PipelineResult(
         // and last. A coarse job stage - downloading the file, swapping a staging table into place -
         // moves no rows through the framework and reports none, and a pipeline that begins or ends
         // with one would otherwise report that it had read or written nothing at all.
-        long read = 0;
-        long written = 0;
+        var firstMoved = stages.FirstOrDefault(MovedRows);
+        var lastMoved = stages.LastOrDefault(MovedRows);
 
-        foreach (var stage in stages)
-        {
-            if (MovedRows(stage))
-            {
-                read = stage.RowsIn;
-                break;
-            }
-        }
-
-        for (var i = stages.Count - 1; i >= 0; i--)
-        {
-            if (MovedRows(stages[i]))
-            {
-                written = stages[i].RowsOut;
-                break;
-            }
-        }
+        var read = firstMoved is null ? 0 : firstMoved.RowsIn;
+        var written = lastMoved is null ? 0 : lastMoved.RowsOut;
 
         return new PipelineResult(name, read, written, failed, elapsed, stages);
     }

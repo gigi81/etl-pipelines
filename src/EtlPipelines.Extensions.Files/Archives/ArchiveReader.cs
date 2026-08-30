@@ -74,10 +74,13 @@ internal static class ArchiveReader
             return ArchiveEntryKind.Directory;
         }
 
+        // (S125 misreads the hex constant below as commented-out code; it is prose.)
+#pragma warning disable S125
         // The Unix file mode a *nix zip tool wrote lives in the high 16 bits of ExternalAttributes;
         // 0xA000 (S_IFLNK) marks a symbolic link. Zip has no dedicated link entry type - it fakes one
         // this way, which is exactly why Zip Slip guards that only check names miss it.
         var unixMode = unchecked((uint)entry.ExternalAttributes) >> 16;
+#pragma warning restore S125
 
         return (unixMode & 0xF000) == 0xA000 ? ArchiveEntryKind.Link : ArchiveEntryKind.RegularFile;
     }

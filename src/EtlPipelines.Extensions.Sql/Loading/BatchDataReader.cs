@@ -77,9 +77,16 @@ internal sealed class BatchDataReader<TRow> : DbDataReader
     public override int GetOrdinal(string name)
     {
         var index = Array.FindIndex(_columns, c => string.Equals(c, name, StringComparison.OrdinalIgnoreCase));
+
+        // S112 wants a purpose-built exception type here, but DbDataReader.GetOrdinal's own documented
+        // contract is IndexOutOfRangeException for an unknown column name - the same thing SqlDataReader
+        // and every other built-in reader throws - so matching it, not a bespoke type, is what makes
+        // this reader a drop-in DbDataReader.
+#pragma warning disable S112
         return index >= 0
             ? index
             : throw new IndexOutOfRangeException($"There is no column named '{name}' in this batch.");
+#pragma warning restore S112
     }
 
     public override Type GetFieldType(int ordinal)

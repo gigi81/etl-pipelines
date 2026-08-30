@@ -16,12 +16,20 @@ public sealed class SingleBatchScriptParser : ISqlScriptParser
     public static SingleBatchScriptParser Instance { get; } = new();
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<string> ParseAsync(
+    public IAsyncEnumerable<string> ParseAsync(TextReader script, CancellationToken cancellationToken)
+    {
+        // An iterator method never runs its body - not even a leading argument check - until the
+        // caller starts enumerating it, so the guard has to live in a non-iterator wrapper to fire
+        // when the caller thinks it does.
+        ArgumentNullException.ThrowIfNull(script);
+
+        return ParseCoreAsync(script, cancellationToken);
+    }
+
+    private static async IAsyncEnumerable<string> ParseCoreAsync(
         TextReader script,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(script);
-
         var text = await script.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
 
         if (!string.IsNullOrWhiteSpace(text))

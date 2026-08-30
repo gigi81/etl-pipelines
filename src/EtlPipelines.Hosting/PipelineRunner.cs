@@ -57,6 +57,29 @@ public class PipelineRunner
         return await RunAsync(pipeline, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Runs a pipeline that has already been resolved.</summary>
+    /// <returns>A process exit code: <c>0</c> when the run succeeded, <c>1</c> when it did not.</returns>
+    public async Task<int> RunAsync(IPipeline pipeline, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(pipeline);
+
+        _logger.LogInformation("Starting pipeline: {PipelineName}", pipeline.Name);
+        var run = await pipeline.RunAsync(cancellationToken).ConfigureAwait(false);
+
+        if (run.IsError)
+        {
+            foreach (var error in run.Errors)
+            {
+                _logger.LogError("{Pipeline} failed - {Code}: {Description}", pipeline.Name, error.Code, error.Description);
+            }
+
+            return 1;
+        }
+
+        Report(run.Value);
+        return 0;
+    }
+
     /// <summary>
     /// Runs every registered pipeline, in the order they were registered.
     /// </summary>
@@ -89,29 +112,6 @@ public class PipelineRunner
             }
         }
 
-        return 0;
-    }
-
-    /// <summary>Runs a pipeline that has already been resolved.</summary>
-    /// <returns>A process exit code: <c>0</c> when the run succeeded, <c>1</c> when it did not.</returns>
-    public async Task<int> RunAsync(IPipeline pipeline, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(pipeline);
-        
-        _logger.LogInformation("Starting pipeline: {PipelineName}", pipeline.Name);
-        var run = await pipeline.RunAsync(cancellationToken).ConfigureAwait(false);
-
-        if (run.IsError)
-        {
-            foreach (var error in run.Errors)
-            {
-                _logger.LogError("{Pipeline} failed - {Code}: {Description}", pipeline.Name, error.Code, error.Description);
-            }
-
-            return 1;
-        }
-
-        Report(run.Value);
         return 0;
     }
 

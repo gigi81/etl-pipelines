@@ -113,10 +113,12 @@ internal sealed class PipelineFactory : IPipelineFactory
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
-        return _pipelines.TryGetValue(name, out var pipeline)
-            ? pipeline
-            : throw new InvalidOperationException(
-                $"No pipeline named '{name}' is registered. Known pipelines: " +
-                (_pipelines.Count == 0 ? "(none)" : string.Join(", ", _pipelines.Keys)));
+        if (_pipelines.TryGetValue(name, out var pipeline))
+        {
+            return pipeline;
+        }
+
+        var known = _pipelines.Count == 0 ? "(none)" : string.Join(", ", _pipelines.Keys);
+        throw new InvalidOperationException($"No pipeline named '{name}' is registered. Known pipelines: {known}");
     }
 }

@@ -10,7 +10,7 @@ namespace EtlPipelines.Abstractions.Configuration;
 /// rows still have to go somewhere inspectable.
 /// </remarks>
 /// <typeparam name="TRow">The row type being rejected.</typeparam>
-public interface IDeadLetterSink<TRow>
+public interface IDeadLetterSink<in TRow>
 {
     /// <summary>Records a single rejected row together with the error that rejected it.</summary>
     ValueTask WriteAsync(TRow row, Error error, CancellationToken cancellationToken);

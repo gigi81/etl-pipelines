@@ -28,7 +28,14 @@ internal static class ExcelRowMapper<TRow>
     /// Column name to setter, built once per row type. Names are matched without regard to case
     /// because a spreadsheet header is typed by a person.
     /// </summary>
+    /// <remarks>
+    /// A static field on a generic type is one cache per closed type rather than one cache shared
+    /// across all of them - Sonar's S2743 flags that shape on the assumption it is usually a mistake,
+    /// but a reflection cache keyed by <typeparamref name="TRow"/> is exactly what is wanted here.
+    /// </remarks>
+#pragma warning disable S2743
     private static readonly Lazy<IReadOnlyDictionary<string, PropertyInfo>> Columns = new(BuildMap);
+#pragma warning restore S2743
 
     /// <summary>Builds a row, or reports the first cell that would not convert.</summary>
     public static ErrorOr<TRow> Map(IDictionary<string, object?> cells, CultureInfo culture)

@@ -41,7 +41,7 @@ public sealed class MySqlBulkLoader : IBulkLoader
         }
 
         var result = await copy.WriteToServerAsync(rows, cancellationToken).ConfigureAwait(false);
-        return (int)result.RowsInserted;
+        return result.RowsInserted;
     }
 }
 

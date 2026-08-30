@@ -8,7 +8,6 @@ namespace EtlPipelines.Extensions.Files.Stages;
 public sealed class ExtractStage : IPipelineStage
 {
     private readonly IFileSelection _archiveSelection;
-    private readonly IFileInfo _archive;
     private readonly IDirectoryInfo _target;
     private readonly ExtractOptions _options;
     private readonly string _publishAs;
@@ -20,7 +19,6 @@ public sealed class ExtractStage : IPipelineStage
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(options);
 
-        _archive = archive;
         _archiveSelection = new SingleFileSelection(archive);
         _target = target;
         _options = options;

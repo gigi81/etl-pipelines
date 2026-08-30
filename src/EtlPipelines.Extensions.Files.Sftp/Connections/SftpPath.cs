@@ -16,6 +16,12 @@ internal static class SftpPath
     {
         var trimmed = remotePath.TrimEnd('/');
         var slash = trimmed.LastIndexOf('/');
-        return slash <= 0 ? (slash == 0 ? "/" : null) : trimmed[..slash];
+
+        if (slash < 0)
+        {
+            return null;
+        }
+
+        return slash == 0 ? "/" : trimmed[..slash];
     }
 }
