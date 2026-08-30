@@ -1,3 +1,5 @@
+using System.IO.Abstractions;
+
 namespace EtlPipelines.Extensions.Cli.Tests;
 
 /// <summary>
@@ -64,7 +66,8 @@ public sealed class PowerShellScriptTests : IDisposable
 
         //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-        _host.FileSystem.File.ReadAllText(_host.File("marker.txt").FullName).Trim().Should().Be("World");
+        var marketContent = await _host.File("marker.txt").ReadAllTextAsync();
+        marketContent.Trim().Should().Be("World");
     }
 
     [Test]

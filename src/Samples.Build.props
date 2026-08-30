@@ -1,0 +1,18 @@
+<Project>
+    <!--
+      Samples live under src/ alongside the packages, named EtlPipelines.Samples.*, but they are
+      runnable programs rather than libraries: unlike everything else here they are packed as donet tools.
+    -->
+    <PropertyGroup Condition="$(MSBuildProjectName.StartsWith('EtlPipelines.Samples.'))">
+        <OutputType>Exe</OutputType>
+        <PackAsTool>true</PackAsTool>
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    </PropertyGroup>
+
+    <ItemGroup Condition="$(MSBuildProjectName.StartsWith('EtlPipelines.Samples.'))">
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" />
+        <PackageReference Include="TestableIO.System.IO.Abstractions.Wrappers" />
+        <PackageReference Include="TestableIO.System.IO.Abstractions.Extensions" />
+    </ItemGroup>
+</Project>
