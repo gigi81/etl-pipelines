@@ -8,10 +8,10 @@ namespace EtlPipelines.Extensions.Json.Tests;
 /// What happens to rows a JSON file cannot parse.
 /// </summary>
 /// <remarks>
-/// Under <see cref="JsonFormat.Lines"/> a line is a recovery boundary, so - like the CSV extension -
-/// the source skips a bad one by default, counts it, and hands the raw text to a dead-letter sink when
-/// one is registered. <see cref="JsonFormat.Array"/> has no such boundary inside the array, so a
-/// malformed element there always fails the run; see <see cref="Array_format_has_no_row_level_recovery"/>.
+/// A line is a recovery boundary, so - like the CSV extension - <see cref="JsonLinesSource{TRow}"/>
+/// skips a bad one by default, counts it, and hands the raw text to a dead-letter sink when one is
+/// registered. <see cref="JsonArraySource{TRow}"/> has no such boundary inside the array, so a
+/// malformed element there always fails the run; see <see cref="Array_source_has_no_row_level_recovery()"/>.
 /// </remarks>
 public sealed class JsonMalformedRowTests
 {
@@ -47,7 +47,7 @@ public sealed class JsonMalformedRowTests
 
         _host.AddEtlPipeline(PipelineName, b => b
             .WithOptions(o => o.BatchSize = 4)
-            .FromJson<Order>(file)
+            .FromJsonLines<Order>(file)
             .To(sink));
 
         //act
@@ -63,13 +63,13 @@ public sealed class JsonMalformedRowTests
     public async Task Takes_the_dead_letter_sink_from_the_container()
     {
         //arrange
-        // Nothing wires the dead-letter sink to the source explicitly: FromJson looks for one in the
-        // container. Registering it is the whole of the configuration.
+        // Nothing wires the dead-letter sink to the source explicitly: FromJsonLines looks for one in
+        // the container. Registering it is the whole of the configuration.
         var file = await FileWithBadRows();
         var deadLetters = new RecordingDeadLetterSink<string>();
 
         _host.Configure(s => s.AddSingleton<IDeadLetterSink<string>>(deadLetters))
-             .AddEtlPipeline(PipelineName, b => b.FromJson<Order>(file).To(new CollectingSink<Order>()));
+             .AddEtlPipeline(PipelineName, b => b.FromJsonLines<Order>(file).To(new CollectingSink<Order>()));
 
         //act
         await _host.RunAsync(PipelineName);
@@ -90,7 +90,7 @@ public sealed class JsonMalformedRowTests
     {
         //arrange
         var file = await FileWithBadRows();
-        var source = new JsonSource<Order>(file);
+        var source = new JsonLinesSource<Order>(file);
 
         _host.AddEtlPipeline(PipelineName, b => b.From<Order>(_ => source).To(new CollectingSink<Order>()));
 
@@ -109,7 +109,7 @@ public sealed class JsonMalformedRowTests
         // extension pins. A transform rejecting a row flows into RowsFailed and MaxRowErrors;
         // IDataSource.ReadAsync returns only a count, so a source has nowhere to report one.
         var file = await FileWithBadRows();
-        var source = new JsonSource<Order>(file);
+        var source = new JsonLinesSource<Order>(file);
 
         _host.AddEtlPipeline(PipelineName, b => b.From<Order>(_ => source).To(new CollectingSink<Order>()));
 
@@ -128,7 +128,7 @@ public sealed class JsonMalformedRowTests
         var file = await FileWithBadRows();
 
         _host.AddEtlPipeline(PipelineName, b => b
-            .FromJson<Order>(file, new JsonSourceOptions { SkipMalformedRows = false })
+            .FromJsonLines<Order>(file, new JsonLinesSourceOptions { SkipMalformedRows = false })
             .To(new CollectingSink<Order>()));
 
         //act
@@ -139,12 +139,12 @@ public sealed class JsonMalformedRowTests
     }
 
     [Test]
-    public async Task Array_format_has_no_row_level_recovery()
+    public async Task Array_source_has_no_row_level_recovery()
     {
         //arrange
         // A JSON array with one malformed element part-way through. Unlike a line, there is no
         // boundary to skip to inside an array - the reader's position is simply lost - so this fails
-        // the whole read even though SkipMalformedRows stays at its default of true.
+        // the whole read; JsonArraySourceOptions has no SkipMalformedRows to even ask it not to.
         var file = _host.File("bad-array.json");
         await file.WriteAllTextAsync(
             """[{"id":1,"customer":"acme","amount":1.50},{"id":2,not valid json},{"id":3,"customer":"c","amount":3.50}]""",
@@ -152,8 +152,7 @@ public sealed class JsonMalformedRowTests
 
         _host.AddEtlPipeline(
             PipelineName,
-            b => b.FromJson<Order>(file, new JsonSourceOptions { Format = JsonFormat.Array })
-                  .To(new CollectingSink<Order>()));
+            b => b.FromJsonArray<Order>(file).To(new CollectingSink<Order>()));
 
         //act
         var result = await _host.RunAsync(PipelineName);
@@ -167,7 +166,7 @@ public sealed class JsonMalformedRowTests
     {
         //arrange
         var file = await FileWithBadRows();
-        var source = new JsonSource<Order>(file);
+        var source = new JsonLinesSource<Order>(file);
 
         //act
         var read = await source.ReadAsync(new Order[1], CancellationToken.None);

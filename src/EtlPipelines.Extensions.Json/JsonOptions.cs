@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace EtlPipelines.Extensions.Json;
 
-/// <summary>Settings shared by the JSON source and sink.</summary>
+/// <summary>Settings shared by every JSON source and sink, whatever the on-disk shape.</summary>
 public abstract class JsonOptions
 {
     /// <summary>
@@ -23,25 +23,18 @@ public abstract class JsonOptions
     /// </para>
     /// </remarks>
     public JsonSerializerOptions SerializerOptions { get; set; } = new(JsonSerializerDefaults.Web);
-
-    /// <summary>
-    /// Whether the file is JSON Lines or a single JSON array. Defaults to <see cref="JsonFormat.Lines"/>.
-    /// </summary>
-    public JsonFormat Format { get; set; } = JsonFormat.Lines;
 }
 
-/// <summary>Settings for reading a JSON file.</summary>
-public sealed class JsonSourceOptions : JsonOptions
+/// <summary>Settings for reading JSON Lines (NDJSON) - one JSON value per line.</summary>
+public sealed class JsonLinesSourceOptions : JsonOptions
 {
     /// <summary>
-    /// Whether a line that cannot be parsed is skipped rather than failing the run. Only applies to
-    /// <see cref="JsonFormat.Lines"/> - a malformed element always fails the run under
-    /// <see cref="JsonFormat.Array"/>, because an array has no per-element recovery boundary to skip
-    /// to. Defaults to <see langword="true"/>.
+    /// Whether a line that cannot be parsed is skipped rather than failing the run. Defaults to
+    /// <see langword="true"/>.
     /// </summary>
     /// <remarks>
     /// One unparseable line costing a ten-million-row load is the classic bad-data complaint, so
-    /// skipping is the default. Skipped lines are counted on <see cref="JsonSource{TRow}.MalformedRows"/>
+    /// skipping is the default. Skipped lines are counted on <see cref="JsonLinesSource{TRow}.MalformedRows"/>
     /// and their raw text is handed to an <see cref="IDeadLetterSink{TRow}"/> of <see cref="string"/>
     /// when one is supplied, so nothing is lost silently. Set this to <see langword="false"/> when the
     /// file is meant to be perfect and anything else should stop the run.
@@ -49,7 +42,24 @@ public sealed class JsonSourceOptions : JsonOptions
     public bool SkipMalformedRows { get; set; } = true;
 }
 
-/// <summary>Settings for writing a JSON file.</summary>
+/// <summary>Settings for reading a single JSON array holding every row.</summary>
+/// <remarks>
+/// A separate type from <see cref="JsonLinesSourceOptions"/> - rather than the two sharing one type
+/// with a field that means nothing for this format - because <see cref="JsonArraySource{TRow}"/> has
+/// no equivalent of <see cref="JsonLinesSourceOptions.SkipMalformedRows"/>: unlike a line, a
+/// malformed element inside an array has no recovery boundary to skip to, so there would be nothing
+/// here for that setting to do. It exists, with no members of its own yet, so that a setting which
+/// only makes sense for the array shape has somewhere to go without resurrecting that ambiguity.
+/// </remarks>
+public sealed class JsonArraySourceOptions : JsonOptions
+{
+}
+
+/// <summary>Settings for writing a JSON file, either JSON Lines or a single array.</summary>
+/// <remarks>
+/// One type shared by <see cref="JsonLinesSink{TRow}"/> and <see cref="JsonArraySink{TRow}"/>, unlike
+/// the source side: both write atomically the same way, and neither has a setting the other lacks.
+/// </remarks>
 public sealed class JsonSinkOptions : JsonOptions
 {
     /// <summary>
@@ -58,8 +68,8 @@ public sealed class JsonSinkOptions : JsonOptions
     /// </summary>
     /// <remarks>
     /// A sink streams batches to disk as they arrive, so a run that fails part-way leaves a truncated
-    /// file - which a downstream job may happily consume as if it were complete, or, for
-    /// <see cref="JsonFormat.Array"/>, as a file that is not even valid JSON because the closing
+    /// file - which a downstream job may happily consume as if it were complete, or, from
+    /// <see cref="JsonArraySink{TRow}"/>, as a file that is not even valid JSON because the closing
     /// <c>]</c> was never written. Writing to a temporary file and renaming on success means the
     /// target path either does not exist or is whole. Turn it off only when something needs to watch
     /// the file grow.

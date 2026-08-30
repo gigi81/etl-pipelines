@@ -8,7 +8,7 @@ namespace EtlPipelines.Extensions.Json.Tests;
 /// <remarks>
 /// A sink streams batches to disk as they arrive, so without care a run that dies part-way leaves a
 /// truncated file at the real path — and a downstream job consuming it cannot tell the difference. For
-/// <see cref="JsonFormat.Array"/> a truncated file is also simply not valid JSON, since the closing
+/// <see cref="JsonArraySink{TRow}"/> a truncated file is also simply not valid JSON, since the closing
 /// <c>]</c> is only ever written once the run has succeeded.
 /// </remarks>
 public sealed class JsonSinkAtomicityTests
@@ -35,7 +35,7 @@ public sealed class JsonSinkAtomicityTests
         _host.AddEtlPipeline(PipelineName, b => b
             .WithOptions(o => o.BatchSize = 8)
             .From(new ArraySource<Row>(Rows(100)))
-            .ToJson(target));
+            .ToJsonLines(target));
 
         //act
         var result = await _host.RunAsync(PipelineName);
@@ -58,7 +58,7 @@ public sealed class JsonSinkAtomicityTests
             .WithOptions(o => o.BatchSize = 8)
             .From(new ArraySource<Row>(Rows(400)))
             .Branch(
-                b1 => b1.ToJson(target),
+                b1 => b1.ToJsonLines(target),
                 b2 => b2.To(SlowFailure())));
 
         //act
@@ -81,7 +81,7 @@ public sealed class JsonSinkAtomicityTests
     }
 
     [Test]
-    public async Task A_failed_run_under_Array_format_leaves_an_unterminated_temp_file()
+    public async Task A_failed_run_with_an_array_sink_leaves_an_unterminated_temp_file()
     {
         //arrange
         var target = _host.File("failed-array.json");
@@ -90,7 +90,7 @@ public sealed class JsonSinkAtomicityTests
             .WithOptions(o => o.BatchSize = 8)
             .From(new ArraySource<Row>(Rows(400)))
             .Branch(
-                b1 => b1.ToJson(target, new JsonSinkOptions { Format = JsonFormat.Array }),
+                b1 => b1.ToJsonArray(target),
                 b2 => b2.To(SlowFailure())));
 
         //act
@@ -118,7 +118,7 @@ public sealed class JsonSinkAtomicityTests
             .WithOptions(o => o.BatchSize = 8)
             .From(new ArraySource<Row>(Rows(400)))
             .Branch(
-                b1 => b1.ToJson(target),
+                b1 => b1.ToJsonLines(target),
                 b2 => b2.To(SlowFailure())));
 
         //act
@@ -138,7 +138,7 @@ public sealed class JsonSinkAtomicityTests
 
         _host.AddEtlPipeline(PipelineName, b => b
             .From(new ArraySource<Row>(Rows(10)))
-            .ToJson(target, new JsonSinkOptions { WriteAtomically = false }));
+            .ToJsonLines(target, new JsonSinkOptions { WriteAtomically = false }));
 
         //act
         var result = await _host.RunAsync(PipelineName);
@@ -157,7 +157,7 @@ public sealed class JsonSinkAtomicityTests
         // Reads as a path walk rather than string concatenation, and neither directory exists yet.
         var target = _host.Root.SubDirectory("nested", "deeper").File("out.json");
 
-        _host.AddEtlPipeline(PipelineName, b => b.From(new ArraySource<Row>(Rows(3))).ToJson(target));
+        _host.AddEtlPipeline(PipelineName, b => b.From(new ArraySource<Row>(Rows(3))).ToJsonLines(target));
 
         //act
         var result = await _host.RunAsync(PipelineName);
@@ -178,7 +178,7 @@ public sealed class JsonSinkAtomicityTests
 
         _host.AddEtlPipeline(PipelineName, b => b
             .From(new ArraySource<Row>(Rows(3)))
-            .To(new JsonSink<Row>(buffer, leaveOpen: true)));
+            .To(new JsonLinesSink<Row>(buffer, leaveOpen: true)));
 
         //act
         var result = await _host.RunAsync(PipelineName);

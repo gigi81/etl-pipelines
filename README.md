@@ -212,29 +212,37 @@ line) or a single JSON array - through `System.Text.Json`. It is a separate pack
 third-party dependency at all: System.Text.Json ships in the shared framework.
 
 ```csharp
-builder.FromJson<Order>(fileSystem.FileInfo.New("orders.json"))
+builder.FromJsonLines<Order>(fileSystem.FileInfo.New("orders.json"))
        .Select(o => new OrderDto(o.Id, o.Customer, o.Amount * 100))
-       .ToJson(fileSystem.FileInfo.New("out.json"));
+       .ToJsonLines(fileSystem.FileInfo.New("out.json"));
 ```
 
-Files are named as `IFileInfo`, and everything the [CSV section](#csv-files) says about files as
-`IFileInfo` and about the atomic write applies here too - for `JsonFormat.Array`, atomicity also keeps
-a downstream reader from ever seeing a file missing its closing `]`. Two things differ.
+The two shapes are two separate method pairs - `FromJsonLines`/`ToJsonLines` and
+`FromJsonArray`/`ToJsonArray` - rather than one pair taking a format flag, each backed by its own
+source and sink type (`JsonLinesSource`/`JsonLinesSink` and `JsonArraySource`/`JsonArraySink`). A line
+is a recovery boundary a malformed array element does not have, so the two read loops are genuinely
+different rather than one loop with a fork in it; splitting the types keeps that difference from
+leaking into a setting that only does something for one of them.
 
-**The format is chosen with `Format`, and it changes how a malformed row is handled.** JSON Lines (the
-default) treats each line as a recovery boundary, exactly like a CSV row: `JsonSource` skips a line it
-cannot parse, counts it on `MalformedRows`, and hands the raw text to a registered
-`IDeadLetterSink<string>`, subject to the same `RowsFailed` limitation the CSV section calls out.
-`Format = JsonFormat.Array` has no such boundary - there is no way to skip past one broken element and
-keep parsing the rest of the array - so a malformed element always fails the run there, whatever
-`SkipMalformedRows` says.
+Files are named as `IFileInfo`, and everything the [CSV section](#csv-files) says about files as
+`IFileInfo` and about the atomic write applies here too - for the array shape, atomicity also keeps a
+downstream reader from ever seeing a file missing its closing `]`. Two things differ.
+
+**Only JSON Lines can recover from a malformed row.** `JsonLinesSource` skips a line it cannot parse,
+counts it on `MalformedRows`, and hands the raw text to a registered `IDeadLetterSink<string>` - set
+`JsonLinesSourceOptions.SkipMalformedRows = false` to stop on the first one instead - subject to the
+same `RowsFailed` limitation the CSV section calls out. `JsonArraySource` has no such boundary: there
+is no way to skip past one broken element and keep parsing the rest of the array, so a malformed
+element always fails the run, and `JsonArraySourceOptions` has no `SkipMalformedRows` to even ask it
+not to.
 
 **Property naming defaults to camelCase**, from `JsonSerializerDefaults.Web`, because that is what a
 JSON file produced outside .NET almost always looks like; matching on read is case-insensitive, so a
-file this library wrote itself round-trips regardless of casing. `SerializerOptions` is a plain,
-mutable `JsonSerializerOptions` instance seeded from those defaults - deliberately not the shared
-`JsonSerializerOptions.Web` singleton, which comes back already read-only - so it can be reconfigured
-freely: naming policy, converters, indentation.
+file this library wrote itself round-trips regardless of casing. `SerializerOptions`, on the shared
+`JsonOptions` base every options type here derives from, is a plain, mutable `JsonSerializerOptions`
+instance seeded from those defaults - deliberately not the shared `JsonSerializerOptions.Web`
+singleton, which comes back already read-only - so it can be reconfigured freely: naming policy,
+converters, indentation.
 
 ## Excel files
 

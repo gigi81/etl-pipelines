@@ -28,20 +28,34 @@ public sealed class JsonRoundTripTests
     ];
 
     [Test]
-    [Arguments(JsonFormat.Lines)]
-    [Arguments(JsonFormat.Array)]
-    public async Task Round_trips_rows_through_a_file(JsonFormat format)
+    public async Task Round_trips_rows_through_a_JSON_Lines_file()
     {
         //arrange
         var target = _host.File("orders.json");
         var readBack = new CollectingSink<Order>();
 
-        _host.AddEtlPipeline(Write, b => b
-                 .From(new ArraySource<Order>(Orders))
-                 .ToJson(target, new JsonSinkOptions { Format = format }))
-             .AddEtlPipeline(Read, b => b
-                 .FromJson<Order>(target, new JsonSourceOptions { Format = format })
-                 .To(readBack));
+        _host.AddEtlPipeline(Write, b => b.From(new ArraySource<Order>(Orders)).ToJsonLines(target))
+             .AddEtlPipeline(Read, b => b.FromJsonLines<Order>(target).To(readBack));
+
+        //act
+        var write = await _host.RunAsync(Write);
+        var read = await _host.RunAsync(Read);
+
+        //assert
+        write.IsError.Should().BeFalse(write.IsError ? write.FirstError.Description : null);
+        read.IsError.Should().BeFalse(read.IsError ? read.FirstError.Description : null);
+        readBack.Rows.Should().Equal(Orders);
+    }
+
+    [Test]
+    public async Task Round_trips_rows_through_a_JSON_array_file()
+    {
+        //arrange
+        var target = _host.File("orders.json");
+        var readBack = new CollectingSink<Order>();
+
+        _host.AddEtlPipeline(Write, b => b.From(new ArraySource<Order>(Orders)).ToJsonArray(target))
+             .AddEtlPipeline(Read, b => b.FromJsonArray<Order>(target).To(readBack));
 
         //act
         var write = await _host.RunAsync(Write);
@@ -64,8 +78,8 @@ public sealed class JsonRoundTripTests
         var readBack = new CollectingSink<Order>();
 
         _host.Configure(s => s.AddSingleton<IDataSink<Order>>(readBack))
-             .AddEtlPipeline(Write, b => b.From(new ArraySource<Order>(Orders)).ToJson(target))
-             .AddEtlPipeline(Read, b => b.FromJson<Order>(target).To());
+             .AddEtlPipeline(Write, b => b.From(new ArraySource<Order>(Orders)).ToJsonLines(target))
+             .AddEtlPipeline(Read, b => b.FromJsonLines<Order>(target).To());
 
         //act
         var write = await _host.RunAsync(Write);
@@ -82,8 +96,8 @@ public sealed class JsonRoundTripTests
     {
         //arrange
         _host.AddEtlPipeline(PipelineName, b => b
-            .FromJson<Order>(_host.File("in.json"))
-            .ToJson(_host.File("out.json")));
+            .FromJsonLines<Order>(_host.File("in.json"))
+            .ToJsonLines(_host.File("out.json")));
 
         //act
         var ports = _host.Registrations
@@ -101,9 +115,7 @@ public sealed class JsonRoundTripTests
     }
 
     [Test]
-    [Arguments(JsonFormat.Lines)]
-    [Arguments(JsonFormat.Array)]
-    public async Task Streams_correctly_across_many_batch_boundaries(JsonFormat format)
+    public async Task Streams_correctly_across_many_batch_boundaries_with_Lines()
     {
         //arrange
         var target = _host.File("many.json");
@@ -115,10 +127,39 @@ public sealed class JsonRoundTripTests
         _host.AddEtlPipeline(Write, b => b
                  .WithOptions(o => o.BatchSize = 32)
                  .From(new ArraySource<Order>(orders))
-                 .ToJson(target, new JsonSinkOptions { Format = format }))
+                 .ToJsonLines(target))
              .AddEtlPipeline(Read, b => b
                  .WithOptions(o => o.BatchSize = 32)
-                 .FromJson<Order>(target, new JsonSourceOptions { Format = format })
+                 .FromJsonLines<Order>(target)
+                 .To(readBack));
+
+        //act
+        await _host.RunAsync(Write);
+        var result = await _host.RunAsync(Read);
+
+        //assert
+        result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
+        readBack.Rows.Should().Equal(orders, "a partially filled buffer must not lose or repeat rows");
+        result.Value.RowsRead.Should().Be(2_500);
+    }
+
+    [Test]
+    public async Task Streams_correctly_across_many_batch_boundaries_with_Array()
+    {
+        //arrange
+        var target = _host.File("many-array.json");
+        var orders = Enumerable.Range(0, 2_500)
+            .Select(i => new Order(i, $"customer-{i}", i * 1.5m))
+            .ToArray();
+        var readBack = new CollectingSink<Order>();
+
+        _host.AddEtlPipeline(Write, b => b
+                 .WithOptions(o => o.BatchSize = 32)
+                 .From(new ArraySource<Order>(orders))
+                 .ToJsonArray(target))
+             .AddEtlPipeline(Read, b => b
+                 .WithOptions(o => o.BatchSize = 32)
+                 .FromJsonArray<Order>(target)
                  .To(readBack));
 
         //act
@@ -140,11 +181,11 @@ public sealed class JsonRoundTripTests
 
         _host.AddEtlPipeline(Write, b => b
                  .From(new ArraySource<Order>([new(1, "acme", 10.50m), new(2, "globex", 3.25m)]))
-                 .ToJson(source))
+                 .ToJsonLines(source))
              .AddEtlPipeline(Read, b => b
-                 .FromJson<Order>(source)
+                 .FromJsonLines<Order>(source)
                  .Select(o => new OrderDto(o.Id, o.Customer, o.Amount * 100))
-                 .ToJson(target));
+                 .ToJsonLines(target));
 
         //act
         await _host.RunAsync(Write);
@@ -154,7 +195,7 @@ public sealed class JsonRoundTripTests
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
 
         var lines = await target.ReadAllLinesAsync(CancellationToken.None);
-        lines.Should().HaveCount(2, "JSON Lines, the default format, writes one record per line");
+        lines.Should().HaveCount(2, "JSON Lines writes one record per line");
 
         // camelCase and no padding: the default SerializerOptions come from
         // JsonSerializerDefaults.Web, and decimal multiplication preserves scale the same way the
@@ -174,8 +215,8 @@ public sealed class JsonRoundTripTests
         _host.AddEtlPipeline(PipelineName, b => b
             .From(new ArraySource<Order>([new(1, "acme", 10.50m), new(2, "globex", 3.25m)]))
             .Branch(
-                b1 => b1.ToJson(archive),
-                b2 => b2.Select(o => new OrderDto(o.Id, o.Customer, o.Amount * 100)).ToJson(converted)));
+                b1 => b1.ToJsonLines(archive),
+                b2 => b2.Select(o => new OrderDto(o.Id, o.Customer, o.Amount * 100)).ToJsonLines(converted)));
 
         //act
         var result = await _host.RunAsync(PipelineName);
@@ -197,7 +238,7 @@ public sealed class JsonRoundTripTests
             CancellationToken.None);
 
         var sink = new CollectingSink<Order>();
-        _host.AddEtlPipeline(PipelineName, b => b.FromJson<Order>(target).To(_ => sink));
+        _host.AddEtlPipeline(PipelineName, b => b.FromJsonLines<Order>(target).To(_ => sink));
 
         //act
         var first = await _host.RunAsync(PipelineName);
@@ -215,13 +256,13 @@ public sealed class JsonRoundTripTests
     public async Task Reads_an_empty_lines_file_as_no_rows()
     {
         //arrange
-        // Unlike Array format, an empty JSON Lines file is a legitimate, if unusual, zero-row file:
-        // there is simply nothing to iterate.
+        // Unlike the array shape, an empty JSON Lines file is a legitimate, if unusual, zero-row
+        // file: there is simply nothing to iterate.
         var target = _host.File("empty.json");
         await target.WriteAllTextAsync(string.Empty, CancellationToken.None);
 
         var sink = new CollectingSink<Order>();
-        _host.AddEtlPipeline(PipelineName, b => b.FromJson<Order>(target).To(sink));
+        _host.AddEtlPipeline(PipelineName, b => b.FromJsonLines<Order>(target).To(sink));
 
         //act
         var result = await _host.RunAsync(PipelineName);
@@ -235,15 +276,13 @@ public sealed class JsonRoundTripTests
     public async Task Reads_an_empty_array_as_no_rows()
     {
         //arrange
-        // "[]" is the Array format's empty file. A zero-byte file is not valid JSON under this
-        // format - there is no array to find - so it is not the equivalent case here.
+        // "[]" is the array shape's empty file. A zero-byte file is not valid JSON here - there is no
+        // array to find - so it is not the equivalent case.
         var target = _host.File("empty.json");
         await target.WriteAllTextAsync("[]", CancellationToken.None);
 
         var sink = new CollectingSink<Order>();
-        _host.AddEtlPipeline(
-            PipelineName,
-            b => b.FromJson<Order>(target, new JsonSourceOptions { Format = JsonFormat.Array }).To(sink));
+        _host.AddEtlPipeline(PipelineName, b => b.FromJsonArray<Order>(target).To(sink));
 
         //act
         var result = await _host.RunAsync(PipelineName);
@@ -254,14 +293,14 @@ public sealed class JsonRoundTripTests
     }
 
     [Test]
-    public async Task Writes_a_single_json_array_under_the_Array_format()
+    public async Task Writes_a_single_json_array()
     {
         //arrange
         var target = _host.File("array.json");
 
         _host.AddEtlPipeline(PipelineName, b => b
             .From(new ArraySource<Order>([new(1, "acme", 10.50m), new(2, "globex", 3.25m)]))
-            .ToJson(target, new JsonSinkOptions { Format = JsonFormat.Array }));
+            .ToJsonArray(target));
 
         //act
         var result = await _host.RunAsync(PipelineName);
@@ -287,7 +326,7 @@ public sealed class JsonRoundTripTests
             CancellationToken.None);
 
         var sink = new CollectingSink<Order>();
-        _host.AddEtlPipeline(PipelineName, b => b.FromJson<Order>(target).To(sink));
+        _host.AddEtlPipeline(PipelineName, b => b.FromJsonLines<Order>(target).To(sink));
 
         //act
         var result = await _host.RunAsync(PipelineName);

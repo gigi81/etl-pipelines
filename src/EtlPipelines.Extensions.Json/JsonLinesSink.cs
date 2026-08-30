@@ -5,16 +5,15 @@ using System.Text.Json;
 namespace EtlPipelines.Extensions.Json;
 
 /// <summary>
-/// Writes rows to a JSON file, either JSON Lines or a single JSON array. See
-/// <see cref="JsonOptions.Format"/>.
+/// Writes rows to a JSON Lines (NDJSON) file: one JSON value per line.
 /// </summary>
 /// <remarks>
 /// <para>
 /// By default the rows stream into a temporary file beside the target, which is renamed into place
 /// from <see cref="CompleteAsync"/> - the hook the runtime calls exactly once, and only when the run
 /// succeeded. The target path therefore either does not exist or holds a whole file; a downstream
-/// job can never pick up a truncated one, or, under <see cref="JsonFormat.Array"/>, one missing its
-/// closing <c>]</c>. A failed run leaves the temporary file behind for inspection.
+/// job can never pick up a truncated one. A failed run leaves the temporary file behind for
+/// inspection.
 /// </para>
 /// <para>
 /// This is the reason <see cref="IAsyncCompletable"/> exists separately from
@@ -26,23 +25,25 @@ namespace EtlPipelines.Extensions.Json;
 /// which filesystem to use - the file already knows, through <see cref="IFileSystemInfo.FileSystem"/>.
 /// That is also what lets the whole sink run against an in-memory filesystem in a test.
 /// </para>
+/// <para>
+/// See <see cref="JsonArraySink{TRow}"/> for the counterpart that writes a single JSON array instead.
+/// </para>
 /// </remarks>
 /// <typeparam name="TRow">The row type to write.</typeparam>
-public sealed class JsonSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsyncCompletable
+public sealed class JsonLinesSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsyncCompletable
 {
     private readonly IFileInfo? _target;
     private readonly JsonSinkOptions _options;
     private readonly bool _ownsStream;
 
     private Stream? _stream;
-    private StreamWriter? _lines;
-    private Utf8JsonWriter? _array;
+    private StreamWriter? _writer;
     private IFileInfo? _writingTo;
 
     /// <summary>Writes to <paramref name="file"/>, overwriting it if it already exists.</summary>
     /// <param name="file">Destination file. Its filesystem is the one the sink writes through.</param>
     /// <param name="options">Format settings, including whether to write atomically.</param>
-    public JsonSink(IFileInfo file, JsonSinkOptions? options = null)
+    public JsonLinesSink(IFileInfo file, JsonSinkOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(file);
 
@@ -62,7 +63,7 @@ public sealed class JsonSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsyn
     /// as they are produced, and completion only flushes. A caller who needs all-or-nothing must
     /// arrange it themselves, or use the file-based constructor.
     /// </remarks>
-    public JsonSink(Stream stream, JsonSinkOptions? options = null, bool leaveOpen = false)
+    public JsonLinesSink(Stream stream, JsonSinkOptions? options = null, bool leaveOpen = false)
     {
         ArgumentNullException.ThrowIfNull(stream);
 
@@ -80,7 +81,7 @@ public sealed class JsonSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsyn
     /// <inheritdoc />
     public ValueTask InitializeAsync(CancellationToken cancellationToken)
     {
-        if (_lines is not null || _array is not null)
+        if (_writer is not null)
         {
             return ValueTask.CompletedTask;
         }
@@ -100,29 +101,21 @@ public sealed class JsonSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsyn
             _stream = _writingTo.Create();
         }
 
-        if (_options.Format == JsonFormat.Array)
+        // UTF-8 without a byte order mark, and "\n" rather than Environment.NewLine, so the file is
+        // the same NDJSON on every platform it is written or read on.
+        //
+        // leaveOpen: true regardless of who owns _stream - CloseAsync below is the single place that
+        // decides whether _stream itself gets disposed, based on _ownsStream. Without this, disposing
+        // _writer would always close _stream out from under a caller who passed leaveOpen: true to the
+        // Stream-based constructor.
+        _writer = new StreamWriter(
+            _stream!,
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            bufferSize: -1,
+            leaveOpen: true)
         {
-            _array = new Utf8JsonWriter(_stream!, new JsonWriterOptions { Indented = _options.SerializerOptions.WriteIndented });
-            _array.WriteStartArray();
-        }
-        else
-        {
-            // UTF-8 without a byte order mark, and "\n" rather than Environment.NewLine, so the file
-            // is the same NDJSON on every platform it is written or read on.
-            //
-            // leaveOpen: true regardless of who owns _stream - CloseAsync below is the single place
-            // that decides whether _stream itself gets disposed, based on _ownsStream. Without this,
-            // disposing _lines would always close _stream out from under a caller who passed
-            // leaveOpen: true to the Stream-based constructor.
-            _lines = new StreamWriter(
-                _stream!,
-                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-                bufferSize: -1,
-                leaveOpen: true)
-            {
-                NewLine = "\n",
-            };
-        }
+            NewLine = "\n",
+        };
 
         return ValueTask.CompletedTask;
     }
@@ -130,31 +123,20 @@ public sealed class JsonSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsyn
     /// <inheritdoc />
     public async ValueTask<ErrorOr<int>> WriteAsync(ReadOnlyMemory<TRow> batch, CancellationToken cancellationToken)
     {
-        if (_lines is null && _array is null)
+        if (_writer is null)
         {
             return Error.Failure(
                 "json.not_initialized",
-                $"{nameof(JsonSink<TRow>)} has no open writer. It is opened during InitializeAsync, " +
-                "which the pipeline calls before the first write.");
+                $"{nameof(JsonLinesSink<TRow>)} has no open writer. It is opened during " +
+                "InitializeAsync, which the pipeline calls before the first write.");
         }
 
         for (var i = 0; i < batch.Length; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (_array is not null)
-            {
-                // Synchronous: Utf8JsonWriter has no async write, only an async flush. It buffers
-                // internally and flushes itself once that buffer fills, so this does not block on I/O
-                // for every row - only occasionally, same as the buffered StreamWriter on the Lines
-                // side.
-                JsonSerializer.Serialize(_array, batch.Span[i], _options.SerializerOptions);
-            }
-            else
-            {
-                var line = JsonSerializer.Serialize(batch.Span[i], _options.SerializerOptions);
-                await _lines!.WriteLineAsync(line.AsMemory(), cancellationToken).ConfigureAwait(false);
-            }
+            var line = JsonSerializer.Serialize(batch.Span[i], _options.SerializerOptions);
+            await _writer.WriteLineAsync(line.AsMemory(), cancellationToken).ConfigureAwait(false);
         }
 
         return batch.Length;
@@ -163,20 +145,12 @@ public sealed class JsonSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsyn
     /// <inheritdoc />
     public async ValueTask<ErrorOr<Success>> CompleteAsync(CancellationToken cancellationToken)
     {
-        if (_lines is null && _array is null)
+        if (_writer is null)
         {
             return Result.Success;
         }
 
-        if (_array is not null)
-        {
-            _array.WriteEndArray();
-            await _array.FlushAsync(cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            await _lines!.FlushAsync(cancellationToken).ConfigureAwait(false);
-        }
+        await _writer.FlushAsync(cancellationToken).ConfigureAwait(false);
 
         // Closed before the rename, not after: an open handle makes the move fail on Windows, and
         // renaming a file that has not finished flushing would promote a partial one anywhere.
@@ -196,23 +170,15 @@ public sealed class JsonSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsyn
     {
         // Never promotes. Disposal runs on the failure path too, so a temporary file reaching this
         // point without having been completed is exactly the one that must not become the target.
-        // Also never writes the closing "]": an array left unterminated here is the honest shape of a
-        // run that did not finish, not something to paper over on the way out.
         await CloseAsync().ConfigureAwait(false);
     }
 
     private async ValueTask CloseAsync()
     {
-        if (_array is not null)
+        if (_writer is not null)
         {
-            await _array.DisposeAsync().ConfigureAwait(false);
-            _array = null;
-        }
-
-        if (_lines is not null)
-        {
-            await _lines.DisposeAsync().ConfigureAwait(false);
-            _lines = null;
+            await _writer.DisposeAsync().ConfigureAwait(false);
+            _writer = null;
         }
 
         if (_ownsStream && _stream is not null)

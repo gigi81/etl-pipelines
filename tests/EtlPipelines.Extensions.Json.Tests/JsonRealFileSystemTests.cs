@@ -33,21 +33,36 @@ public sealed class JsonRealFileSystemTests
             .ToArray();
 
     [Test]
-    [Arguments(JsonFormat.Lines)]
-    [Arguments(JsonFormat.Array)]
-    public async Task Round_trips_through_the_real_file_system(JsonFormat format)
+    public async Task Round_trips_through_the_real_file_system_with_Lines()
     {
         //arrange
-        var target = _host.File($"orders-{format}.json");
+        var target = _host.File("orders-lines.json");
         Order[] orders = [new(1, "acme", 10.50m), new(2, "Globex, Inc. \"HQ\"", 25.75m)];
         var readBack = new CollectingSink<Order>();
 
-        _host.AddEtlPipeline(Write, b => b
-                 .From(new ArraySource<Order>(orders))
-                 .ToJson(target, new JsonSinkOptions { Format = format }))
-             .AddEtlPipeline(Read, b => b
-                 .FromJson<Order>(target, new JsonSourceOptions { Format = format })
-                 .To(readBack));
+        _host.AddEtlPipeline(Write, b => b.From(new ArraySource<Order>(orders)).ToJsonLines(target))
+             .AddEtlPipeline(Read, b => b.FromJsonLines<Order>(target).To(readBack));
+
+        //act
+        var write = await _host.RunAsync(Write);
+        var read = await _host.RunAsync(Read);
+
+        //assert
+        write.IsError.Should().BeFalse(write.IsError ? write.FirstError.Description : null);
+        read.IsError.Should().BeFalse(read.IsError ? read.FirstError.Description : null);
+        readBack.Rows.Should().Equal(orders);
+    }
+
+    [Test]
+    public async Task Round_trips_through_the_real_file_system_with_Array()
+    {
+        //arrange
+        var target = _host.File("orders-array.json");
+        Order[] orders = [new(1, "acme", 10.50m), new(2, "Globex, Inc. \"HQ\"", 25.75m)];
+        var readBack = new CollectingSink<Order>();
+
+        _host.AddEtlPipeline(Write, b => b.From(new ArraySource<Order>(orders)).ToJsonArray(target))
+             .AddEtlPipeline(Read, b => b.FromJsonArray<Order>(target).To(readBack));
 
         //act
         var write = await _host.RunAsync(Write);
@@ -67,8 +82,8 @@ public sealed class JsonRealFileSystemTests
         // Worth proving against a real filesystem, not only a simulated one.
         var target = _host.File("twice.json");
 
-        _host.AddEtlPipeline(Write, b => b.From(new ArraySource<Order>(Orders(5))).ToJson(target))
-             .AddEtlPipeline(Rewrite, b => b.From(new ArraySource<Order>(Orders(10))).ToJson(target));
+        _host.AddEtlPipeline(Write, b => b.From(new ArraySource<Order>(Orders(5))).ToJsonLines(target))
+             .AddEtlPipeline(Rewrite, b => b.From(new ArraySource<Order>(Orders(10))).ToJsonLines(target));
 
         //act
         var first = await _host.RunAsync(Write);
@@ -91,7 +106,7 @@ public sealed class JsonRealFileSystemTests
 
         _host.AddEtlPipeline(PipelineName, b => b
             .From(new ArraySource<Order>([new(1, "acme", 1m)]))
-            .ToJson(target));
+            .ToJsonLines(target));
 
         //act
         var result = await _host.RunAsync(PipelineName);
