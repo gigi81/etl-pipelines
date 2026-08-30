@@ -40,7 +40,7 @@ public sealed class SftpConnectionFactory : ISftpConnectionFactory
 
         if (keyFile is not null)
         {
-            authentications.Add(new PrivateKeyAuthenticationMethod(options.UserName, [keyFile]));
+            authentications.Add(new PrivateKeyAuthenticationMethod(options.UserName, keyFile));
         }
 
         if (!string.IsNullOrEmpty(options.Password) || authentications.Count == 0)
