@@ -1,18 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <IsPackable>false</IsPackable>
-    <!--
-      This project's own namespace, EtlPipelines.Extensions.Sql.Tests, is a warning-level ambiguity
-      (CS0435) against the static class literally named EtlPipelines.Extensions that
-      EtlPipelines.Extensions.Sql's own Extensions.cs declares. The compiler already resolves it
-      correctly - the namespace declared in source wins over the imported type - so this only silences
-      the diagnostic; TreatWarningsAsErrors is what would otherwise turn a correct resolution into a
-      build failure.
-    -->
-    <NoWarn>$(NoWarn);CS0435</NoWarn>
-  </PropertyGroup>
-
   <ItemGroup>
     <!-- Compiled into the assembly, so the embedded-script tests have a real resource to find. -->
     <EmbeddedResource Include="Scripts\**\*.sql" />
