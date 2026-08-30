@@ -48,11 +48,31 @@ public sealed class JsonLinesSourceOptions : JsonOptions
 /// with a field that means nothing for this format - because <see cref="JsonArraySource{TRow}"/> has
 /// no equivalent of <see cref="JsonLinesSourceOptions.SkipMalformedRows"/>: unlike a line, a
 /// malformed element inside an array has no recovery boundary to skip to, so there would be nothing
-/// here for that setting to do. It exists, with no members of its own yet, so that a setting which
-/// only makes sense for the array shape has somewhere to go without resurrecting that ambiguity.
+/// here for that setting to do.
 /// </remarks>
 public sealed class JsonArraySourceOptions : JsonOptions
 {
+    /// <summary>
+    /// The property names to walk from the root object down to the array to read, outermost first.
+    /// Empty - the default - means the array <i>is</i> the document's root value.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For <c>{"result": {"rows": [ ... ]}}</c>, <c>Path</c> is <c>["result", "rows"]</c>. Every
+    /// property along the way must name a JSON object, and the last one must name a JSON array;
+    /// anything else - the property missing, or naming something else - fails the run.
+    /// </para>
+    /// <para>
+    /// Rows still arrive one at a time without buffering the array in memory, the same as the root
+    /// case. What is not fully streamed is the walk down to the array itself: <see cref="JsonArraySource{TRow}"/>
+    /// re-attempts that walk from the buffered start of the document each time more data arrives,
+    /// rather than resuming a partial walk. That is fine for what <c>Path</c> is for - navigating
+    /// past a small wrapper object such as an envelope or a pagination header - but it means a very
+    /// large sibling value positioned <i>before</i> the array in the document is buffered while
+    /// skipped over, rather than streamed past.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> Path { get; set; } = [];
 }
 
 /// <summary>Settings for writing a JSON file, either JSON Lines or a single array.</summary>

@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace EtlPipelines.Extensions.Json.Tests;
 
 /// <summary>
-/// A container plus a filesystem, wired the way an application would wire them.
+/// A container plus an in-memory filesystem, wired the way an application would wire them.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -21,7 +21,9 @@ namespace EtlPipelines.Extensions.Json.Tests;
 /// <para>
 /// The filesystem is registered as a service too. The JSON ports take an <see cref="IFileInfo"/>,
 /// which already knows its own filesystem, so this registration is what lets a test build those file
-/// handles from the same in-memory filesystem the rest of the container sees.
+/// handles from the same in-memory filesystem the rest of the container sees. Deliberately always the
+/// in-memory <see cref="MockFileSystem"/> rather than the real disk - it is faster, needs no cleanup,
+/// and this suite is not making the same real-disk-divergence trade-off the CSV extension's tests do.
 /// </para>
 /// </remarks>
 public sealed class JsonTestHost
@@ -31,17 +33,13 @@ public sealed class JsonTestHost
 
     /// <summary>Creates a host over an in-memory filesystem with an empty working directory.</summary>
     public JsonTestHost()
-        : this(new MockFileSystem())
     {
-    }
+        var fileSystem = new MockFileSystem();
 
-    /// <summary>Creates a host over a given filesystem — the real one, for the tests that need it.</summary>
-    public JsonTestHost(IFileSystem fileSystem)
-    {
         FileSystem = fileSystem;
         Root = fileSystem.Directory.CreateTempSubdirectory("etl-json-");
 
-        _services.AddSingleton(fileSystem);
+        _services.AddSingleton<IFileSystem>(fileSystem);
     }
 
     /// <summary>The filesystem every file in this test belongs to.</summary>

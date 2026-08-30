@@ -244,6 +244,24 @@ instance seeded from those defaults - deliberately not the shared `JsonSerialize
 singleton, which comes back already read-only - so it can be reconfigured freely: naming policy,
 converters, indentation.
 
+### Reading an array that is not at the document's root
+
+A real API response rarely is just `[...]` - more often it is an envelope, `{"result": {"rows":
+[...]}}`. `JsonArraySourceOptions.Path` names the walk down to the array, outermost property first:
+
+```csharp
+builder.FromJsonArray<Order>(
+    fileSystem.FileInfo.New("response.json"),
+    new JsonArraySourceOptions { Path = ["result", "rows"] });
+```
+
+Rows still arrive one at a time rather than the file being buffered whole - `JsonArraySource` re-walks
+the path on every chunk that arrives until it finds the array, rather than loading the document to
+navigate it, so only the (typically small) wrapper content ahead of the array is held in memory, not
+the array itself. A property along the way that is missing, or that does not lead to a JSON object and
+finally a JSON array, fails the run. There is no equivalent on the sink side: `ToJsonArray` always
+writes the array as the whole file.
+
 ## Excel files
 
 `EtlPipelines.Extensions.Excel` reads and writes `.xlsx` worksheets through
