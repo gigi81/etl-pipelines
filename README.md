@@ -19,6 +19,7 @@ overlap rather than run one after another.
 | `EtlPipelines.Extensions.Files` | Copy, move, compress and extract files as pipeline stages. No third-party dependency. |
 | `EtlPipelines.Extensions.Files.Http` | Downloads files over HTTP. |
 | `EtlPipelines.Extensions.Files.Sftp` | Uploads and downloads files over SFTP, built on SSH.NET. |
+| `EtlPipelines.Extensions.Json` | JSON source and sink - JSON Lines or a single array - built on System.Text.Json. |
 | `EtlPipelines.Hosting` | Runs your pipelines as a command line application. |
 | `EtlPipelines.Extensions.Sql` | Source and sink for any ADO.NET provider. |
 | `EtlPipelines.Extensions.Sql.Sqlite` .`SqlServer` .`PostgreSql` .`MySql` .`Oracle` | One per engine: the driver, and that engine's bulk-load fast path. |
@@ -203,6 +204,37 @@ mean the same thing wherever it is processed.
 
 Both option types also expose `HasHeaderRecord`, `Delimiter`, `Encoding`, a `Configure` escape hatch
 for the full `CsvConfiguration`, and `ConfigureContext` for registering class maps.
+
+## JSON files
+
+`EtlPipelines.Extensions.Json` reads and writes JSON files - either JSON Lines (NDJSON, one record per
+line) or a single JSON array - through `System.Text.Json`. It is a separate package with no
+third-party dependency at all: System.Text.Json ships in the shared framework.
+
+```csharp
+builder.FromJson<Order>(fileSystem.FileInfo.New("orders.json"))
+       .Select(o => new OrderDto(o.Id, o.Customer, o.Amount * 100))
+       .ToJson(fileSystem.FileInfo.New("out.json"));
+```
+
+Files are named as `IFileInfo`, and everything the [CSV section](#csv-files) says about files as
+`IFileInfo` and about the atomic write applies here too - for `JsonFormat.Array`, atomicity also keeps
+a downstream reader from ever seeing a file missing its closing `]`. Two things differ.
+
+**The format is chosen with `Format`, and it changes how a malformed row is handled.** JSON Lines (the
+default) treats each line as a recovery boundary, exactly like a CSV row: `JsonSource` skips a line it
+cannot parse, counts it on `MalformedRows`, and hands the raw text to a registered
+`IDeadLetterSink<string>`, subject to the same `RowsFailed` limitation the CSV section calls out.
+`Format = JsonFormat.Array` has no such boundary - there is no way to skip past one broken element and
+keep parsing the rest of the array - so a malformed element always fails the run there, whatever
+`SkipMalformedRows` says.
+
+**Property naming defaults to camelCase**, from `JsonSerializerDefaults.Web`, because that is what a
+JSON file produced outside .NET almost always looks like; matching on read is case-insensitive, so a
+file this library wrote itself round-trips regardless of casing. `SerializerOptions` is a plain,
+mutable `JsonSerializerOptions` instance seeded from those defaults - deliberately not the shared
+`JsonSerializerOptions.Web` singleton, which comes back already read-only - so it can be reconfigured
+freely: naming policy, converters, indentation.
 
 ## Excel files
 
