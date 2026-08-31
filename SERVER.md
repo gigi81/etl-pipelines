@@ -111,11 +111,27 @@ package in the first place.
 
 ## Verified against the existing codebase
 
-- **No precedent for a "runnable, installable pipeline package."** `src/*` projects are packable NuGet
-  libraries (`src/Directory.Build.props`: `IsPackable=true`). `samples/*` are runnable console apps but
-  explicitly excluded from packing (`samples/Directory.Build.props`: `IsPackable=false`,
-  `OutputType=Exe`). `SERVER.md`'s claim that samples model how a pipeline package works doesn't hold
-  yet — Phase 1 makes it hold, by turning packing on for them with the `dotnet tool` shape.
+> Re-verified against `main` as of `41e8a4f` (well past `bfca455`, the commit this analysis was
+> originally written against). The repo has moved a fair distance since: connector libraries and
+> their test projects were renamed to `EtlPipelines.Extensions.*`, samples moved from a top-level
+> `/samples/` folder into `src/` (`EtlPipelines.Samples.*`), a new `EtlPipelines.Extensions.Cli`
+> connector and an `EtlPipelines.Extensions.Json` connector landed, and — most relevant here — **Phase
+> 1's core idea already shipped**, in a lighter-weight form than planned below. Every bullet below is
+> current as of that commit; anywhere it corrects an earlier version of itself, that is called out
+> rather than silently edited away.
+
+- **Samples already pack as `dotnet tool` packages — Phase 1 shipped, just not as planned.** A single
+  commit ("Publishing samples as dotnet tools") replaced the old
+  `samples/Directory.Build.props` (`IsPackable=false`, `OutputType=Exe`) with a new
+  `src/Samples.Build.props` — imported unconditionally from `src/Directory.Build.props`, applying
+  `<OutputType>Exe</OutputType>` and **`<PackAsTool>true</PackAsTool>`** to every project whose name
+  starts with `EtlPipelines.Samples.` — rather than this plan's proposed root-level
+  `PipelinePackage.props` imported explicitly per project. Net effect is the same shape Phase 1 wanted
+  (every sample installs and runs like any other `dotnet` global tool) reached by a shorter path: a
+  naming-convention condition instead of an opt-in import line. See "As actually implemented," at the
+  end of Phase 1 below, for what this means for the rest of that phase's plan — in particular, **the
+  CI push-glob narrowing this section used to only warn about is now a live gap**, not a hypothetical
+  one: see the last bullet here.
 - **`PipelineContext.RunId`** (`src/EtlPipelines.Abstractions/Execution/PipelineContext.cs:41`) is
   `Guid.NewGuid()`-generated internally, with no constructor parameter or setter. There is no way today
   for an external system to inject a session id into a run. Two ways to close this: touch `Core`'s
@@ -129,35 +145,68 @@ package in the first place.
   `ActivityListener` that logs stopped activities. A gRPC-forwarding listener is the same fifteen lines
   with a different sink — no changes needed to `EtlDiagnostics.cs` or `EtlPipeline.cs`.
 - **Configuration is already lazy and section-shaped, which is exactly what a remote source needs.**
-  `src/EtlPipelines.Sql/ConnectionRegistration.cs` reads `IConfiguration.GetConnectionString(name)` the
-  first time a connection opens, not at DI-registration time.
-  `src/EtlPipelines.Files.Sftp/SftpConnectionRegistration.cs` does the same against a `Sftp:{name}`
-  section. Neither needs to change — a custom `IConfigurationProvider` populated from the server before
-  a pipeline's first connection attempt is a drop-in.
-- **The recursive-option-read-during-`ConfigureServices` pattern already exists and is exactly what a
-  `--session-id`/`--server-url` option needs.** `samples/Samples.Common/SampleWorkspace.cs` adds
-  `--work-dir` as a recursive `Option<string?>` on the root command, then reads it off the
-  `ParseResult` while services are still being composed (comment: "Read while the container is being
-  composed rather than injected from it: the pipeline's own registration needs the file paths, and
-  that runs before there is a provider to resolve anything from."). Copy this shape exactly.
-- **`EtlPipelines.slnx`** has exactly three top-level folders today (`/src/`, `/samples/`, `/tests/`),
-  each with its own `Directory.Build.props` added as a `<File>` next to that folder's `<Project>`
-  entries. Two new top-level folders follow the same shape (Phase 2 onward).
-- **`CliWrap 3.8.1`** is centrally versioned in `Directory.Packages.props` and used nowhere in the repo
-  — confirmed by grep. It's the right fit for shelling out to `dotnet tool install`/`dotnet pack` (both
-  Phase 1's own tests and, later, the Agent's installer) instead of raw `Process.Start`.
+  `src/EtlPipelines.Extensions.Sql/ConnectionRegistration.cs` reads
+  `IConfiguration.GetConnectionString(name)` the first time a connection opens, not at
+  DI-registration time. `src/EtlPipelines.Extensions.Files.Sftp/SftpConnectionRegistration.cs` does the
+  same against a `Sftp:{name}` section. Neither needs to change — a custom `IConfigurationProvider`
+  populated from the server before a pipeline's first connection attempt is a drop-in. (Paths corrected
+  from `EtlPipelines.Sql`/`EtlPipelines.Files.Sftp` — both connectors were renamed to
+  `EtlPipelines.Extensions.*` since this was first written; the code itself is unchanged.)
+- **The recursive-option-read-during-`ConfigureServices` pattern this plan wanted to copy is no longer
+  sample-only code to imitate — it has moved into `EtlPipelines.Hosting` itself, which is a better
+  precedent, not a worse one.** The `samples/Samples.Common/SampleWorkspace.cs` this bullet used to cite
+  no longer exists — the project it lived in was folded away entirely — but the pattern it demonstrated
+  survived by graduating into the framework: `EtlPipelinesHost` (`src/EtlPipelines.Hosting/EtlPipelinesHost.cs`)
+  now declares `VerboseOption`/`WorkDirOption` as `static Option<T>` properties, adds them to the root
+  command as `Recursive = true` in its constructor, and reads `WorkDirOption` off the `ParseResult`
+  inside `GetWorkspace(ParseResult)` while services are still being composed — exactly the shape this
+  plan wanted for `--session-id`/`--server-url`, now living in the one package every pipeline
+  application already references rather than in throwaway sample code. Phase 6, below, updates its own
+  wording to match.
+- **`EtlPipelines.slnx`** has **four** top-level solution folders today, not three: `/src/`,
+  `/extensions/` (new — every `EtlPipelines.Extensions.*` connector, `Cli` and the new `Json` connector
+  included), `/tests/`, and `/samples/`. Only `/src/` and `/tests/` still carry their own
+  `Directory.Build.props` as a `<File>` entry; `/extensions/` has none of its own (its projects sit
+  physically under `src/` and inherit `src/Directory.Build.props`), and `/samples/` is solution-folder
+  grouping only — its projects physically live under `src/` too now (`src/EtlPipelines.Samples.*`), not
+  under a separate top-level `samples/` directory. Two new top-level folders for `/server/` and
+  `/agent/` (Phase 2 onward) still follow the original `/src/`-with-its-own-`Directory.Build.props`
+  shape.
+- **`CliWrap 3.8.1`, previously unused, now has a real, tested consumer in this repo:**
+  `EtlPipelines.Extensions.Cli`, whose `CliCommandStage` wraps `CliWrap.Cli.Wrap(...).ExecuteBufferedAsync()`
+  to run an external command as a pipeline stage, with its own test coverage
+  (`tests/EtlPipelines.Extensions.Cli.Tests`). Nothing here changes what Phase 1/5 planned to use
+  CliWrap for, but there is now an in-repo, already-reviewed example of the exit-code/stderr handling
+  shape to match, rather than a green field.
 - **No gRPC, EF Core, ASP.NET Core Web SDK, Data Protection, or NuGet-client package exists anywhere in
   the repo today.** All new dependencies, and central-package-management entries need to be added for
   every one of them.
 - **Docker doesn't exist in this repo at all yet** — no `Dockerfile`, no `docker-compose.yml`. Built
   from nothing in Phase 7.
-- **CI already packs unconditionally on every run** (`.github/workflows/ci.yml`'s `pack` job runs
-  `dotnet pack --configuration Release --output ./packages` with no filtering) but only **pushes** to
-  nuget.org on a `v*` tag, via `dotnet nuget push "packages/*.nupkg" ...`. Once samples become
-  packable, that push glob needs narrowing to `packages/EtlPipelines.*.nupkg` — otherwise demo/test
-  fixtures ship to public nuget.org on the next tagged release. One-line change, called out in Phase 1.
+- **The CI push-glob narrowing this section used to describe as a Phase-1 to-do is now an outstanding,
+  live gap — samples are packable today and this has not been fixed.** `.github/workflows/ci.yml`'s
+  `pack` job still runs `dotnet pack --configuration Release --output ./packages` unconditionally, and
+  its `deploy` job (tag-triggered) still runs
+  `dotnet nuget push "packages/*.nupkg" --api-key ... --source https://api.nuget.org/v3/index.json`
+  with the same unnarrowed glob it always had. Now that `EtlPipelines.Samples.*` pack as real tool
+  packages (previous bullet), the very next `v*` tag pushes six sample/demo packages to public
+  nuget.org alongside the real connectors — silently, since `--skip-duplicate` swallows nothing here on
+  a first push. A single glob can't fix this: every real package and every sample share the
+  `EtlPipelines.` prefix (samples are `EtlPipelines.Samples.*`), so narrowing to
+  `packages/EtlPipelines.*.nupkg` — this section's original suggestion — **would still push the
+  samples**. The push step needs an actual exclusion (a shell loop skipping any `*.Samples.*.nupkg`, or
+  the `pack` job routing sample output to a separate, never-pushed folder in the first place) rather
+  than a same-prefix include glob. Small, self-contained, and worth landing on its own, independently
+  of and before any part of this plan.
 
 ## Phase 1 — Pipeline packaging: real `dotnet tool` packages, proven on the samples
+
+> **Status: the core of this phase has landed on `main`, but not by the path described below.** Kept
+> as originally written — it is still the fuller, more deliberate version of the idea, and Phases 2
+> onward still lean on some of what it specifies (the packaging test project, the CI narrowing) that
+> the lighter version that actually shipped does not include. See "As actually implemented," at the
+> end of this phase, for exactly what exists on `main` today, what differs, and what from this
+> original plan is still worth doing.
 
 **Goal:** any runnable pipeline application packs, installs, and runs exactly the way `dotnet` itself
 already packages and runs CLI tools — `dotnet pack` produces a tool package, `dotnet tool install
@@ -241,23 +290,62 @@ per-concern steps, rather than slowing down every fast per-PR run.
 **Verification (run these by hand once the phase lands, in addition to the automated test above):**
 
 ```bash
-dotnet pack samples/Samples.ArchiveToDatabase --configuration Release --output ./packages
-dotnet tool install --tool-path ./tool-install-test --add-source ./packages Samples.ArchiveToDatabase
-./tool-install-test/samples.archivetodatabase list
-./tool-install-test/samples.archivetodatabase run build-feed --work-dir ./scratch
-dotnet tool uninstall --tool-path ./tool-install-test Samples.ArchiveToDatabase
+dotnet pack src/EtlPipelines.Samples.ArchiveToDatabase --configuration Release --output ./packages
+dotnet tool install --tool-path ./tool-install-test --add-source ./packages EtlPipelines.Samples.ArchiveToDatabase
+./tool-install-test/etlpipelines.samples.archivetodatabase list
+./tool-install-test/etlpipelines.samples.archivetodatabase run build-feed --work-dir ./scratch
+dotnet tool uninstall --tool-path ./tool-install-test EtlPipelines.Samples.ArchiveToDatabase
 ```
 
-(`dotnet tool install` conventionally lowercases the shim filename — confirm the exact name empirically
-when this phase is implemented rather than trust the casing above; the automated test should assert
-whatever that turns out to be rather than hardcode a guess.)
+(Project name and path corrected for the actual `src/EtlPipelines.Samples.ArchiveToDatabase` location
+— see "As actually implemented" below; `dotnet tool install` conventionally lowercases the shim
+filename — confirm the exact name empirically rather than trust the casing above; an automated test
+should assert whatever that turns out to be rather than hardcode a guess.)
+
+### As actually implemented
+
+What landed on `main` (commit "Publishing samples as dotnet tools") gets to the same place — every
+sample installs and runs as a real `dotnet` tool — by a shorter, less deliberate route than the plan
+above. Concretely, against the plan:
+
+- **No `PipelinePackage.props`, no per-project `<Import>` line.** Instead, `src/Directory.Build.props`
+  unconditionally imports a new `src/Samples.Build.props`, which applies `OutputType=Exe` and
+  `PackAsTool=true` to any project whose name starts with `EtlPipelines.Samples.` — a naming-convention
+  condition rather than explicit opt-in. It happens to be safe here (every project under that prefix
+  really is a runnable sample, and `Samples.Common` — the one shared library the original plan singled
+  out to exclude — doesn't exist any more; see the "recursive-option" bullet under "Verified against
+  the existing codebase," above, for where its one useful piece of code went instead), but it is a
+  divergence from this repo's own stated preference for explicit per-project opt-in over folder/prefix
+  magic, which the original plan called out deliberately and the shipped version does not follow.
+- **No `<Description>` added per sample.** Each of the six still has none — the gap the original plan
+  flagged (NuGet's pack-time diagnostic for a missing description) is real and unaddressed, though
+  harmless until these are ever actually published.
+- **The CI push-glob narrowing never happened.** Still `dotnet nuget push "packages/*.nupkg" ...`,
+  unchanged. This is no longer a "when Phase 1 lands" concern — Phase 1's packing change already landed
+  — it is a live gap on `main` right now, covered in detail in "Verified against the existing
+  codebase," above. Worth fixing on its own, first.
+- **No `tests/EtlPipelines.PipelinePackaging.Tests`, no subprocess/`CliWrap`-based install-and-run
+  test.** The verification block above is still accurate as a **manual** check (with its paths
+  corrected) but nothing in CI runs it. `CliWrap` does now have a proven consumer elsewhere in the repo
+  (`EtlPipelines.Extensions.Cli` — see "Verified against the existing codebase") that a packaging test
+  project could follow the shape of, but the test project itself is still exactly as described above:
+  not built.
+
+None of this blocks later phases — the shape they all depend on (`PackAsTool`, a real installable
+shim) exists and works — but Phase 2 onward should not assume the *rest* of Phase 1 (the CI fix, the
+packaging test, the descriptions) is done just because the packing itself is.
 
 ## Solution layout
 
-Two new top-level solution folders, mirroring `/src/`, `/samples/`, `/tests/`:
+Two new top-level solution folders. `EtlPipelines.slnx` has four today, not the three this used to say
+(`/src/`, `/extensions/`, `/tests/`, `/samples/` — see "Verified against the existing codebase," above,
+for what changed and why); `/server/` and `/agent/` follow the same top-level, own-`Directory.Build.props`
+shape `/src/` and `/tests/` already use, same as originally planned:
 
 - **`/server/`** — new `server/Directory.Build.props` (`IsPackable=false`, `OutputType=Exe` as the
-  folder default, same shape as `samples/Directory.Build.props`).
+  folder default — the shape `samples/Directory.Build.props` used to have, before that file was
+  removed and folded into `src/Directory.Build.props` + `src/Samples.Build.props`; see Phase 1's "As
+  actually implemented").
     - `server/EtlPipelines.Server/` — the gRPC host (`Microsoft.NET.Sdk.Web`, first project in the repo
       to use it).
     - `server/EtlPipelines.Server.Database/` — EF Core layer, `OutputType` overridden to `Library`.
@@ -267,9 +355,15 @@ Two new top-level solution folders, mirroring `/src/`, `/samples/`, `/tests/`:
 - **`src/EtlPipelines.GrpcClient/`** stays under the existing `/src/` folder
   (`src/Directory.Build.props`: `IsPackable=true`, `GenerateDocumentationFile=true`) — it's the one
   project of the five a third party's pipeline package actually depends on, the same way it depends on
-  `EtlPipelines.Sql` or `EtlPipelines.Hosting` today. It also imports `PipelinePackage.props`? **No** —
-  it's a library other pipeline processes reference, not itself a runnable pipeline; only actual
-  pipeline applications (samples now, real ones later) import it.
+  `EtlPipelines.Extensions.Sql` or `EtlPipelines.Hosting` today. Does it get `PackAsTool=true` the way a
+  sample does? **No** — it's a library other pipeline processes reference, not itself a runnable
+  pipeline; only actual pipeline applications (samples today, real ones later) get that treatment, and
+  it would need its own explicit opt-in here since it doesn't match the `EtlPipelines.Samples.*` naming
+  condition `src/Samples.Build.props` keys off. A separate new project since this plan was first
+  written, the `EtlPipelines` meta-package (`src/EtlPipelines/EtlPipelines.csproj`), references every
+  connector via a single `EtlPipelines.Extensions.*` wildcard `ProjectReference` — `GrpcClient` doesn't
+  match that glob either (it isn't a connector), so it stays outside the meta-package too, referenced
+  only directly by whatever depends on it.
 
 **Only `EtlPipelines.GrpcClient` ships as a library package to NuGet, alongside the existing
 `EtlPipelines.*` connectors.** `Server`, `Server.Database`, `Agent`, `Agent.GrpcClient` are internal
@@ -369,7 +463,8 @@ granularity, matching how `PipelineRunner.Find(name)`
 **Tests:** fast TUnit tests against EF Core's SQLite/in-memory provider for mapping/query logic;
 `[Category("Docker")]` + `Testcontainers.PostgreSql` (already centrally versioned) for a real migration
 + round-trip, following `DatabaseFixture<TContainer>`
-  (`tests/EtlPipelines.Sql.Databases.Tests/DatabaseFixture.cs`) and its
+  (`tests/EtlPipelines.Extensions.Sql.Databases.Tests/DatabaseFixture.cs` — path corrected for the
+  `EtlPipelines.Extensions.*` rename; the class itself is unchanged) and its
   `[ClassDataSource<T>(Shared = SharedType.PerAssembly)]` pairing exactly.
 
 **Verification:** `dotnet ef migrations add InitialCreate -p server/EtlPipelines.Server.Database`,
@@ -407,7 +502,10 @@ nothing but
 dotnet tool install --tool-path <agent-cache>/<packageId>/<version> --add-source <feed-url(s)> <packageId> --version <version>
 ```
 
-run via **`CliWrap`**, exactly like Phase 1's own packaging tests do. No manual `.nupkg` download, no
+run via **`CliWrap`** — Phase 1's own packaging tests as planned above still don't exist (see Phase 1's
+"As actually implemented"), but `CliWrap` now has a real, tested consumer in this repo regardless:
+`EtlPipelines.Extensions.Cli`'s `CliCommandStage`, a shape worth following for exit-code and stderr
+handling here too. No manual `.nupkg` download, no
 `System.IO.Compression.ZipFile` extraction, no `NuGet.Packaging` — the `dotnet` SDK already does all of
 that, on every platform, more robustly than a hand-rolled version would. The installed shim's path is
 then computed the same way Phase 1's verification did (`<agent-cache>/<packageId>/<version>/<toolCommandName>`),
@@ -445,14 +543,20 @@ verified findings above, touches them by reuse, not by change:
   `GetConfiguration(session_id)` once at startup and materializes the flat map into `IConfiguration`.
   `ConnectionRegistration`/`SftpConnectionRegistration` read connection strings and `Sftp:{name}`
   sections lazily on first connect either way — this provider is a drop-in, zero changes to
-  `EtlPipelines.Sql`/`EtlPipelines.Files.Sftp`.
+  `EtlPipelines.Extensions.Sql`/`EtlPipelines.Extensions.Files.Sftp`.
 - **Session id** — `--session-id`/`--server-url` added as recursive options via a new
-  `EtlPipelinesHost.UseGrpcClient(...)` extension, built exactly like
-  `SampleWorkspace.UseSampleWorkspace` (`samples/Samples.Common/SampleWorkspace.cs`): declared on the
-  root command, read off the `ParseResult` during `ConfigureServices`, before any provider exists to
-  inject from. `Runs.Id` (the server-issued session id) is the primary key everywhere in the schema;
-  `PipelineContext.RunId` — still internally generated, untouched — rides along as a secondary,
-  diagnostic-only field on the first report call. `Core`'s public API gets no changes.
+  `EtlPipelinesHost.UseGrpcClient(...)` extension, built exactly like `EtlPipelinesHost` already builds
+  `VerboseOption`/`WorkDirOption` itself (`src/EtlPipelines.Hosting/EtlPipelinesHost.cs`): declared as
+  `static Option<T>` properties, added to the root command as `Recursive = true` in the constructor,
+  read off the `ParseResult` during `ConfigureServices`, before any provider exists to inject from. An
+  even closer precedent than this plan originally had — `SampleWorkspace.UseSampleWorkspace`, the
+  sample-only convenience this bullet used to cite, no longer exists; the pattern it demonstrated
+  graduated into `EtlPipelinesHost` itself (see "Verified against the existing codebase," above), so
+  `UseGrpcClient(...)` now extends the exact same class that already owns this mechanism, rather than
+  imitating a pattern that lived in throwaway sample code. `Runs.Id` (the server-issued session id) is
+  the primary key everywhere in the schema; `PipelineContext.RunId` — still internally generated,
+  untouched — rides along as a secondary, diagnostic-only field on the first report call. `Core`'s
+  public API gets no changes.
 
 **Key types:** `GrpcConfigurationProvider`/`GrpcConfigurationSource`, `GrpcProgressReporter`,
 `EtlPipelinesHost.UseGrpcClient(...)`, server-side `RunDispatcher` (turns `ExecutePipelineRequest` into
