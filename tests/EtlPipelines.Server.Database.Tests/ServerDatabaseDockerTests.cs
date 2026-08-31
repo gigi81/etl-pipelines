@@ -9,7 +9,7 @@ namespace EtlPipelines.Server.Database.Tests;
 /// <summary>
 /// The test that matters most in this project: it is the only one that runs <c>dbdeploy deploy</c>
 /// against a genuinely empty Postgres container before anything else touches it, proving
-/// <c>db/postgres/Server/InitialSchema.CreateCoreTables.Deploy.sql</c> and
+/// <c>db/postgres/Server/_Init.sql</c> and
 /// <see cref="ServerDbContext"/>'s hand-written mapping actually agree - not merely that each
 /// compiles on its own. <see cref="ServerDbContextTests"/> covers everything else (mapping/query
 /// logic) against the fast, unrelated SQLite path.
@@ -69,7 +69,7 @@ public class ServerDatabaseDockerTests(PostgreSqlFixture fixture)
             {
                 Id = packageId,
                 NugetPackageId = "EtlPipelines.Samples.CsvToDatabase",
-                CreatedAt = DateTimeOffset.UtcNow,
+                CreatedAt = DateTime.UtcNow,
             });
             await context.SaveChangesAsync();
 

@@ -1,11 +1,21 @@
+﻿using System;
+using System.Collections.Generic;
+
 namespace EtlPipelines.Server.Database.Entities;
 
-/// <summary>One installed (or installing, or failed) version of a <see cref="Package"/>.</summary>
-public sealed class PackageVersion
+public partial class PackageVersion
 {
-    public required Guid Id { get; init; }
-    public required Guid PackageId { get; init; }
-    public required string Version { get; init; }
-    public required DateTimeOffset InstalledAt { get; init; }
-    public required PackageVersionStatus Status { get; set; }
+    public Guid Id { get; set; }
+
+    public Guid PackageId { get; set; }
+
+    public string Version { get; set; } = null!;
+
+    public DateTime InstalledAt { get; set; }
+
+    public string Status { get; set; } = null!;
+
+    public virtual Package Package { get; set; } = null!;
+
+    public virtual ICollection<Pipeline> Pipelines { get; set; } = new List<Pipeline>();
 }

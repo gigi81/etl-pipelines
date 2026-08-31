@@ -10,8 +10,12 @@
 -- process is handed before this row exists at all - so there is nothing for the database to
 -- default it to.
 --
--- Created in dependency order (a table only ever references one already created above it);
--- InitialSchema.CreateCoreTables.Rollback.sql drops them in the exact reverse order.
+-- Created in dependency order (a table only ever references one already created above it).
+-- _Init.sql - the baseline every later change is layered onto - has no rollback counterpart, the
+-- same way every other database in this dbdeploy install (see the examples in the dbdeploy repo
+-- itself) has none for its own: rolling it back would mean dropping the schema entirely, which is
+-- never what "undo the last change" should do once there have been changes since. A schema
+-- change from here on is a normal, rollback-capable Deploy/Rollback pair.
 
 CREATE TABLE "Packages"
 (

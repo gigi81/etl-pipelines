@@ -1,12 +1,15 @@
+﻿using System;
+using System.Collections.Generic;
+
 namespace EtlPipelines.Server.Database.Entities;
 
-/// <summary>A NuGet package the catalog knows about - one row per distinct package id.</summary>
-public sealed class Package
+public partial class Package
 {
-    public required Guid Id { get; init; }
+    public Guid Id { get; set; }
 
-    /// <summary>The package id as bagetter/NuGet know it, e.g. "EtlPipelines.Samples.CsvToDatabase".</summary>
-    public required string NugetPackageId { get; init; }
+    public string NugetPackageId { get; set; } = null!;
 
-    public required DateTimeOffset CreatedAt { get; init; }
+    public DateTime CreatedAt { get; set; }
+
+    public virtual ICollection<PackageVersion> PackageVersions { get; set; } = new List<PackageVersion>();
 }

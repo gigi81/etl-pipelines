@@ -1,12 +1,23 @@
+﻿using System;
+using System.Collections.Generic;
+
 namespace EtlPipelines.Server.Database.Entities;
 
-/// <summary>An agent process that has registered with the server (<c>AgentService.RegisterAgent</c>).</summary>
-public sealed class Agent
+public partial class Agent
 {
-    public required Guid Id { get; init; }
-    public required string MachineName { get; init; }
-    public IReadOnlyList<string> Tags { get; set; } = [];
-    public required string Version { get; set; }
-    public required AgentStatus Status { get; set; }
-    public required DateTimeOffset LastHeartbeatAt { get; set; }
+    public Guid Id { get; set; }
+
+    public string MachineName { get; set; } = null!;
+
+    public List<string> Tags { get; set; } = null!;
+
+    public string Version { get; set; } = null!;
+
+    public string Status { get; set; } = null!;
+
+    public DateTime LastHeartbeatAt { get; set; }
+
+    public virtual ICollection<AgentResourceSample> AgentResourceSamples { get; set; } = new List<AgentResourceSample>();
+
+    public virtual ICollection<Run> Runs { get; set; } = new List<Run>();
 }

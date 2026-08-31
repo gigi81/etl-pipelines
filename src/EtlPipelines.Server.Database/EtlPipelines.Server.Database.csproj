@@ -2,12 +2,15 @@
 
   <!--
     Query/mapping layer only - see ServerDbContext's own remarks and SERVER.md's "Database schema
-    management" decision. No Microsoft.EntityFrameworkCore.Design here: there is no `dotnet ef
-    migrations`/scaffold workflow for this project to support, since db/postgres's dbdeploy
-    scripts own the schema instead.
+    management" decision: dbdeploy, not this project, owns the schema. Microsoft.EntityFrameworkCore.
+    Design is still needed - `dotnet ef dbcontext scaffold` (a reverse-engineering, read-only-of-the-
+    schema workflow, unlike `dotnet ef migrations`) is how Entities/ and ServerDbContext.cs below
+    are produced and kept in sync with db/postgres's own scripts. See README.md in this project's
+    folder for the exact scaffold command.
   -->
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
   </ItemGroup>
 

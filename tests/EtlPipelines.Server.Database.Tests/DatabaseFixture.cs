@@ -39,7 +39,7 @@ public abstract class DatabaseFixture<TContainer> : IDatabaseFixture, IAsyncInit
 }
 
 /// <summary>
-/// A genuinely empty Postgres container - nothing has run <c>InitialSchema.CreateCoreTables</c>
+/// A genuinely empty Postgres container - nothing has run <c>_Init.sql</c>
 /// against it yet, which is exactly the state <see cref="ServerDatabaseDockerTests"/> needs to
 /// prove dbdeploy's scripts create a schema <see cref="ServerDbContext"/>'s mapping actually
 /// agrees with.

@@ -1,19 +1,29 @@
+﻿using System;
+using System.Collections.Generic;
+
 namespace EtlPipelines.Server.Database.Entities;
 
-/// <summary>One completed stage of a <see cref="Run"/> - one row per <c>ReportStageResult</c> call.</summary>
-public sealed class StageResult
+public partial class StageResult
 {
-    public required Guid Id { get; init; }
-    public required Guid RunId { get; init; }
-    public required int Sequence { get; init; }
-    public required string Name { get; init; }
-    public required long RowsIn { get; init; }
-    public required long RowsOut { get; init; }
-    public required long RowsFailed { get; init; }
-    public required long ElapsedMs { get; init; }
+    public Guid Id { get; set; }
 
-    /// <summary>Both null when the stage succeeded.</summary>
-    public string? ErrorCode { get; init; }
+    public Guid RunId { get; set; }
 
-    public string? ErrorDescription { get; init; }
+    public int Sequence { get; set; }
+
+    public string Name { get; set; } = null!;
+
+    public long RowsIn { get; set; }
+
+    public long RowsOut { get; set; }
+
+    public long RowsFailed { get; set; }
+
+    public long ElapsedMs { get; set; }
+
+    public string? ErrorCode { get; set; }
+
+    public string? ErrorDescription { get; set; }
+
+    public virtual Run Run { get; set; } = null!;
 }

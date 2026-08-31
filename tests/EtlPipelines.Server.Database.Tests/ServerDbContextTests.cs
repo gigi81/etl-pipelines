@@ -21,22 +21,22 @@ public class ServerDbContextTests
         {
             Id = Guid.NewGuid(),
             NugetPackageId = "EtlPipelines.Samples.ArchiveToDatabase",
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = DateTime.UtcNow,
         };
         var version = new PackageVersion
         {
             Id = Guid.NewGuid(),
             PackageId = package.Id,
             Version = "1.0.0",
-            InstalledAt = DateTimeOffset.UtcNow,
-            Status = PackageVersionStatus.Installed,
+            InstalledAt = DateTime.UtcNow,
+            Status = "Installed",
         };
 
         context.Packages.Add(package);
         context.PackageVersions.Add(version);
         context.Pipelines.AddRange(
-            new Pipeline { Id = Guid.NewGuid(), PackageVersionId = version.Id, Name = "build-feed", CreatedAt = DateTimeOffset.UtcNow },
-            new Pipeline { Id = Guid.NewGuid(), PackageVersionId = version.Id, Name = "archive", CreatedAt = DateTimeOffset.UtcNow });
+            new Pipeline { Id = Guid.NewGuid(), PackageVersionId = version.Id, Name = "build-feed", CreatedAt = DateTime.UtcNow },
+            new Pipeline { Id = Guid.NewGuid(), PackageVersionId = version.Id, Name = "archive", CreatedAt = DateTime.UtcNow });
 
         //act
         await context.SaveChangesAsync();
@@ -52,7 +52,7 @@ public class ServerDbContextTests
         names.Should().BeEquivalentTo(["build-feed", "archive"]);
 
         var storedVersion = await context.PackageVersions.SingleAsync(v => v.Id == version.Id);
-        storedVersion.Status.Should().Be(PackageVersionStatus.Installed, "the enum should round-trip through its string conversion");
+        storedVersion.Status.Should().Be("Installed");
     }
 
     [Test]
@@ -62,14 +62,14 @@ public class ServerDbContextTests
         await using var context = SqliteServerDbContext.Create();
         var packageId = Guid.NewGuid();
 
-        context.Packages.Add(new Package { Id = packageId, NugetPackageId = "EtlPipelines.Samples.CsvToDatabase", CreatedAt = DateTimeOffset.UtcNow });
+        context.Packages.Add(new Package { Id = packageId, NugetPackageId = "EtlPipelines.Samples.CsvToDatabase", CreatedAt = DateTime.UtcNow });
         context.PackageVersions.Add(new PackageVersion
         {
             Id = Guid.NewGuid(),
             PackageId = packageId,
             Version = "1.0.0",
-            InstalledAt = DateTimeOffset.UtcNow,
-            Status = PackageVersionStatus.Installed,
+            InstalledAt = DateTime.UtcNow,
+            Status = "Installed",
         });
         await context.SaveChangesAsync();
 
@@ -78,8 +78,8 @@ public class ServerDbContextTests
             Id = Guid.NewGuid(),
             PackageId = packageId,
             Version = "1.0.0",
-            InstalledAt = DateTimeOffset.UtcNow,
-            Status = PackageVersionStatus.Installed,
+            InstalledAt = DateTime.UtcNow,
+            Status = "Installed",
         });
 
         //act
@@ -102,8 +102,8 @@ public class ServerDbContextTests
             MachineName = "agent-01",
             Tags = ["linux", "gpu"],
             Version = "1.0.0",
-            Status = AgentStatus.Online,
-            LastHeartbeatAt = DateTimeOffset.UtcNow,
+            Status = "Online",
+            LastHeartbeatAt = DateTime.UtcNow,
         });
 
         //act
@@ -113,7 +113,7 @@ public class ServerDbContextTests
 
         //assert
         reloaded.Tags.Should().BeEquivalentTo(["linux", "gpu"]);
-        reloaded.Status.Should().Be(AgentStatus.Online);
+        reloaded.Status.Should().Be("Online");
     }
 
     [Test]
@@ -128,8 +128,8 @@ public class ServerDbContextTests
         {
             Id = runId,
             PipelineId = pipelineId,
-            Status = RunStatus.Queued,
-            RequestedAt = DateTimeOffset.UtcNow,
+            Status = "Queued",
+            RequestedAt = DateTime.UtcNow,
         });
 
         //act
@@ -139,7 +139,7 @@ public class ServerDbContextTests
 
         //assert
         run.AgentId.Should().BeNull();
-        run.Status.Should().Be(RunStatus.Queued);
+        run.Status.Should().Be("Queued");
     }
 
     [Test]
@@ -150,7 +150,7 @@ public class ServerDbContextTests
         var pipelineId = await context.Pipelines.Select(pipeline => pipeline.Id).SingleAsync();
         var runId = Guid.NewGuid();
 
-        context.Runs.Add(new Run { Id = runId, PipelineId = pipelineId, Status = RunStatus.Running, RequestedAt = DateTimeOffset.UtcNow });
+        context.Runs.Add(new Run { Id = runId, PipelineId = pipelineId, Status = "Running", RequestedAt = DateTime.UtcNow });
         context.StageResults.Add(new StageResult
         {
             Id = Guid.NewGuid(), RunId = runId, Sequence = 0, Name = "seed",
@@ -183,7 +183,7 @@ public class ServerDbContextTests
             Id = Guid.NewGuid(),
             Key = "ConnectionStrings:sales",
             EncryptedValue = encrypted,
-            UpdatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
         });
 
         //act
@@ -204,13 +204,13 @@ public class ServerDbContextTests
 
         context.ConfigurationEntries.Add(new ConfigurationEntry
         {
-            Id = Guid.NewGuid(), Key = "Sftp:vendor:Host", EncryptedValue = [1], UpdatedAt = DateTimeOffset.UtcNow,
+            Id = Guid.NewGuid(), Key = "Sftp:vendor:Host", EncryptedValue = [1], UpdatedAt = DateTime.UtcNow,
         });
         await context.SaveChangesAsync();
 
         context.ConfigurationEntries.Add(new ConfigurationEntry
         {
-            Id = Guid.NewGuid(), Key = "Sftp:vendor:Host", EncryptedValue = [2], UpdatedAt = DateTimeOffset.UtcNow,
+            Id = Guid.NewGuid(), Key = "Sftp:vendor:Host", EncryptedValue = [2], UpdatedAt = DateTime.UtcNow,
         });
 
         //act
@@ -227,13 +227,13 @@ public class ServerDbContextTests
         var packageId = Guid.NewGuid();
         var versionId = Guid.NewGuid();
 
-        context.Packages.Add(new Package { Id = packageId, NugetPackageId = "EtlPipelines.Samples.CsvToDatabase", CreatedAt = DateTimeOffset.UtcNow });
+        context.Packages.Add(new Package { Id = packageId, NugetPackageId = "EtlPipelines.Samples.CsvToDatabase", CreatedAt = DateTime.UtcNow });
         context.PackageVersions.Add(new PackageVersion
         {
             Id = versionId, PackageId = packageId, Version = "1.0.0",
-            InstalledAt = DateTimeOffset.UtcNow, Status = PackageVersionStatus.Installed,
+            InstalledAt = DateTime.UtcNow, Status = "Installed",
         });
-        context.Pipelines.Add(new Pipeline { Id = Guid.NewGuid(), PackageVersionId = versionId, Name = "csv-to-database", CreatedAt = DateTimeOffset.UtcNow });
+        context.Pipelines.Add(new Pipeline { Id = Guid.NewGuid(), PackageVersionId = versionId, Name = "csv-to-database", CreatedAt = DateTime.UtcNow });
 
         await context.SaveChangesAsync();
         return context;
