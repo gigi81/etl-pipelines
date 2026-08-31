@@ -32,11 +32,10 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
-      # db/postgres's schema is owned by dbdeploy, never `dotnet ef migrations` - see SERVER.md's
-      # "Database schema management" decision. Installed here, ahead of every step below that
-      # needs it (ServerDatabaseDockerTests shells out to it too), the same documented way an
-      # operator installs it (`dotnet tool install --global dbdeploy`) rather than a
-      # PackageReference.
+      # db's schema is owned by dbdeploy, never `dotnet ef migrations` - see SERVER.md's "Database
+      # schema management" decision. Installed here, ahead of every step below that needs it
+      # (ServerDatabaseDockerTests shells out to it too), the same documented way an operator
+      # installs it (`dotnet tool install --global dbdeploy`) rather than a PackageReference.
       - name: Install dbdeploy
         run: |
           dotnet tool install --global dbdeploy
@@ -72,10 +71,9 @@ jobs:
           || true
       # Runs dbdeploy deploy against a genuinely empty, Testcontainers-managed Postgres, then reads
       # and writes through ServerDbContext against the schema it just created - the one test that
-      # proves db/postgres/Server/_Init.sql and EF Core's hand-written mapping actually agree, not
-      # merely that each is individually well-formed. dbdeploy's own CLI contract (validate/deploy/
-      # ci against a plain Postgres, not one this project's code touches) is exercised separately,
-      # in db.yml.
+      # proves db/server/_Init.sql and EF Core's scaffolded mapping actually agree, not merely that
+      # each is individually well-formed. dbdeploy's own CLI contract (validate/deploy/ci against a
+      # plain Postgres, not one this project's code touches) is exercised separately, in db.yml.
       - name: Server.Database
         shell: bash
         run: >

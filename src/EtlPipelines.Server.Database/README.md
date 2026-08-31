@@ -2,20 +2,20 @@
 
 `ServerDbContext.cs` and every type under `Entities/` are generated - reverse-engineered from a
 real, already-deployed database with `dotnet ef dbcontext scaffold`, not hand-written. `dbdeploy`
-owns the schema (`db/postgres/`, deployed via `dbdeploy deploy`, never `dotnet ef migrations`);
+owns the schema (`db/`, deployed via `dbdeploy deploy`, never `dotnet ef migrations`);
 this project's C# model is a mechanical reflection of whatever that schema actually is, kept in
 sync by re-running the same command below rather than by hand-editing generated files.
 
 ## Regenerating
 
-1. Deploy the schema to a real Postgres the connection string below can reach - for a throwaway
-   local one:
+1. From the repository root, deploy the schema to a real Postgres the connection string below can
+   reach - for a throwaway local one:
    ```bash
    docker run -d --name etlpipelines-scaffold-postgres \
      -p 5432:5432 \
      -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=etlpipelines_server \
      postgres:15.1
-   dbdeploy deploy --path db/postgres
+   dbdeploy deploy --path db
    ```
 2. From this directory, regenerate:
    ```bash

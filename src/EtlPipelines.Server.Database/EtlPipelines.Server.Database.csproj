@@ -5,7 +5,7 @@
     management" decision: dbdeploy, not this project, owns the schema. Microsoft.EntityFrameworkCore.
     Design is still needed - `dotnet ef dbcontext scaffold` (a reverse-engineering, read-only-of-the-
     schema workflow, unlike `dotnet ef migrations`) is how Entities/ and ServerDbContext.cs below
-    are produced and kept in sync with db/postgres's own scripts. See README.md in this project's
+    are produced and kept in sync with db's own scripts. See README.md in this project's
     folder for the exact scaffold command.
   -->
   <ItemGroup>

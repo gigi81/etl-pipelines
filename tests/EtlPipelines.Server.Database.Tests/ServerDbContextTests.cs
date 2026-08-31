@@ -6,7 +6,7 @@ namespace EtlPipelines.Server.Database.Tests;
 /// <summary>
 /// Fast tests against EF Core's SQLite <c>EnsureCreated()</c> provider - mapping/query logic only.
 /// See <see cref="SqliteServerDbContext"/>'s own remarks for why this is not a substitute for
-/// proving <c>db/postgres</c>'s dbdeploy scripts are correct.
+/// proving <c>db</c>'s dbdeploy scripts are correct.
 /// </summary>
 [Category("Server")]
 public class ServerDbContextTests

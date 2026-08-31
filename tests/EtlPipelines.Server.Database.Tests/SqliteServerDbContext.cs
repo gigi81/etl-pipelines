@@ -8,7 +8,7 @@ namespace EtlPipelines.Server.Database.Tests;
 /// A <see cref="ServerDbContext"/> backed by an in-memory SQLite database, created fresh via
 /// <see cref="Database.EnsureCreated"/> - a convenience for exercising mapping/query logic
 /// quickly, unrelated to how the real schema gets created and not a substitute for proving
-/// <c>db/postgres</c>'s dbdeploy scripts are correct (see the <c>[Category("Docker")]</c> tests
+/// <c>db</c>'s dbdeploy scripts are correct (see the <c>[Category("Docker")]</c> tests
 /// for that).
 /// </summary>
 /// <remarks>

@@ -10,8 +10,8 @@ internal static class RepositoryPaths
 {
     private static readonly Lazy<string> Root = new(FindRoot);
 
-    /// <summary>The full path to <c>db/postgres</c> at the repository root.</summary>
-    public static string DbPostgresDirectory => Path.Combine(Root.Value, "db", "postgres");
+    /// <summary>The full path to <c>db</c> at the repository root - dbdeploy's own <c>--path</c>.</summary>
+    public static string DbDirectory => Path.Combine(Root.Value, "db");
 
     private static string FindRoot()
     {

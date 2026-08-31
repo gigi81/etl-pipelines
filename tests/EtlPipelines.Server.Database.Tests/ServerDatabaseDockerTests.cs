@@ -9,10 +9,9 @@ namespace EtlPipelines.Server.Database.Tests;
 /// <summary>
 /// The test that matters most in this project: it is the only one that runs <c>dbdeploy deploy</c>
 /// against a genuinely empty Postgres container before anything else touches it, proving
-/// <c>db/postgres/Server/_Init.sql</c> and
-/// <see cref="ServerDbContext"/>'s hand-written mapping actually agree - not merely that each
-/// compiles on its own. <see cref="ServerDbContextTests"/> covers everything else (mapping/query
-/// logic) against the fast, unrelated SQLite path.
+/// <c>db/server/_Init.sql</c> and <see cref="ServerDbContext"/>'s scaffolded mapping actually
+/// agree - not merely that each compiles on its own. <see cref="ServerDbContextTests"/> covers
+/// everything else (mapping/query logic) against the fast, unrelated SQLite path.
 /// </summary>
 /// <remarks>
 /// Requires <c>dbdeploy</c> on <c>PATH</c> (<c>dotnet tool install --global dbdeploy</c>) in
@@ -32,7 +31,7 @@ public class ServerDatabaseDockerTests(PostgreSqlFixture fixture)
     {
         //arrange - copy the real scripts into a scratch directory alongside a dbsettings.json
         // pointed at this test's own container, rather than running dbdeploy against
-        // db/postgres/dbsettings.json's own fixed local-dev connection string.
+        // db/dbsettings.json's own fixed local-dev connection string.
         var work = Directory.CreateTempSubdirectory("EtlPipelines.Server.Database.Tests.");
 
         try
@@ -91,8 +90,8 @@ public class ServerDatabaseDockerTests(PostgreSqlFixture fixture)
 
     private async Task StageScriptsAsync(string workDirectory)
     {
-        var sourceServerDirectory = Path.Combine(RepositoryPaths.DbPostgresDirectory, "Server");
-        var destinationServerDirectory = Directory.CreateDirectory(Path.Combine(workDirectory, "Server"));
+        var sourceServerDirectory = Path.Combine(RepositoryPaths.DbDirectory, "server");
+        var destinationServerDirectory = Directory.CreateDirectory(Path.Combine(workDirectory, "server"));
 
         foreach (var script in Directory.GetFiles(sourceServerDirectory))
         {
@@ -100,17 +99,17 @@ public class ServerDatabaseDockerTests(PostgreSqlFixture fixture)
         }
 
         File.Copy(
-            Path.Combine(RepositoryPaths.DbPostgresDirectory, "main.csv"),
+            Path.Combine(RepositoryPaths.DbDirectory, "main.csv"),
             Path.Combine(workDirectory, "main.csv"));
 
-        // Same shape as the committed db/postgres/dbsettings.json - only the connection string
-        // differs, pointed at this test's own disposable container instead of a fixed local one.
+        // Same shape as the committed db/dbsettings.json - only the connection string differs,
+        // pointed at this test's own disposable container instead of a fixed local one.
         var settings = JsonSerializer.Serialize(new
         {
             global = new { defaultProvider = "postgreSql", scriptTimeout = 600 },
             databases = new Dictionary<string, object>
             {
-                ["Server"] = new { connectionString = Fixture.ConnectionString },
+                ["server"] = new { connectionString = Fixture.ConnectionString },
             },
         });
 

@@ -51,7 +51,7 @@ public sealed class PostgreSqlFixture : DatabaseFixture<PostgreSqlContainer>
     // Testcontainers' own default.
     private const string Image = "postgres:15.1";
 
-    // Named to match db/postgres/dbsettings.json's own "Server" database, so the container is
+    // Named to match db/dbsettings.json's own "server" database, so the container is
     // already the right database, empty, the moment it starts - dbdeploy only ever needs to
     // create tables in it, never the database itself, which sidesteps needing --create at all.
     protected override PostgreSqlContainer CreateContainer() =>
