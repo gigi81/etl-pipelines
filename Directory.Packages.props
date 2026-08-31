@@ -46,10 +46,7 @@
       Phase 4 (SERVER.md): browsing the one bagetter feed for ListAvailablePackages/ListUpdates -
       metadata only, never a download. The Agent needs no NuGet-client library at all (Phase 1:
       installing a package is just `dotnet tool install`, which already downloads+extracts+shims
-      through the SDK), so this is Server-only. Secrets-at-rest (SecretsStore) needs no entry here
-      at all - Microsoft.AspNetCore.DataProtection ships in the ASP.NET Core shared framework
-      EtlPipelines.Server already references as a Web SDK project, and an explicit
-      PackageReference to it is refused (NU1510) as redundant.
+      through the SDK), so this is Server-only.
     -->
     <PackageVersion Include="NuGet.Protocol" Version="7.9.0" />
     <PackageVersion Include="NuGet.Versioning" Version="7.9.0" />
