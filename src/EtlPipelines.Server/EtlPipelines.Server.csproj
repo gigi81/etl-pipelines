@@ -15,6 +15,15 @@
   <ItemGroup>
     <PackageReference Include="Grpc.AspNetCore" />
     <PackageReference Include="Grpc.Tools" />
+    <!--
+      Phase 4: NuGet.Protocol/NuGet.Versioning browse the one bagetter feed for
+      ListAvailablePackages/ListUpdates - metadata only, never a download. Microsoft.AspNetCore.
+      DataProtection (SecretsStore's secrets-at-rest mechanism) needs no PackageReference at all -
+      it ships in the ASP.NET Core shared framework this Web SDK project already references, and
+      NU1510 (a warning-as-error here) refuses an explicit one as redundant.
+    -->
+    <PackageReference Include="NuGet.Protocol" />
+    <PackageReference Include="NuGet.Versioning" />
   </ItemGroup>
 
   <ItemGroup>
