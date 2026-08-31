@@ -32,6 +32,15 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
+      # db/postgres's schema is owned by dbdeploy, never `dotnet ef migrations` - see SERVER.md's
+      # "Database schema management" decision. Installed here, ahead of every step below that
+      # needs it (ServerDatabaseDockerTests shells out to it too), the same documented way an
+      # operator installs it (`dotnet tool install --global dbdeploy`) rather than a
+      # PackageReference.
+      - name: Install dbdeploy
+        run: |
+          dotnet tool install --global dbdeploy
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
       - name: Restore
         run: dotnet restore
       - name: Build
@@ -61,6 +70,40 @@ jobs:
           --report-trx --report-trx-filename "{asm}-integration.trx"
           --coverage --coverage-output-format cobertura
           || true
+      # Runs dbdeploy deploy against a genuinely empty, Testcontainers-managed Postgres, then reads
+      # and writes through ServerDbContext against the schema it just created - the one test that
+      # proves InitialSchema.CreateCoreTables.Deploy.sql and EF Core's hand-written mapping
+      # actually agree, not merely that each is individually well-formed.
+      - name: Server.Database
+        shell: bash
+        run: >
+          dotnet test tests/EtlPipelines.Server.Database.Tests/EtlPipelines.Server.Database.Tests.csproj
+          --configuration Release --no-build
+          --results-directory ./TestResults
+          --report-trx --report-trx-filename "{asm}-integration.trx"
+          --coverage --coverage-output-format cobertura
+          || true
+      # dbdeploy ci - the verb that proves every rollback actually rolls back, not merely that
+      # deploy exits zero - run here against a short-lived Postgres this step starts and stops
+      # itself, using db/postgres/dbsettings.json's own committed connection string as-is (the
+      # same one a developer running this by hand against a local `docker run postgres:15.1` would
+      # use). Deliberately separate from the "Server.Database" step above, which proves a
+      # different thing - deploy only, immediately followed by real reads/writes through
+      # ServerDbContext - against a database TUnit/Testcontainers manages instead.
+      - name: dbdeploy validate and ci
+        shell: bash
+        run: |
+          docker run -d --name dbdeploy-ci-postgres \
+            -p 5432:5432 \
+            -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=etlpipelines_server \
+            postgres:15.1
+          until docker exec dbdeploy-ci-postgres pg_isready -U postgres > /dev/null 2>&1; do sleep 1; done
+          dbdeploy validate --path db/postgres
+          dbdeploy ci --path db/postgres
+      - name: Stop dbdeploy CI Postgres
+        if: always()
+        shell: bash
+        run: docker rm -f dbdeploy-ci-postgres || true
       # Every sample is executed end to end and checked against what it claims to produce. Samples are
       # documentation nothing compiles against, so without this they rot quietly. Here they are run
       # against the real engines; the CI workflow runs the same samples against SQLite.

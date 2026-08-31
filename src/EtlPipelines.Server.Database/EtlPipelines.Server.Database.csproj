@@ -1,2 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Query/mapping layer only - see ServerDbContext's own remarks and SERVER.md's "Database schema
+    management" decision. No Microsoft.EntityFrameworkCore.Design here: there is no `dotnet ef
+    migrations`/scaffold workflow for this project to support, since db/postgres's dbdeploy
+    scripts own the schema instead.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+  </ItemGroup>
+
 </Project>
