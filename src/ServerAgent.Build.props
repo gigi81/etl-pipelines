@@ -1,0 +1,16 @@
+<Project>
+  <!--
+    EtlPipelines.Server, .Server.Database, .Agent and .Agent.GrpcClient are internal deployables -
+    Docker images, never a package anything outside this repo references - so none of them packs,
+    unlike everything else under src/.
+  -->
+  <PropertyGroup Condition="$(MSBuildProjectName.StartsWith('EtlPipelines.Server')) OR $(MSBuildProjectName.StartsWith('EtlPipelines.Agent'))">
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- Only the two hosts are runnable; .Server.Database and .Agent.GrpcClient stay libraries. -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'EtlPipelines.Server' OR '$(MSBuildProjectName)' == 'EtlPipelines.Agent'">
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+</Project>

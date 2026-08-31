@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package etlpipelines.pipeline_execution.v1;
+
+option csharp_namespace = "EtlPipelines.PipelineExecution.V1";
+
+// Consumed by EtlPipelines.GrpcClient from inside an arbitrary third-party pipeline process - the
+// narrowest of the three v1 services, since that process is the least trusted caller. Every RPC is
+// scoped to exactly one run via session_id: the single-use, run-scoped credential Phase 6
+// authenticates with, never a broader one. session_id is the same value as the server's Runs.Id
+// (see SERVER.md's Phase 3 schema) - handed to the process once, at launch, and carried for its
+// whole lifetime by the --session-id option EtlPipelinesHost.UseGrpcClient(...) reads at startup.
+service PipelineExecutionService {
+  // Pulled once at startup and materialized into IConfiguration - see
+  // EtlPipelines.Extensions.Sql/EtlPipelines.Extensions.Files.Sftp's lazy, section-shaped
+  // configuration reads, which this is a drop-in source for (Phase 6).
+  rpc GetConfiguration(GetConfigurationRequest) returns (GetConfigurationResponse);
+  // One call per completed pipeline stage - the GrpcProgressReporter ActivityListener (Phase 6)
+  // calls this from ActivityStopped, the same event PipelineTraceLogger already subscribes to for
+  // logging.
+  rpc ReportStageResult(ReportStageResultRequest) returns (Ack);
+  // Exactly one call, the last one this service sees for a given session_id - the run's terminal
+  // outcome.
+  rpc ReportRunResult(ReportRunResultRequest) returns (Ack);
+  rpc Heartbeat(HeartbeatRequest) returns (Ack);
+}
+
+message GetConfigurationRequest {
+  string session_id = 1;
+}
+
+// Flat IConfiguration keys, e.g. "ConnectionStrings:sales" or "Sftp:vendor:Host" - mirrors
+// ConfigurationEntries.Key's own colon-path shape (Phase 3), so this needs no per-connector
+// translation on either side.
+message GetConfigurationResponse {
+  map<string, string> entries = 1;
+}
+
+message ReportStageResultRequest {
+  string session_id = 1;
+  int32 sequence = 2;
+  string name = 3;
+  int64 rows_in = 4;
+  int64 rows_out = 5;
+  int64 rows_failed = 6;
+  int64 elapsed_ms = 7;
+  // Both empty when the stage succeeded - mirrors StageResults.ErrorCode/ErrorDescription (Phase
+  // 3), both nullable there for the same reason.
+  string error_code = 8;
+  string error_description = 9;
+}
+
+message ReportRunResultRequest {
+  string session_id = 1;
+  Outcome outcome = 2;
+  int32 exit_code = 3;
+  int64 rows_read = 4;
+  int64 rows_written = 5;
+  int64 rows_failed = 6;
+
+  // Only the two outcomes a pipeline process can report about itself. Queued/Dispatched/Running
+  // are states the server and agent assign around a process's own lifetime, and AgentLost is only
+  // ever assigned by the server noticing a process stopped reporting at all (Phase 8) - none of
+  // the three are something the process itself ever has occasion to say. Contrast
+  // management.v1.RunCompleted.Status, the server's own superset view of a run's status.
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    SUCCEEDED = 1;
+    FAILED = 2;
+  }
+}
+
+message HeartbeatRequest {
+  string session_id = 1;
+}
+
+message Ack {}

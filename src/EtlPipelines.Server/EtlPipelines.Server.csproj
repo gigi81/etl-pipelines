@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    Hosts all three v1 services - first project in the repo to use the Web SDK. Phase 2 scaffolds
+    every RPC as a "not implemented yet" stub (see Services/) so the whole surface exists and the
+    host builds and starts clean; each later phase (3, 4, 5/6) fills in real behaviour for the
+    RPCs it needs.
+  -->
+  <ItemGroup>
+    <Protobuf Include="..\..\protos\v1\pipeline_execution.proto" GrpcServices="Server" ProtoRoot="..\..\protos" />
+    <Protobuf Include="..\..\protos\v1\agent_execution.proto" GrpcServices="Server" ProtoRoot="..\..\protos" />
+    <Protobuf Include="..\..\protos\v1\management.proto" GrpcServices="Server" ProtoRoot="..\..\protos" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Grpc.Tools" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EtlPipelines.Server.Database\EtlPipelines.Server.Database.csproj" />
+  </ItemGroup>
+
+</Project>

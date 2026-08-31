@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Typed gRPC client for an arbitrary pipeline process to reach PipelineExecutionService - configuration, progress reporting, heartbeats.</Description>
+  </PropertyGroup>
+
+  <!--
+    Phase 2 scaffolding only: the proto reference below is everything this project has for now -
+    codegen produces the request/response/client types, but no code here calls them yet. Phase 6
+    adds GrpcConfigurationProvider/GrpcConfigurationSource and GrpcProgressReporter, the real
+    consumers, plus EtlPipelinesHost.UseGrpcClient(...) for the session-id/server-url options.
+  -->
+  <ItemGroup>
+    <Protobuf Include="..\..\protos\v1\pipeline_execution.proto" GrpcServices="Client" ProtoRoot="..\..\protos" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Grpc.Net.ClientFactory" />
+    <PackageReference Include="Grpc.Tools" />
+  </ItemGroup>
+
+</Project>

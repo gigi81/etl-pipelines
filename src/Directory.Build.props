@@ -16,4 +16,5 @@
   </ItemGroup>
 
   <Import Project="Samples.Build.props" />
+  <Import Project="ServerAgent.Build.props" />
 </Project>
