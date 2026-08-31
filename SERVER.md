@@ -33,6 +33,7 @@ once every other phase has landed, brings the documentation up to date with the 
 | Package feed | **The local `bagetter` service, always.** Every package install goes through it — never straight to nuget.org — and out of the box it holds only the packed samples (Phase 1's `pack` output pushed to it, nothing else). `bagetter` itself supports proxying an upstream feed; turning that on so it also serves nuget.org packages (or another private feed) transparently through the same one endpoint is an operator's `bagetter`-side configuration choice, not something `Server` itself is aware of or needs a feed *list* for. `NuGetFeeds` (Phase 3) accordingly holds one row, not a list — see that phase for what this simplifies away. |
 | Solution layout | **All code stays under `src/` and `tests/`.** `server`/`agent` are `.slnx` solution-folder groupings, the same shape `extensions`/`samples` already have — not physical top-level directories. See "Solution layout," below. |
 | gRPC API versioning | **Versioned from the start, `v1`.** Every proto's `package` and every generated namespace carries a version segment before a single client exists to break — see "API versioning," below. |
+| Database schema management | **[`dbdeploy`](https://github.com/gigi81/dbdeploy), not EF Core Migrations.** Schema and priming/seed data are owned by versioned `.Deploy.sql`/`.Rollback.sql` scripts, deployed by the `dbdeploy` CLI — never by `dotnet ef migrations`. EF Core in `Server.Database` is a query/mapping layer over a schema it does not own: no `Migrations` folder, no `dotnet ef database update`. See Phase 3, below. |
 
 ## Verified against the existing codebase
 
@@ -362,7 +363,7 @@ still calls it — not a step of adding `v2`.
 |---|---|---|
 | `Grpc.AspNetCore` | Server | Kestrel + service hosting |
 | `Grpc.Net.ClientFactory`, `Grpc.Net.Client`, `Google.Protobuf`, `Grpc.Tools` | GrpcClient, Agent.GrpcClient | typed client codegen via `AddGrpcClient` |
-| `Microsoft.EntityFrameworkCore`, `Npgsql.EntityFrameworkCore.PostgreSQL`, `Microsoft.EntityFrameworkCore.Design` | Server.Database | Postgres, `dotnet ef migrations` |
+| `Microsoft.EntityFrameworkCore`, `Npgsql.EntityFrameworkCore.PostgreSQL` | Server.Database | Postgres query/mapping layer only — **no** `Microsoft.EntityFrameworkCore.Design`, since there is no `dotnet ef migrations`/scaffold workflow to support (schema owned by `dbdeploy`; see "Database schema management," above). |
 | `Microsoft.AspNetCore.DataProtection` | Server | secrets-at-rest, key ring on the `server-cache` volume |
 | `NuGet.Protocol`, `NuGet.Versioning` | Server only | browsing/resolving packages against the one `bagetter` feed for `ListAvailablePackages`/`ListUpdates` — metadata only, and whatever `bagetter` itself proxies through is invisible to this beyond it showing up in the results. The Agent needs **no** NuGet-client library at all: per Phase 1, installing a package is just shelling out to `dotnet tool install --tool-path ... --add-source <feed>`, which already does download+extract+shim through the SDK itself. |
 
@@ -437,7 +438,24 @@ solution builds. **Verification:** `dotnet build --configuration Release` clean.
 
 ## Phase 3 — `EtlPipelines.Server.Database`
 
-The EF Core layer against Postgres, proven in isolation before `Server` depends on it.
+The EF Core layer against Postgres, proven in isolation before `Server` depends on it — and, alongside
+it, the `dbdeploy` scripts that own the schema EF Core only ever reads and writes through, never
+creates.
+
+**No `dotnet ef migrations`, anywhere, ever.** `EtlPipelines.Server.Database`'s `DbContext` maps onto a
+schema it does not control: no `Migrations` folder, no `ModelBuilder`-driven `dotnet ef database
+update`, `IEntityTypeConfiguration<T>` classes hand-written to match tables `dbdeploy` already created.
+Schema changes are a `.Deploy.sql`/`.Rollback.sql` pair (plus, where needed, a `.Data.sql` for priming
+static/reference rows) under a new `db/postgres/` folder at the repo root — a non-project asset
+directory in the same spirit as `docker/`, not a violation of "all code stays under `src/`/`tests/`"
+above, since there's no `.csproj` here, the same way there isn't one under `docker/`. Sequenced via
+`db/postgres/main.csv`, `dbdeploy`'s own branch-aware format. `dbdeploy` itself is a `dotnet tool`
+(`dotnet tool install --global dbdeploy`, its own documented install path), not a `PackageReference` —
+nothing under "New central package versions," above, changes for it. CI installs it the same way, as a
+step ahead of whatever in this phase's workflow needs it.
+
+The tables `db/postgres`'s initial deploy script creates, and `Server.Database`'s
+`IEntityTypeConfiguration<T>` classes map onto:
 
 ```
 Packages              Id, NugetPackageId, CreatedAt
@@ -463,14 +481,19 @@ deliberately — it's what lets `GetConfigurationResponse.entries` (Phase 2) fee
 granularity, matching how `PipelineRunner.Find(name)`
 (`src/EtlPipelines.Hosting/PipelineRunner.cs`) already does a linear scan by name within one process.
 
-**Tests:** fast TUnit tests against EF Core's SQLite/in-memory provider for mapping/query logic;
-`[Category("Docker")]` + `Testcontainers.PostgreSql` (already centrally versioned) for a real migration
-+ round-trip, following `DatabaseFixture<TContainer>`
+**Tests:** fast TUnit tests against EF Core's SQLite/in-memory provider (`EnsureCreated()`, not
+`dbdeploy` — a convenience for exercising mapping/query logic quickly, unrelated to how the real schema
+gets created, and not a substitute for proving `dbdeploy`'s own scripts are correct) for mapping/query
+logic; `[Category("Docker")]` + `Testcontainers.PostgreSql` (already centrally versioned) for the real
+round-trip — this is the one that matters, because it's the only test that runs `dbdeploy deploy`
+against a genuinely empty Postgres container before anything else touches it, proving the scripts and
+the `DbContext`'s hand-written mapping actually agree — following `DatabaseFixture<TContainer>`
   (`tests/EtlPipelines.Extensions.Sql.Databases.Tests/DatabaseFixture.cs` — path corrected for the
   `EtlPipelines.Extensions.*` rename; the class itself is unchanged) and its
-  `[ClassDataSource<T>(Shared = SharedType.PerAssembly)]` pairing exactly.
+  `[ClassDataSource<T>(Shared = SharedType.PerAssembly)]` pairing exactly. `dbdeploy ci` — its own verb
+  for proving every rollback actually rolls back — belongs in this phase's CI step too, not deferred.
 
-**Verification:** `dotnet ef migrations add InitialCreate -p src/EtlPipelines.Server.Database`,
+**Verification:** `dbdeploy deploy` against a fresh local Postgres, `dbdeploy validate`, `dbdeploy ci`,
 Docker-tagged tests green locally.
 
 ## Phase 4 — `EtlPipelines.Server`: catalog and management API (no agent yet)
@@ -599,6 +622,14 @@ services:
 `server-cache` also holds the Data Protection key ring — it must be a durable volume, since losing it
 makes every encrypted `ConfigurationEntries.EncryptedValue` unrecoverable.
 
+**Schema deployment on startup.** A fresh `postgres-data` volume starts genuinely empty — `Server`
+cannot serve a single request until `db/postgres`'s scripts have run against it. `Dockerfile.server`'s
+entrypoint runs `dbdeploy deploy` (against the `postgres` service, once `depends_on`'s health check says
+it's actually ready to accept connections) before starting `Server` itself, so `docker compose up` on a
+brand-new volume takes itself from empty database to serving traffic with no separate manual step. An
+already-deployed database — every run after the first — is a fast no-op for `dbdeploy deploy` to check,
+not a repeated schema rebuild.
+
 **Bagetter seeding.** `bagetter`'s image starts with nothing installed and no upstream configured — a
 package feed with zero packages isn't a useful default for `docker compose up` to hand someone. A
 `compose.yaml` step (a short-lived seed service, or a `command:` on `nuget` itself, decided when this
@@ -609,9 +640,10 @@ comes up with exactly the samples installable and nothing else. Proxying `bagett
 configuration, off by default here, an operator opts into by editing `bagetter`'s own config — not
 something `docker-compose.yml`, `Server`, or this phase's seed step enables or is even aware of.
 
-**Verification:** `docker compose up --build`, all four containers healthy, `bagetter`'s own package
-listing shows the six seeded samples and nothing else, Phase 6's smoke test re-run entirely against the
-built images.
+**Verification:** `docker compose up --build` against a genuinely fresh set of volumes, all four
+containers healthy, `Server`'s schema present with no manual `dbdeploy` invocation from outside the
+stack, `bagetter`'s own package listing shows the six seeded samples and nothing else, Phase 6's smoke
+test re-run entirely against the built images.
 
 ## Phase 8 — Reliability: heartbeat, crash recovery, cache eviction
 
