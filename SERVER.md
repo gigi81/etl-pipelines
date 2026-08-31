@@ -446,15 +446,16 @@ creates.
 schema it does not control: no `Migrations` folder, no `ModelBuilder`-driven `dotnet ef database
 update`, `IEntityTypeConfiguration<T>` classes hand-written to match tables `dbdeploy` already created.
 Schema changes are a `.Deploy.sql`/`.Rollback.sql` pair (plus, where needed, a `.Data.sql` for priming
-static/reference rows) under a new `db/postgres/` folder at the repo root — a non-project asset
-directory in the same spirit as `docker/`, not a violation of "all code stays under `src/`/`tests/`"
-above, since there's no `.csproj` here, the same way there isn't one under `docker/`. Sequenced via
-`db/postgres/main.csv`, `dbdeploy`'s own branch-aware format. `dbdeploy` itself is a `dotnet tool`
-(`dotnet tool install --global dbdeploy`, its own documented install path), not a `PackageReference` —
-nothing under "New central package versions," above, changes for it. CI installs it the same way, as a
-step ahead of whatever in this phase's workflow needs it.
+static/reference rows) under a new `db/` folder at the repo root — a non-project asset directory in
+the same spirit as `docker/`, not a violation of "all code stays under `src/`/`tests/`" above,
+since there's no `.csproj` here, the same way there isn't one under `docker/`. Sequenced via
+`db/main.csv`, `dbdeploy`'s own branch-aware format, with one script folder per database
+(`db/server/`, lowercase, matching the database key `db/dbsettings.json` itself uses). `dbdeploy`
+itself is a `dotnet tool` (`dotnet tool install --global dbdeploy`, its own documented install
+path), not a `PackageReference` — nothing under "New central package versions," above, changes for
+it. CI installs it the same way, as a step ahead of whatever in this phase's workflow needs it.
 
-The tables `db/postgres`'s initial deploy script creates, and `Server.Database`'s
+The tables `db/server`'s initial deploy script creates, and `Server.Database`'s
 `IEntityTypeConfiguration<T>` classes map onto:
 
 ```
@@ -623,7 +624,7 @@ services:
 makes every encrypted `ConfigurationEntries.EncryptedValue` unrecoverable.
 
 **Schema deployment on startup.** A fresh `postgres-data` volume starts genuinely empty — `Server`
-cannot serve a single request until `db/postgres`'s scripts have run against it. `Dockerfile.server`'s
+cannot serve a single request until `db`'s scripts have run against it. `Dockerfile.server`'s
 entrypoint runs `dbdeploy deploy` (against the `postgres` service, once `depends_on`'s health check says
 it's actually ready to accept connections) before starting `Server` itself, so `docker compose up` on a
 brand-new volume takes itself from empty database to serving traffic with no separate manual step. An

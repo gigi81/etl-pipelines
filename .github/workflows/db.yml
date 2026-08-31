@@ -1,0 +1,57 @@
+name: Database
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  dbdeploy:
+    name: dbdeploy
+    runs-on: ubuntu-latest
+    # A GitHub Actions service container, not a manually started/stopped `docker run` - the
+    # runner starts Postgres before any step below runs, health-checks it until it accepts
+    # connections, and tears it down after the job on its own. User/password/database match
+    # db/dbsettings.json's own committed connection string exactly, so no step here needs to
+    # generate or rewrite that file - the same config a developer running this by hand locally
+    # already uses works as-is against this service too.
+    services:
+      postgres:
+        image: postgres:15.1
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: etlpipelines_server
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd=pg_isready
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v7
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      # db's schema is owned by dbdeploy, never `dotnet ef migrations` - see SERVER.md's "Database
+      # schema management" decision. Installed the same documented way an operator does
+      # (`dotnet tool install --global dbdeploy`), never a PackageReference.
+      - name: Install dbdeploy
+        run: |
+          dotnet tool install --global dbdeploy
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+      - name: dbdeploy validate
+        run: dbdeploy validate --path db
+      - name: dbdeploy deploy
+        run: dbdeploy deploy --path db
+      # Proves every rollback actually rolls back, not merely that deploy exits zero - deploys,
+      # rolls back, and deploys again against the database the step above already deployed to
+      # once (a no-op re-deploy, then the real proof).
+      - name: dbdeploy ci
+        run: dbdeploy ci --path db

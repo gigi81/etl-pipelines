@@ -32,6 +32,14 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
+      # db's schema is owned by dbdeploy, never `dotnet ef migrations` - see SERVER.md's "Database
+      # schema management" decision. Installed here, ahead of every step below that needs it
+      # (ServerDatabaseDockerTests shells out to it too), the same documented way an operator
+      # installs it (`dotnet tool install --global dbdeploy`) rather than a PackageReference.
+      - name: Install dbdeploy
+        run: |
+          dotnet tool install --global dbdeploy
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
       - name: Restore
         run: dotnet restore
       - name: Build
@@ -56,6 +64,20 @@ jobs:
         shell: bash
         run: >
           dotnet test tests/EtlPipelines.Extensions.Sql.Databases.Tests/EtlPipelines.Extensions.Sql.Databases.Tests.csproj
+          --configuration Release --no-build
+          --results-directory ./TestResults
+          --report-trx --report-trx-filename "{asm}-integration.trx"
+          --coverage --coverage-output-format cobertura
+          || true
+      # Runs dbdeploy deploy against a genuinely empty, Testcontainers-managed Postgres, then reads
+      # and writes through ServerDbContext against the schema it just created - the one test that
+      # proves db/server/_Init.sql and EF Core's scaffolded mapping actually agree, not merely that
+      # each is individually well-formed. dbdeploy's own CLI contract (validate/deploy/ci against a
+      # plain Postgres, not one this project's code touches) is exercised separately, in db.yml.
+      - name: Server.Database
+        shell: bash
+        run: >
+          dotnet test tests/EtlPipelines.Server.Database.Tests/EtlPipelines.Server.Database.Tests.csproj
           --configuration Release --no-build
           --results-directory ./TestResults
           --report-trx --report-trx-filename "{asm}-integration.trx"

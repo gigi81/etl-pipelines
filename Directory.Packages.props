@@ -25,6 +25,23 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageVersion>
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <!--
+      EtlPipelines.Server.Database's DbContext is a query/mapping layer only - dbdeploy, never
+      `dotnet ef migrations`, owns the schema (SERVER.md's "Database schema management" decision).
+      Microsoft.EntityFrameworkCore.Design *is* needed even so: `dotnet ef dbcontext scaffold` is
+      a different workflow from migrations - reverse-engineering the entities/DbContext from a
+      schema dbdeploy already owns and created, not generating or applying schema changes - and
+      that is exactly how this project's model is produced and kept in sync, per review on #7.
+      Sqlite is the fast test provider (EnsureCreated(), unrelated to how the real schema gets
+      created) alongside the real thing tests actually assert against.
+    -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageVersion>
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.11" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="9.6.0" />
     <PackageVersion Include="OllamaSharp" Version="5.2.7" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.11" />
