@@ -43,6 +43,7 @@
     <Project Path="tests/EtlPipelines.Extensions.Json.Tests/EtlPipelines.Extensions.Json.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Extensions.Sql.Databases.Tests/EtlPipelines.Extensions.Sql.Databases.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Extensions.Sql.Tests/EtlPipelines.Extensions.Sql.Tests.csproj" />
+    <Project Path="tests/EtlPipelines.PipelinePackaging.Tests/EtlPipelines.PipelinePackaging.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Samples.Tests/EtlPipelines.Samples.Tests.csproj" />
   </Folder>
   <Folder Name="/samples/">

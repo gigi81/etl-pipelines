@@ -52,15 +52,29 @@ jobs:
       # the same time on one runner, and the second Oracle never finished opening its database
       # (ORA-01109). One workflow owning the containers keeps that from happening again.
       #
-      # --ignore-exit-code 8 is "zero tests ran". With the Docker tests filtered out
-      # EtlPipelines.Extensions.Sql.Databases.Tests has nothing left to run, which MTP reports as an
-      # error; it is the expected outcome here, not a failure.
+      # The Packaging category is excluded for a different reason: EtlPipelines.PipelinePackaging.Tests
+      # spawns a real "dotnet pack" + "dotnet tool install" round trip per test, which would roughly
+      # double this job's running time on every PR for a contract that changes rarely. It runs in its
+      # own sequential step in integration-tests.yml instead, same as the Docker-tagged suites.
+      #
+      # Two exclusions, not one "Category!=Docker&Category!=Packaging" - empirically (confirmed against
+      # this exact MTP version before landing this), a single bracket combining two conditions on the
+      # same property crashes the filter parser outright, and combining two whole "/*/*/*/*[...]" node
+      # paths with "&"/"|" is a set union of whatever each side matches, not an intersection - so
+      # "Category!=Docker&Category!=Packaging" that way would still let a Packaging-tagged test through
+      # (it satisfies "Category!=Docker" on its own). Negating each whole node path with a leading "!"
+      # and "&"-ing those together is what actually intersects the two exclusions.
+      #
+      # --ignore-exit-code 8 is "zero tests ran". With the Docker/Packaging tests filtered out,
+      # EtlPipelines.Extensions.Sql.Databases.Tests and EtlPipelines.PipelinePackaging.Tests both have
+      # nothing left to run, which MTP reports as an error; it is the expected outcome here, not a
+      # failure.
       - name: Run tests
         shell: bash
         run: >
           dotnet test --configuration Release --no-build
           --results-directory ./TestResults
-          --treenode-filter "/*/*/*/*[Category!=Docker]"
+          --treenode-filter "!/*/*/*/*[Category=Docker]&!/*/*/*/*[Category=Packaging]"
           --report-trx --report-trx-filename "{asm}-test-results.trx"
           --coverage --coverage-output-format cobertura
           --ignore-exit-code 8
@@ -152,8 +166,20 @@ jobs:
         id: login
         with:
           user: ${{ secrets.NUGET_USER }}
+      # Samples pack too (src/Samples.Build.props, PackAsTool), but they are demo/test fixtures, not
+      # products - a same-prefix include glob can't tell them apart from a real connector, since both
+      # share the "EtlPipelines." prefix (samples are "EtlPipelines.Samples.*"), so this excludes them
+      # by name explicitly rather than narrowing the glob.
       - name: Push packages
-        run: dotnet nuget push "packages/*.nupkg" --api-key ${{steps.login.outputs.NUGET_API_KEY}} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for pkg in packages/*.nupkg; do
+            case "$(basename "$pkg")" in
+              EtlPipelines.Samples.*) echo "Skipping sample package $(basename "$pkg")"; continue ;;
+            esac
+            dotnet nuget push "$pkg" --api-key ${{steps.login.outputs.NUGET_API_KEY}} --source https://api.nuget.org/v3/index.json --skip-duplicate
+          done
       - name: Create a GitHub release
         uses: ncipollo/release-action@v1
         with:

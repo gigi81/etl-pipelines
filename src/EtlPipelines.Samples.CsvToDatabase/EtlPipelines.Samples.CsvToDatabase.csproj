@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <Description>A CSV file loaded into a database table, in one transaction.</Description>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\EtlPipelines.Core\EtlPipelines.Core.csproj" />
     <ProjectReference Include="..\EtlPipelines.Hosting\EtlPipelines.Hosting.csproj" />

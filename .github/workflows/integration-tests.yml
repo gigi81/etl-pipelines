@@ -73,6 +73,20 @@ jobs:
           --report-trx --report-trx-filename "{asm}-integration.trx"
           --coverage --coverage-output-format cobertura
           || true
+      # A real "dotnet pack" + "dotnet tool install" round trip, proving SERVER.md Phase 1's actual
+      # contract: that a sample survives being packed and installed as a real dotnet tool, not just run
+      # in-process. Needs no Docker, but it is slow (two MSBuild/NuGet round trips) for the same reason
+      # the Docker-backed suites above get their own step rather than running on every fast per-PR leg
+      # of ci.yml.
+      - name: Pipeline packaging
+        shell: bash
+        run: >
+          dotnet test tests/EtlPipelines.PipelinePackaging.Tests/EtlPipelines.PipelinePackaging.Tests.csproj
+          --configuration Release --no-build
+          --results-directory ./TestResults
+          --report-trx --report-trx-filename "{asm}-integration.trx"
+          --coverage --coverage-output-format cobertura
+          || true
       # Codecov merges every report it receives for a commit, so this half - the code only the
       # container-backed tests reach - lands alongside what the CI workflow uploads.
       - name: Upload coverage to Codecov
