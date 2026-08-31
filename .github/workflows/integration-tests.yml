@@ -34,8 +34,9 @@ jobs:
           dotnet-version: 10.0.x
       # db's schema is owned by dbdeploy, never `dotnet ef migrations` - see SERVER.md's "Database
       # schema management" decision. Installed here, ahead of every step below that needs it
-      # (ServerDatabaseDockerTests shells out to it too), the same documented way an operator
-      # installs it (`dotnet tool install --global dbdeploy`) rather than a PackageReference.
+      # (both ServerDatabaseDockerTests and ManagementServiceDockerTests shell out to it), the
+      # same documented way an operator installs it (`dotnet tool install --global dbdeploy`)
+      # rather than a PackageReference.
       - name: Install dbdeploy
         run: |
           dotnet tool install --global dbdeploy
@@ -78,6 +79,20 @@ jobs:
         shell: bash
         run: >
           dotnet test tests/EtlPipelines.Server.Database.Tests/EtlPipelines.Server.Database.Tests.csproj
+          --configuration Release --no-build
+          --results-directory ./TestResults
+          --report-trx --report-trx-filename "{asm}-integration.trx"
+          --coverage --coverage-output-format cobertura
+          || true
+      # The full ManagementService surface Phase 4 (SERVER.md) implements, against its own
+      # Testcontainers-managed Postgres (deployed via dbdeploy once per run - see
+      # ManagementServiceDockerTests) - a different container from the "Server.Database" step
+      # above, proving the gRPC service layer agrees with a real database, not just
+      # EtlPipelines.Server.Database's own mapping in isolation.
+      - name: Server
+        shell: bash
+        run: >
+          dotnet test tests/EtlPipelines.Server.Tests/EtlPipelines.Server.Tests.csproj
           --configuration Release --no-build
           --results-directory ./TestResults
           --report-trx --report-trx-filename "{asm}-integration.trx"

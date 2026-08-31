@@ -1,0 +1,27 @@
+# Started here in Phase 4 (SERVER.md) with just postgres/nuget - enough to bring up the two
+# services EtlPipelines.Server depends on and prove ListAvailablePackages works end to end against
+# a real bagetter. Phase 7 ("Docker Compose hardening and image build") finishes this file: the
+# server/agent services themselves, their Dockerfiles, health checks, restart policies, and the
+# bagetter/schema seeding steps that make `docker compose up` produce a stack with something
+# installable and no separate manual step.
+services:
+  postgres:
+    image: postgres:15.1
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: etlpipelines_server
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  # bagetter - the one NuGet-compatible feed every package install goes through (never straight to
+  # nuget.org - see SERVER.md's "Package feed" decision). Starts with nothing installed and no
+  # upstream configured; Phase 7's "Bagetter seeding" is what pushes the packed samples to it.
+  nuget:
+    image: bagetter/bagetter
+    volumes:
+      - nuget-data:/data
+
+volumes:
+  postgres-data:
+  nuget-data:
