@@ -1,103 +1,26 @@
-## Acrchitecture
-Add the following projects:
-- EtlPipelines.Server (the GRPC server)
-- EtlPipelines.Server.Database (the Entity Framework database layer used by the server, using postgresql)
-- EtlPipelines.Agent (the agent that will execute the pipelines in a separate process)
-- EtlPipelines.GrpcClient (the GRPC client to communicate with the server, used by the pipelines processes)
-- EtlPipelines.Agent.GrpcClient (the GRPC client to communicate with the server, used by the agents)
-
-## Description
-The server is a GRPC server that handles ETL (Extract, Transform, Load) processes.
-It provides endpoints for clients to retrieve configuration but also for reporting back pipeline execution metrics, status and results.
-The server is built using .NET Core and utilizes Entity Framework for database interactions.
-
-The single pipelines are published as NuGet packages that are self-contained and can be run in isolation.
-For example the samples projects are an example of how to use the pipelines in a standalone manner.
-The server:
-- connects to the nuget server to download the nuget pipelines packages
-- stores configuration items like database connection strings, secrets, sftp details, etc. in a secure manner
-- is responsible for orchestrating the execution of the pipelines and managing their lifecycle
-- delegates actual execution of the pipelines processes to one or more agents so that load can be distributed
-- provides logging and monitoring capabilities to track the progress and status of the ETL processes
-- maintains a local repository of the downloaded nuget packages to avoid downloading them multiple times
-
-## Available pipelines
-The server will have apis to:
-- provide a list of installed pipelines
-- provide a list of updates available for the installed pipelines
-- provide a list of available pipelines packages that can be installed from the nuget server
-- install a pipeline package
-- uninstall a pipeline package
-- update a pipeline package
-
-## Install a pipeline package
-- a client will send a request to the server to install a specific pipeline
-- the server will download the nuget package for the requested pipeline and store it in a cache folder
-- the server will extract the nuget package and store the extracted files in a cache folder
-- the server will run the `list` command of the pipeline executable (see samples projects)
-- the server will store the list of available pipelines in a database for future reference
-
-## Execute a pipeline:
-To execute a pipeline, the server will:
-- receive a request from a client to execute a specific pipeline
-- delegate execution to an agent (the agent can be on the same machine or on a different machine)
-- the agent downloads the nuget package from a nuget server and extracts the nuget package for the requested pipeline in a cache folder
-- the agent executes the pipeline in a separate process passing as a parameter a session ID and server url
-- the pipeline executable will use the EtlPipelines.Client to request from the server any configuration or data needed for the execution
-- the pipeline will report its progress and results back to the server using the provided session ID and server URL
-- the agent monitors the execution of the process and reports back to th server CPU and memory usage, start and completion as well as any errors encountered during execution
-
-## Docker compose file
-Add a `docker` folder to the root of the solution and add a docker compose file that will define the following services:
-- server: the GRPC server
-- agent: the agent that will execute the pipelines in a separate process
-- postgres: the postgresql database used by the server
-- nuget: a nuget server to host the pipeline packages (ex. https://www.bagetter.com/)
-
-The docker compose file will include volumes for persisting:
-- the database data
-- the server cache
-- the nuget server data
-- the agent cache
-
-## Development strategy
-Divide the development into manageable phases. Each phase should have clear objectives and deliverables.
-Each phase will consist of the following steps:
-- create a feature branch for the phase
-- implement the deliverables for the phase including code, tests but excluding documentation
-- raise a PR and wait for review and approval
-- once the PR is approved, merge the feature branch into the main branch
-- move to the next phase
-
-Once all phases are completed, have a final phase to update the documentation to reflect the final state of the project and ensure that all features are properly documented.
-For the documentation, consider using a tool like DocFX and create a docs folder in the root of the solution to manage the docset.
-
------------------------
-
-
 # Server/Agent distributed execution subsystem
 
 ## Context
 
 Every pipeline today is a library consumed directly by an application that references
 `EtlPipelines.Hosting` and runs in-process, on one machine, under whatever credentials that
-application has. `SERVER.md` sketches turning this into a distributed system: a central server that
-tracks which pipeline packages exist, hands out their configuration (connection strings, SFTP
-credentials) without the pipeline author ever seeing the underlying secret, and farms actual execution
-out to one or more agent processes so load can be spread across machines.
+application has. This plan turns that into a distributed system: a central server that tracks which
+pipeline packages exist, hands out their configuration (connection strings, SFTP credentials) without
+the pipeline author ever seeing the underlying secret, and farms actual execution out to one or more
+agent processes so load can be spread across machines.
 
-`SERVER.md` is a rough sketch, not a spec — it names five projects and a rough flow but leaves open
-exactly the decisions that determine how much work this is and where the risk sits: how a "pipeline
-package" is actually packaged and invoked, how a spawned pipeline process authenticates back to the
-server, what "secure" secret storage means with zero existing precedent in this repo, whether the
-server ever executes third-party downloaded code itself, and how three very different callers (an
-end-user client, an agent, and an arbitrary pipeline process) are supposed to share one undifferentiated
-"GRPC client."
+Getting there means resolving the decisions that determine how much work this is and where the risk
+sits: how a "pipeline package" is actually packaged and invoked, how a spawned pipeline process
+authenticates back to the server, what "secure" secret storage means with zero existing precedent in
+this repo, whether the server ever executes third-party downloaded code itself, and how three very
+different callers (an end-user client, an agent, and an arbitrary pipeline process) are supposed to
+share one undifferentiated "GRPC client."
 
 This plan resolves those decisions against the codebase as it actually is today, and breaks the result
-into the same phase-per-PR shape `SERVER.md`'s own "Development strategy" section asks for — starting
-with the one decision everything else depends on: how a pipeline becomes an installable, runnable
-package in the first place.
+into one phase per PR — implement a phase's deliverables (code and tests, not documentation), raise a
+PR, get it reviewed and merged, move to the next phase — starting with the one decision everything else
+depends on: how a pipeline becomes an installable, runnable package in the first place. A final phase,
+once every other phase has landed, brings the documentation up to date with the finished system (Phase 9).
 
 ## Decisions already made (do not re-open)
 
@@ -107,7 +30,9 @@ package in the first place.
 | Install validation | **Delegated to an agent.** The server never downloads or executes a third-party package itself — it asks an already-registered agent to install it and report back what `list` prints. Keeps the server's own attack surface limited to "orchestrator," never "code runner for arbitrary NuGet content." |
 | Secrets at rest | **ASP.NET Core Data Protection** (`Microsoft.AspNetCore.DataProtection`), key ring persisted to a Docker volume. No new external service. Explicitly not production-grade — swappable for a real KMS later, documented as such. |
 | Auth/authz | **Deferred entirely** for phase 1. No agent auth, no client auth. The whole stack is not safe to expose beyond a trusted network until its own later phase adds this. |
-| Package feed | **A configurable list of NuGet feed URLs**, read from server configuration, defaulting to the local `bagetter` service only. Not hardcoded to one feed — an operator adds `nuget.org` or another private feed by editing configuration, but nothing in phase 1 assumes more than the default. |
+| Package feed | **The local `bagetter` service, always.** Every package install goes through it — never straight to nuget.org — and out of the box it holds only the packed samples (Phase 1's `pack` output pushed to it, nothing else). `bagetter` itself supports proxying an upstream feed; turning that on so it also serves nuget.org packages (or another private feed) transparently through the same one endpoint is an operator's `bagetter`-side configuration choice, not something `Server` itself is aware of or needs a feed *list* for. `NuGetFeeds` (Phase 3) accordingly holds one row, not a list — see that phase for what this simplifies away. |
+| Solution layout | **All code stays under `src/` and `tests/`.** `server`/`agent` are `.slnx` solution-folder groupings, the same shape `extensions`/`samples` already have — not physical top-level directories. See "Solution layout," below. |
+| gRPC API versioning | **Versioned from the start, `v1`.** Every proto's `package` and every generated namespace carries a version segment before a single client exists to break — see "API versioning," below. |
 
 ## Verified against the existing codebase
 
@@ -169,9 +94,10 @@ package in the first place.
   `Directory.Build.props` as a `<File>` entry; `/extensions/` has none of its own (its projects sit
   physically under `src/` and inherit `src/Directory.Build.props`), and `/samples/` is solution-folder
   grouping only — its projects physically live under `src/` too now (`src/EtlPipelines.Samples.*`), not
-  under a separate top-level `samples/` directory. Two new top-level folders for `/server/` and
-  `/agent/` (Phase 2 onward) still follow the original `/src/`-with-its-own-`Directory.Build.props`
-  shape.
+  under a separate top-level `samples/` directory. `/server/` and `/agent/` (Phase 2 onward) follow that
+  same solution-folder-only shape, not the original plan's separate top-level directories — see
+  "Solution layout," below, which now says so explicitly rather than leaving it to be inferred from
+  `/extensions/` and `/samples/`'s example.
 - **`CliWrap 3.8.1`, previously unused, now has a real, tested consumer in this repo:**
   `EtlPipelines.Extensions.Cli`, whose `CliCommandStage` wraps `CliWrap.Cli.Wrap(...).ExecuteBufferedAsync()`
   to run an external command as a pipeline stage, with its own test coverage
@@ -337,41 +263,98 @@ packaging test, the descriptions) is done just because the packing itself is.
 
 ## Solution layout
 
-Two new top-level solution folders. `EtlPipelines.slnx` has four today, not the three this used to say
-(`/src/`, `/extensions/`, `/tests/`, `/samples/` — see "Verified against the existing codebase," above,
-for what changed and why); `/server/` and `/agent/` follow the same top-level, own-`Directory.Build.props`
-shape `/src/` and `/tests/` already use, same as originally planned:
+**No new top-level directories for code.** Every `.cs` project — connector, sample, and now server/agent
+— lives under `src/` or `tests/`, full stop; `server`/`agent` is a grouping `EtlPipelines.slnx` draws,
+not a place on disk. This is not a new idea here: `/extensions/` and `/samples/` are already exactly
+this shape today — solution folders with no `Directory.Build.props` or physical directory of their own,
+grouping projects that physically sit under `src/` (`src/EtlPipelines.Extensions.*`,
+`src/EtlPipelines.Samples.*`) — and `/server/`/`/agent/` just extend the same pattern rather than
+reverting to the separate-top-level-folder shape this section originally proposed.
 
-- **`/server/`** — new `server/Directory.Build.props` (`IsPackable=false`, `OutputType=Exe` as the
-  folder default — the shape `samples/Directory.Build.props` used to have, before that file was
-  removed and folded into `src/Directory.Build.props` + `src/Samples.Build.props`; see Phase 1's "As
-  actually implemented").
-    - `server/EtlPipelines.Server/` — the gRPC host (`Microsoft.NET.Sdk.Web`, first project in the repo
-      to use it).
-    - `server/EtlPipelines.Server.Database/` — EF Core layer, `OutputType` overridden to `Library`.
-- **`/agent/`** — new `agent/Directory.Build.props`, same shape.
-    - `agent/EtlPipelines.Agent/` — generic host + `BackgroundService`, plain console SDK.
-    - `agent/EtlPipelines.Agent.GrpcClient/` — `OutputType` overridden to `Library`.
-- **`src/EtlPipelines.GrpcClient/`** stays under the existing `/src/` folder
-  (`src/Directory.Build.props`: `IsPackable=true`, `GenerateDocumentationFile=true`) — it's the one
-  project of the five a third party's pipeline package actually depends on, the same way it depends on
-  `EtlPipelines.Extensions.Sql` or `EtlPipelines.Hosting` today. Does it get `PackAsTool=true` the way a
-  sample does? **No** — it's a library other pipeline processes reference, not itself a runnable
-  pipeline; only actual pipeline applications (samples today, real ones later) get that treatment, and
-  it would need its own explicit opt-in here since it doesn't match the `EtlPipelines.Samples.*` naming
-  condition `src/Samples.Build.props` keys off. A separate new project since this plan was first
-  written, the `EtlPipelines` meta-package (`src/EtlPipelines/EtlPipelines.csproj`), references every
-  connector via a single `EtlPipelines.Extensions.*` wildcard `ProjectReference` — `GrpcClient` doesn't
-  match that glob either (it isn't a connector), so it stays outside the meta-package too, referenced
-  only directly by whatever depends on it.
+- **`EtlPipelines.slnx`** gains two more `<Folder>` blocks, `/server/` and `/agent/`, each listing
+  `<Project>` entries the same way `/extensions/` and `/samples/` already do — no `<File>` entry for a
+  `Directory.Build.props`, because there isn't one:
+    - `src/EtlPipelines.Server/` — the gRPC host (`Microsoft.NET.Sdk.Web`, first project in the repo to
+      use it), `OutputType=Exe`.
+    - `src/EtlPipelines.Server.Database/` — EF Core layer, a library.
+    - `src/EtlPipelines.Agent/` — generic host + `BackgroundService`, `OutputType=Exe`.
+    - `src/EtlPipelines.Agent.GrpcClient/` — a library.
+- **New file: `src/ServerAgent.Build.props`**, imported unconditionally from `src/Directory.Build.props`
+  right alongside the existing `<Import Project="Samples.Build.props" />` — the same naming-convention
+  mechanism Phase 1 already established for samples, applied to this prefix instead:
+  ```xml
+  <Project>
+    <!--
+      EtlPipelines.Server, .Server.Database, .Agent and .Agent.GrpcClient are internal deployables -
+      Docker images, never a package anything outside this repo references - so none of them packs,
+      unlike everything else under src/.
+    -->
+    <PropertyGroup Condition="$(MSBuildProjectName.StartsWith('EtlPipelines.Server')) OR $(MSBuildProjectName.StartsWith('EtlPipelines.Agent'))">
+      <IsPackable>false</IsPackable>
+      <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    </PropertyGroup>
 
-**Only `EtlPipelines.GrpcClient` ships as a library package to NuGet, alongside the existing
-`EtlPipelines.*` connectors.** `Server`, `Server.Database`, `Agent`, `Agent.GrpcClient` are internal
-deployables (Docker images), not packages anything outside this repo references — leave them
-`IsPackable=false` like the folder default.
+    <!-- Only the two hosts are runnable; .Server.Database and .Agent.GrpcClient stay libraries. -->
+    <PropertyGroup Condition="'$(MSBuildProjectName)' == 'EtlPipelines.Server' OR '$(MSBuildProjectName)' == 'EtlPipelines.Agent'">
+      <OutputType>Exe</OutputType>
+    </PropertyGroup>
+  </Project>
+  ```
+- **Test projects follow the same rule**: `tests/EtlPipelines.Server.Tests/`,
+  `tests/EtlPipelines.Server.Database.Tests/`, `tests/EtlPipelines.Agent.Tests/` and so on sit directly
+  under `tests/` — no new folder needed there either, they append to the existing `<Folder Name="/tests/">`
+  block in `EtlPipelines.slnx` alongside `EtlPipelines.Extensions.*.Tests` and `EtlPipelines.Samples.Tests`,
+  inheriting the one `tests/Directory.Build.props` unchanged.
+- **`src/EtlPipelines.GrpcClient/`** needs no new treatment at all — it already sits under `src/` and
+  already gets `src/Directory.Build.props`'s ordinary connector-package defaults
+  (`IsPackable=true`, `GenerateDocumentationFile=true`), which is exactly right: it's the one project of
+  the five a third party's pipeline package actually depends on, the same way it depends on
+  `EtlPipelines.Extensions.Sql` or `EtlPipelines.Hosting` today, and packs like any of them. Does it get
+  `PackAsTool=true` the way a sample does? **No** — it's a library other pipeline processes reference,
+  not itself a runnable pipeline, and it doesn't match either the `EtlPipelines.Samples.*` or
+  `EtlPipelines.Server*`/`EtlPipelines.Agent*` naming conditions those props files key off, so nothing
+  needs to specifically exclude it. A separate new project since this plan was first written, the
+  `EtlPipelines` meta-package (`src/EtlPipelines/EtlPipelines.csproj`), references every connector via a
+  single `EtlPipelines.Extensions.*` wildcard `ProjectReference` — `GrpcClient` doesn't match that glob
+  either (it isn't a connector), so it stays outside the meta-package too, referenced only directly by
+  whatever depends on it.
 
-A new root-level `/docker/` folder (no `.csproj`, not a solution folder) holds `docker-compose.yml`,
-`Dockerfile.server`, `Dockerfile.agent`.
+A new root-level `/docker/` folder (no `.csproj`, not a solution folder, and not code — the one
+top-level addition this phase actually needs on disk) holds `docker-compose.yml`, `Dockerfile.server`,
+`Dockerfile.agent`.
+
+## API versioning
+
+Every proto starts versioned, `v1`, rather than being versioned only once a `v2` is first needed — the
+one-way door here is the *absence* of a version, not its presence: a `PipelineExecutionService` with no
+version segment cannot later grow a `v2` without either breaking every existing client's package/service
+name or living with an asymmetric `PipelineExecutionService` next to a `PipelineExecutionServiceV2`.
+Starting at `v1` costs nothing (Phase 2 is greenfield either way) and avoids ever having to make that
+choice.
+
+**Shape, for all three services alike:**
+
+- **File path carries the version**: `protos/v1/pipeline_execution.proto`,
+  `protos/v1/agent_execution.proto`, `protos/v1/management.proto`. A future `v2` of one of them is a
+  sibling file under `protos/v2/`, not an edit to the `v1` one.
+- **`package` carries the version**, last segment: `etlpipelines.pipeline_execution.v1`,
+  `etlpipelines.agent_execution.v1`, `etlpipelines.management.v1`. This is what actually matters at
+  runtime — a gRPC method's wire path is `/<package>.<Service>/<Method>`, so `v1` and a future `v2`
+  package resolve to entirely distinct, non-colliding endpoints without either service needing to know
+  the other exists.
+- **`option csharp_namespace` is set explicitly** (`EtlPipelines.PipelineExecution.V1`, and so on) rather
+  than left to `protoc`'s default derivation from `package` — the default would produce
+  `Etlpipelines.PipelineExecution.V1` (lowercase `p`), which is legal but reads as a typo next to every
+  other `EtlPipelines.*` namespace in this repo.
+
+**What a `v2` looks like, when one is actually needed:** add `protos/v2/<name>.proto` with `package
+etlpipelines.<name>.v2` and its own `csharp_namespace`; `Server` hosts both `V1.PipelineExecutionService`
+and `V2.PipelineExecutionService` (ASP.NET Core gRPC services are just services — nothing about hosting
+two versions of one simultaneously is special-cased or harder than hosting two unrelated ones); a method
+`v2` obsoletes gets `option deprecated = true` in the `v1` file rather than being deleted, so an
+old `EtlPipelines.GrpcClient` embedded in an already-installed, already-running pipeline package keeps
+working un-reinstalled. Removing `v1` entirely is a deliberate, separate decision for whenever nothing
+still calls it — not a step of adding `v2`.
 
 ### New central package versions
 
@@ -381,20 +364,27 @@ A new root-level `/docker/` folder (no `.csproj`, not a solution folder) holds `
 | `Grpc.Net.ClientFactory`, `Grpc.Net.Client`, `Google.Protobuf`, `Grpc.Tools` | GrpcClient, Agent.GrpcClient | typed client codegen via `AddGrpcClient` |
 | `Microsoft.EntityFrameworkCore`, `Npgsql.EntityFrameworkCore.PostgreSQL`, `Microsoft.EntityFrameworkCore.Design` | Server.Database | Postgres, `dotnet ef migrations` |
 | `Microsoft.AspNetCore.DataProtection` | Server | secrets-at-rest, key ring on the `server-cache` volume |
-| `NuGet.Protocol`, `NuGet.Versioning` | Server only | browsing/resolving packages across the configured feed list for `ListAvailablePackages`/`ListUpdates` — metadata only. The Agent needs **no** NuGet-client library at all: per Phase 1, installing a package is just shelling out to `dotnet tool install --tool-path ... --add-source <feed>`, which already does download+extract+shim through the SDK itself. |
+| `NuGet.Protocol`, `NuGet.Versioning` | Server only | browsing/resolving packages against the one `bagetter` feed for `ListAvailablePackages`/`ListUpdates` — metadata only, and whatever `bagetter` itself proxies through is invisible to this beyond it showing up in the results. The Agent needs **no** NuGet-client library at all: per Phase 1, installing a package is just shelling out to `dotnet tool install --tool-path ... --add-source <feed>`, which already does download+extract+shim through the SDK itself. |
 
 ## Phase 2 — Scaffolding and the proto surface
 
 Stand up the five server/agent projects (building clean under `TreatWarningsAsErrors=true`, no network
 code yet) and the first-cut `.proto` contracts everything else codegens against.
 
-**Three services, not one** — `SERVER.md` conflates every caller into one vague "GRPC client," but
-there are three genuinely different trust boundaries:
+**Three services, not one.** A single undifferentiated "GRPC client" was the original starting point,
+but there are three genuinely different trust boundaries, and folding them into one service would mean
+every caller sees every method — an arbitrary third-party pipeline process included, which is exactly
+who should never see `AgentService.RegisterAgent` or `ManagementService.SetConfigurationEntry`:
 
-1. **`pipeline_execution.proto`** → `PipelineExecutionService`, consumed by `EtlPipelines.GrpcClient`
-   from *inside an arbitrary third-party pipeline process*. Narrowest surface — authenticated later by
-   a single-use session id scoped to exactly one run, never a broader credential.
+1. **`protos/v1/pipeline_execution.proto`** → `PipelineExecutionService`, consumed by
+   `EtlPipelines.GrpcClient` from *inside an arbitrary third-party pipeline process*. Narrowest surface
+   — authenticated later by a single-use session id scoped to exactly one run, never a broader
+   credential.
    ```protobuf
+   syntax = "proto3";
+   package etlpipelines.pipeline_execution.v1;
+   option csharp_namespace = "EtlPipelines.PipelineExecution.V1";
+
    service PipelineExecutionService {
      rpc GetConfiguration(GetConfigurationRequest) returns (GetConfigurationResponse);
      rpc ReportStageResult(ReportStageResultRequest) returns (Ack);
@@ -403,9 +393,14 @@ there are three genuinely different trust boundaries:
    }
    message GetConfigurationResponse { map<string, string> entries = 1; } // flat IConfiguration keys, e.g. "ConnectionStrings:sales"
    ```
-2. **`agent_execution.proto`** → `AgentService`, consumed by `EtlPipelines.Agent.GrpcClient`. Your own
-   infrastructure, a separate process/machine. Server-streaming `Subscribe` so the agent doesn't poll:
+2. **`protos/v1/agent_execution.proto`** → `AgentService`, consumed by `EtlPipelines.Agent.GrpcClient`.
+   Your own infrastructure, a separate process/machine. Server-streaming `Subscribe` so the agent
+   doesn't poll:
    ```protobuf
+   syntax = "proto3";
+   package etlpipelines.agent_execution.v1;
+   option csharp_namespace = "EtlPipelines.AgentExecution.V1";
+
    service AgentService {
      rpc RegisterAgent(RegisterAgentRequest) returns (RegisterAgentResponse);
      rpc Heartbeat(AgentHeartbeatRequest) returns (Ack);
@@ -414,8 +409,12 @@ there are three genuinely different trust boundaries:
      rpc ReportExecutionStatus(ReportExecutionStatusRequest) returns (Ack); // started/exited/resource sample
    }
    ```
-3. **`management.proto`** → `ManagementService`, the end-user/API surface (no auth in phase 1):
+3. **`protos/v1/management.proto`** → `ManagementService`, the end-user/API surface (no auth in phase 1):
    ```protobuf
+   syntax = "proto3";
+   package etlpipelines.management.v1;
+   option csharp_namespace = "EtlPipelines.Management.V1";
+
    service ManagementService {
      rpc ListInstalledPipelines(Empty) returns (ListInstalledPipelinesResponse);
      rpc ListAvailablePackages(ListAvailablePackagesRequest) returns (ListAvailablePackagesResponse);
@@ -429,6 +428,9 @@ there are three genuinely different trust boundaries:
      rpc SetConfigurationEntry(SetConfigurationEntryRequest) returns (Ack);
    }
    ```
+
+See "API versioning," above, for why every one of these carries a `v1` from day one and what changes
+the day a `v2` of any single one of them is actually needed.
 
 **Tests:** one TUnit smoke test per new test project asserting the generated types exist and the
 solution builds. **Verification:** `dotnet build --configuration Release` clean.
@@ -448,14 +450,15 @@ Runs                    Id (Guid = the session id), PipelineId FK, AgentId FK nu
 StageResults            Id, RunId FK, Sequence, Name, RowsIn, RowsOut, RowsFailed, ElapsedMs, ErrorCode, ErrorDescription
 AgentResourceSamples    Id, RunId FK, AgentId FK, SampledAt, CpuPercent, WorkingSetBytes
 ConfigurationEntries    Id, Key (colon-path, e.g. "ConnectionStrings:sales"), EncryptedValue (bytea), UpdatedAt
-NuGetFeeds              Id, Url, Ordinal   -- the configurable feed list, seeded with the local bagetter URL
+NuGetFeeds              Id, Url, Ordinal   -- always exactly one row, the local bagetter URL; Ordinal
+                        kept for a possible future multi-feed phase, unused while this table has one row
 ```
 
 `ConfigurationEntries` is a flat key-value table mirroring `IConfiguration`'s own colon-path shape
 deliberately — it's what lets `GetConfigurationResponse.entries` (Phase 2) feed straight into a
 `ConfigurationProvider` with zero translation and zero knowledge of any connector's section shape
 (Phase 6). `Pipelines` is a child of `PackageVersions`, not `Packages` directly, because
-`Samples.ArchiveToDatabase` already proves one package can register more than one pipeline
+`EtlPipelines.Samples.ArchiveToDatabase` already proves one package can register more than one pipeline
 (`build-feed` and `archive`) — `ListInstalledPipelines`/`ExecutePipeline` both operate at pipeline-name
 granularity, matching how `PipelineRunner.Find(name)`
 (`src/EtlPipelines.Hosting/PipelineRunner.cs`) already does a linear scan by name within one process.
@@ -467,23 +470,28 @@ granularity, matching how `PipelineRunner.Find(name)`
   `EtlPipelines.Extensions.*` rename; the class itself is unchanged) and its
   `[ClassDataSource<T>(Shared = SharedType.PerAssembly)]` pairing exactly.
 
-**Verification:** `dotnet ef migrations add InitialCreate -p server/EtlPipelines.Server.Database`,
+**Verification:** `dotnet ef migrations add InitialCreate -p src/EtlPipelines.Server.Database`,
 Docker-tagged tests green locally.
 
 ## Phase 4 — `EtlPipelines.Server`: catalog and management API (no agent yet)
 
 `ManagementService.ListAvailablePackages`/`ListInstalledPipelines`/`ListUpdates`/
-`SetConfigurationEntry` working end to end against `Server.Database` and the real feed list, for
-*metadata only*. `InstallPackage`/`ExecutePipeline` stubbed to fail with "no agents available" until
+`SetConfigurationEntry` working end to end against `Server.Database` and the real `bagetter` instance,
+for *metadata only*. `InstallPackage`/`ExecutePipeline` stubbed to fail with "no agents available" until
 Phase 5.
 
-**Key types:** `NuGetFeedClient` (wraps `NuGet.Protocol`'s search/find-package resources across every
-URL in the `NuGetFeeds` table — browse only, no download here), `PackageCatalogService`,
+**Key types:** `NuGetFeedClient` (wraps `NuGet.Protocol`'s search/find-package resources against the
+single `bagetter` URL in the `NuGetFeeds` table — browse only, no download here; whatever `bagetter`
+itself proxies upstream just shows up in the results, transparently), `PackageCatalogService`,
 `SecretsStore` (wraps `IDataProtector` + `ConfigurationEntries`, `Protect`/`Unprotect` on
 write/read — key ring via `PersistKeysToFileSystem` on the path that becomes the `server-cache` volume
 in Phase 7).
 
-**Docker Compose:** add `postgres` and `nuget` (bagetter) services with named volumes.
+**Docker Compose:** add `postgres` and `nuget` (bagetter) services with named volumes. `nuget`'s
+compose definition also runs (or is seeded by) a one-shot step pushing Phase 1's packed samples to it,
+so `docker compose up` produces a `bagetter` that already has something installable — see Phase 7's
+"Bagetter seeding," which covers exactly this, including why upstream proxying stays off unless an
+operator turns it on.
 
 **Tests:** fast tests with a mocked `NuGetFeedClient`/`IDataProtector`; `[Category("Docker")]` tests
 for the full `ManagementService` surface against a real Postgres container.
@@ -567,18 +575,18 @@ a `WorkItem` on an agent's `Subscribe` stream), `RunStatusStore`.
 `ActivitySource`. **The full-stack `[Category("Docker")]` end-to-end test belongs here, not later** —
 this is the first phase where catalog, agent, process launch, config pull, and progress reporting all
 exist simultaneously; deferring it risks a wiring mistake between phases going uncaught. Take one of
-Phase 1's already-packaged samples (`Samples.CsvToDatabase` — already proven against five real database
-engines), add a `ProjectReference` to `EtlPipelines.GrpcClient` for this test build, push to bagetter,
-install, `ExecutePipeline`, poll `StreamRunProgress`, assert `Runs`/`StageResults` match what
-`tests/EtlPipelines.Samples.Tests` already expects for that sample.
+Phase 1's already-packaged samples (`EtlPipelines.Samples.CsvToDatabase` — already proven against five
+real database engines), add a `ProjectReference` to `EtlPipelines.GrpcClient` for this test build, push
+to bagetter, install, `ExecutePipeline`, poll `StreamRunProgress`, assert `Runs`/`StageResults` match
+what `tests/EtlPipelines.Samples.Tests` already expects for that sample.
 
 **Verification:** the E2E test above; manual smoke test with `grpcurl` + `docker compose logs -f`.
 
 ## Phase 7 — Docker Compose hardening and image build
 
-`SERVER.md`'s compose file, finished: `Dockerfile.server`, `Dockerfile.agent`, all four volumes, health
-checks, restart policies. Sequenced after Phase 6 deliberately — building images against a still-moving
-gRPC surface means rebuilding every phase; doing it once here is cheaper.
+The compose file, finished: `Dockerfile.server`, `Dockerfile.agent`, all four volumes, health checks,
+restart policies. Sequenced after Phase 6 deliberately — building images against a still-moving gRPC
+surface means rebuilding every phase; doing it once here is cheaper.
 
 ```yaml
 services:
@@ -591,12 +599,24 @@ services:
 `server-cache` also holds the Data Protection key ring — it must be a durable volume, since losing it
 makes every encrypted `ConfigurationEntries.EncryptedValue` unrecoverable.
 
-**Verification:** `docker compose up --build`, all four containers healthy, Phase 6's smoke test
-re-run entirely against the built images.
+**Bagetter seeding.** `bagetter`'s image starts with nothing installed and no upstream configured — a
+package feed with zero packages isn't a useful default for `docker compose up` to hand someone. A
+`compose.yaml` step (a short-lived seed service, or a `command:` on `nuget` itself, decided when this
+phase is actually built) runs `dotnet nuget push` for every `.nupkg` Phase 1's `pack` step already
+produces for the six samples, once, against the freshly-started `nuget` service — so a first-run stack
+comes up with exactly the samples installable and nothing else. Proxying `bagetter` through to nuget.org
+(or another upstream) so it also serves real packages is `bagetter`'s own `Mirror`-style upstream
+configuration, off by default here, an operator opts into by editing `bagetter`'s own config — not
+something `docker-compose.yml`, `Server`, or this phase's seed step enables or is even aware of.
+
+**Verification:** `docker compose up --build`, all four containers healthy, `bagetter`'s own package
+listing shows the six seeded samples and nothing else, Phase 6's smoke test re-run entirely against the
+built images.
 
 ## Phase 8 — Reliability: heartbeat, crash recovery, cache eviction
 
-The operational gaps `SERVER.md` never addresses, made concrete now that the happy path is proven:
+The operational gaps nothing earlier in this plan addresses, made concrete now that the happy path is
+proven:
 
 - **Agent liveness** — `Agents.LastHeartbeatAt` plus a `Server`-side `BackgroundService` marking an
   agent `Offline` after N missed heartbeats, and any `Runs` it owned `AgentLost` rather than stuck
@@ -613,18 +633,21 @@ timeout window.
 
 ## Phase 9 — Documentation
 
-Per `SERVER.md`'s own closing instruction: DocFX, a `docs/` folder, README updates. Last, because
-documenting a still-moving target is wasted effort.
+DocFX, a `docs/` folder, README updates, this file itself brought in line with what actually shipped
+across every phase. Last, because documenting a still-moving target is wasted effort.
 
 ## Other gaps worth stating, not solving now
 
-- **What "update" means** is never defined by `SERVER.md`. Resolved here: `UpdatePackage` always
-  resolves to the latest stable version across the configured feeds (`InstallPackage` already takes an
-  explicit version for pinning). A `Run` already in flight against the old version is **not**
-  interrupted — old tool installs are kept on disk until nothing references them.
-- **No protocol/schema versioning** between `Server` and an older `Agent`/pipeline-process binary. Fine
-  for phase 1 (everything built and deployed together) — flagged for whichever later phase starts
-  rolling these out independently.
+- **What "update" means** is worth pinning down explicitly: `UpdatePackage` always resolves to the
+  latest stable version `bagetter` reports (`InstallPackage` already takes an explicit version for
+  pinning). A `Run` already in flight against the old version is **not** interrupted — old tool installs
+  are kept on disk until nothing references them.
+- **Protocol versioning exists at the proto level (`v1`, see "API versioning," above) but nothing yet
+  uses the room it leaves.** For phase 1 (everything built and deployed together) client and server are
+  always the same version anyway, so this is dormant capability, not a gap being carried forward
+  unaddressed — flagged for whichever later phase is the first to actually roll `Server` and an
+  `Agent`/pipeline-process binary out independently, and needs `v1` to keep serving one while `v2` is
+  introduced for the other.
 - **Every agent installs its own copy of a package** — the install-delegation decision removes
   double-installation on the *install-validation* path (one agent does it once), but execution-time
   installation still has no cache shared across agents. Deferred; a shared cache volume or server-side
