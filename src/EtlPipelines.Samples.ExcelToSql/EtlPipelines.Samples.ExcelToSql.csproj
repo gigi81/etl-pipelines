@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <Description>A hand-filled workbook loaded into a table, bad rows set aside.</Description>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\EtlPipelines.Core\EtlPipelines.Core.csproj" />
     <ProjectReference Include="..\EtlPipelines.Hosting\EtlPipelines.Hosting.csproj" />

@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <Description>One read of a source, an archive and a report out of it.</Description>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\EtlPipelines.Core\EtlPipelines.Core.csproj" />
     <ProjectReference Include="..\EtlPipelines.Hosting\EtlPipelines.Hosting.csproj" />

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    No ProjectReference to the sample this exercises: the point of this project is that the sample
+    is proven purely as an external process - packed, installed, and run the way a real user's shell
+    would - never loaded into this test assembly's own AppDomain the way EtlPipelines.Samples.Tests
+    does. See RepositoryPaths.cs for how the sample's .csproj is found without one.
+  -->
+  <ItemGroup>
+    <!--
+      Wraps the "dotnet pack"/"dotnet tool install"/installed-shim process chain - the same package
+      EtlPipelines.Extensions.Cli already depends on for running an external command as a stage.
+    -->
+    <PackageReference Include="CliWrap" />
+  </ItemGroup>
+
+</Project>

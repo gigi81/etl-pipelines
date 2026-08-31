@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <Description>A CSV file filtered and reshaped into a workbook.</Description>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\EtlPipelines.Core\EtlPipelines.Core.csproj" />
     <ProjectReference Include="..\EtlPipelines.Hosting\EtlPipelines.Hosting.csproj" />
