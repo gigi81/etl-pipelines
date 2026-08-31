@@ -16,6 +16,15 @@
     <Project Path="src/EtlPipelines.Abstractions/EtlPipelines.Abstractions.csproj" />
     <Project Path="src/EtlPipelines.Core/EtlPipelines.Core.csproj" />
     <Project Path="src/EtlPipelines.Hosting/EtlPipelines.Hosting.csproj" />
+    <Project Path="src/EtlPipelines.GrpcClient/EtlPipelines.GrpcClient.csproj" />
+  </Folder>
+  <Folder Name="/server/">
+    <Project Path="src/EtlPipelines.Server/EtlPipelines.Server.csproj" />
+    <Project Path="src/EtlPipelines.Server.Database/EtlPipelines.Server.Database.csproj" />
+  </Folder>
+  <Folder Name="/agent/">
+    <Project Path="src/EtlPipelines.Agent/EtlPipelines.Agent.csproj" />
+    <Project Path="src/EtlPipelines.Agent.GrpcClient/EtlPipelines.Agent.GrpcClient.csproj" />
   </Folder>
   <Folder Name="/extensions/">
     <Project Path="src/EtlPipelines.Extensions.Cli/EtlPipelines.Extensions.Cli.csproj" />
@@ -34,6 +43,8 @@
   </Folder>
   <Folder Name="/tests/">
     <File Path="tests/Directory.Build.props" />
+    <Project Path="tests/EtlPipelines.Agent.Tests/EtlPipelines.Agent.Tests.csproj" />
+    <Project Path="tests/EtlPipelines.Agent.GrpcClient.Tests/EtlPipelines.Agent.GrpcClient.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Core.Tests/EtlPipelines.Core.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Extensions.Cli.Tests/EtlPipelines.Extensions.Cli.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Extensions.Csv.Tests/EtlPipelines.Extensions.Csv.Tests.csproj" />
@@ -43,8 +54,11 @@
     <Project Path="tests/EtlPipelines.Extensions.Json.Tests/EtlPipelines.Extensions.Json.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Extensions.Sql.Databases.Tests/EtlPipelines.Extensions.Sql.Databases.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Extensions.Sql.Tests/EtlPipelines.Extensions.Sql.Tests.csproj" />
+    <Project Path="tests/EtlPipelines.GrpcClient.Tests/EtlPipelines.GrpcClient.Tests.csproj" />
     <Project Path="tests/EtlPipelines.PipelinePackaging.Tests/EtlPipelines.PipelinePackaging.Tests.csproj" />
     <Project Path="tests/EtlPipelines.Samples.Tests/EtlPipelines.Samples.Tests.csproj" />
+    <Project Path="tests/EtlPipelines.Server.Tests/EtlPipelines.Server.Tests.csproj" />
+    <Project Path="tests/EtlPipelines.Server.Database.Tests/EtlPipelines.Server.Database.Tests.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="src/EtlPipelines.Samples.ArchiveToDatabase/EtlPipelines.Samples.ArchiveToDatabase.csproj" />

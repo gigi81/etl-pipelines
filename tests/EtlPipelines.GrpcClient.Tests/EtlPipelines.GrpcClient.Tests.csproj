@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\EtlPipelines.GrpcClient\EtlPipelines.GrpcClient.csproj" />
+  </ItemGroup>
+
+</Project>

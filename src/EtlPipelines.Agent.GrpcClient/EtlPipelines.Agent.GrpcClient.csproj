@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Phase 2 scaffolding only: the proto reference below is everything this project has for now -
+    codegen produces the request/response/client/WorkItem types, but no code here calls them yet.
+    Phase 5 adds AgentRegistration (the BackgroundService that holds Subscribe open), the real
+    consumer.
+  -->
+  <ItemGroup>
+    <Protobuf Include="..\..\protos\v1\agent_execution.proto" GrpcServices="Client" ProtoRoot="..\..\protos" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Grpc.Net.ClientFactory" />
+    <PackageReference Include="Grpc.Tools" />
+  </ItemGroup>
+
+</Project>

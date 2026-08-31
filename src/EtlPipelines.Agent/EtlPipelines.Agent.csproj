@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Generic host, not the Web SDK: the agent never listens for inbound connections - it only ever
+    calls out to EtlPipelines.Server (AgentService.Subscribe, Phase 5) and shells out to `dotnet
+    tool install`/the installed pipeline shim (Phase 5).
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+
+</Project>
