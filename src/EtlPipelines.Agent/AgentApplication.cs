@@ -1,3 +1,6 @@
+using EtlPipelines.Agent.GrpcClient;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace EtlPipelines.Agent;
@@ -6,7 +9,8 @@ namespace EtlPipelines.Agent;
 /// <remarks>
 /// Split out from <c>Program.cs</c> the same way <c>EtlPipelines.Server.ServerApplication</c> is,
 /// so <see cref="EtlPipelines.Agent.Tests"/> can build it and inspect it without ever calling
-/// <c>RunAsync()</c>.
+/// <c>RunAsync()</c>/<c>StartAsync()</c> - <see cref="AgentRegistration"/> is a hosted service, so
+/// it (and the real gRPC connection it opens) never runs merely from <see cref="Build"/> itself.
 /// </remarks>
 public static class AgentApplication
 {
@@ -15,11 +19,18 @@ public static class AgentApplication
     {
         var builder = Host.CreateApplicationBuilder(args);
 
-        // Phase 5 registers AgentRegistration (the BackgroundService that holds
-        // AgentService.Subscribe open and receives work items), PackageInstaller,
-        // PipelineProcessRunner and ResourceMonitor here. Phase 2 only stands the host up so it
-        // builds clean under the same TreatWarningsAsErrors=true as everything else - no network
-        // code yet.
+        var agentOptionsSection = builder.Configuration.GetSection(AgentOptions.SectionName);
+        builder.Services.Configure<AgentOptions>(agentOptionsSection);
+
+        // AddAgentGrpcClient needs the address now, not lazily through IOptions<AgentOptions> -
+        // bound into a throwaway instance so its default (AgentOptions.ServerUrl's own property
+        // initializer) is the one and only place that default lives, rather than duplicated here.
+        var agentOptions = new AgentOptions();
+        agentOptionsSection.Bind(agentOptions);
+        builder.Services.AddAgentGrpcClient(agentOptions.ServerUrl);
+
+        builder.Services.AddSingleton<PackageInstaller>();
+        builder.Services.AddHostedService<AgentRegistration>();
 
         return builder.Build();
     }

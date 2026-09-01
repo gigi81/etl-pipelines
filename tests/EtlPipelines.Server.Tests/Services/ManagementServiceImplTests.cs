@@ -1,4 +1,5 @@
 using EtlPipelines.Management.V1;
+using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database.Entities;
 using EtlPipelines.Server.Secrets;
@@ -79,7 +80,8 @@ public class ManagementServiceImplTests
 
         var service = new ManagementServiceImpl(
             new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()),
-            new SecretsStore(context, Mock.Of<IDataProtectionProvider>()));
+            new SecretsStore(context, Mock.Of<IDataProtectionProvider>()),
+            new AgentConnectionRegistry());
 
         //act
         var response = await service.ListInstalledPipelines(new Empty(), TestServerCallContext());
@@ -103,7 +105,8 @@ public class ManagementServiceImplTests
 
         var service = new ManagementServiceImpl(
             new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()),
-            new SecretsStore(context, protectionProvider.Object));
+            new SecretsStore(context, protectionProvider.Object),
+            new AgentConnectionRegistry());
 
         //act
         var ack = await service.SetConfigurationEntry(
@@ -120,7 +123,8 @@ public class ManagementServiceImplTests
         var context = SqliteServerDbContext.Create();
         return Task.FromResult(new ManagementServiceImpl(
             new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()),
-            new SecretsStore(context, Mock.Of<IDataProtectionProvider>())));
+            new SecretsStore(context, Mock.Of<IDataProtectionProvider>()),
+            new AgentConnectionRegistry()));
     }
 
     /// <summary>

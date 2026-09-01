@@ -7,14 +7,7 @@
     RPCs it needs.
   -->
   <ItemGroup>
-    <Protobuf Include="..\..\protos\v1\pipeline_execution.proto" GrpcServices="Server" ProtoRoot="..\..\protos" />
-    <Protobuf Include="..\..\protos\v1\agent_execution.proto" GrpcServices="Server" ProtoRoot="..\..\protos" />
-    <Protobuf Include="..\..\protos\v1\management.proto" GrpcServices="Server" ProtoRoot="..\..\protos" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="Grpc.AspNetCore" />
-    <PackageReference Include="Grpc.Tools" />
     <!--
       Phase 4: NuGet.Protocol/NuGet.Versioning browse the one bagetter feed for
       ListAvailablePackages/ListUpdates - metadata only, never a download. Microsoft.AspNetCore.
@@ -28,6 +21,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EtlPipelines.Server.Database\EtlPipelines.Server.Database.csproj" />
+    <!-- Generated proto types (messages, service base classes) - see that project's own comment. -->
+    <ProjectReference Include="..\EtlPipelines.Protos\EtlPipelines.Protos.csproj" />
   </ItemGroup>
 
 </Project>

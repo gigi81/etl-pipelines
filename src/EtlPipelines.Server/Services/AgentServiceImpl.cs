@@ -1,5 +1,11 @@
+using System.Threading.Channels;
 using EtlPipelines.AgentExecution.V1;
+using EtlPipelines.Server.Agents;
+using EtlPipelines.Server.Catalog;
+using EtlPipelines.Server.Database;
+using EtlPipelines.Server.Database.Entities;
 using Grpc.Core;
+using Microsoft.EntityFrameworkCore;
 
 namespace EtlPipelines.Server.Services;
 
@@ -9,29 +15,106 @@ namespace EtlPipelines.Server.Services;
 /// surface than <see cref="PipelineExecutionServiceImpl"/>.
 /// </summary>
 /// <remarks>
-/// Phase 2 scaffolding: every method exists so the full v1 surface is hosted and the solution
-/// builds clean, but none has real behaviour yet - <see cref="ServiceScaffolding.Unimplemented"/>
-/// is what every one of them returns until Phase 5 (registration, install delegation) and Phase 6
-/// (execution dispatch) fill them in.
+/// SERVER.md Phase 5: registration (<see cref="RegisterAgent"/>), liveness
+/// (<see cref="Heartbeat"/>), and the work-item dispatch loop
+/// (<see cref="Subscribe"/>/<see cref="ReportInstallResult"/>, via
+/// <see cref="AgentConnectionRegistry"/>) are real. <see cref="ReportExecutionStatus"/> stays
+/// <see cref="ServiceScaffolding.Unimplemented"/> - nothing calls it until Phase 6 actually
+/// dispatches an <c>ExecutePipeline</c> work item for an agent to run.
 /// </remarks>
-public sealed class AgentServiceImpl : AgentService.AgentServiceBase
+public sealed class AgentServiceImpl(ServerDbContext dbContext, AgentConnectionRegistry connections, PackageCatalogService catalogService)
+    : AgentService.AgentServiceBase
 {
     /// <inheritdoc />
-    public override Task<RegisterAgentResponse> RegisterAgent(RegisterAgentRequest request, ServerCallContext context) =>
-        throw ServiceScaffolding.Unimplemented();
+    public override async Task<RegisterAgentResponse> RegisterAgent(RegisterAgentRequest request, ServerCallContext context)
+    {
+        var agent = new Agent
+        {
+            Id = Guid.NewGuid(),
+            MachineName = request.MachineName,
+            Tags = request.Tags.ToList(),
+            Version = request.Version,
+            Status = "Online",
+            LastHeartbeatAt = DateTime.UtcNow,
+        };
+
+        dbContext.Agents.Add(agent);
+        await dbContext.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
+
+        return new RegisterAgentResponse { AgentId = agent.Id.ToString() };
+    }
 
     /// <inheritdoc />
-    public override Task<Ack> Heartbeat(AgentHeartbeatRequest request, ServerCallContext context) =>
-        throw ServiceScaffolding.Unimplemented();
+    public override async Task<Ack> Heartbeat(AgentHeartbeatRequest request, ServerCallContext context)
+    {
+        // A heartbeat from an agent id Server.Database has no row for (a restart wiped the
+        // in-memory registry, but not the agent process itself, which keeps heartbeating its old
+        // id) is silently ignored rather than an error - Phase 8 is what actually decides what
+        // "stale agent identity" should do; for now, nothing to update is not a failure.
+        var agentId = Guid.Parse(request.AgentId);
+        var agent = await dbContext.Agents
+            .SingleOrDefaultAsync(a => a.Id == agentId, context.CancellationToken)
+            .ConfigureAwait(false);
+
+        if (agent is not null)
+        {
+            agent.LastHeartbeatAt = DateTime.UtcNow;
+            agent.Status = "Online";
+            await dbContext.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
+        }
+
+        return new Ack();
+    }
 
     /// <inheritdoc />
-    public override Task Subscribe(
-        SubscribeRequest request, IServerStreamWriter<WorkItem> responseStream, ServerCallContext context) =>
-        throw ServiceScaffolding.Unimplemented();
+    public override async Task Subscribe(SubscribeRequest request, IServerStreamWriter<WorkItem> responseStream, ServerCallContext context)
+    {
+        // Unbounded: a slow-to-drain agent should never make ManagementService.InstallPackage's
+        // dispatch fail to enqueue - it only ever fails by timing out waiting for
+        // ReportInstallResult, which is the more meaningful failure to surface.
+        var channel = Channel.CreateUnbounded<WorkItem>();
+        connections.Connect(request.AgentId, channel);
+
+        try
+        {
+            await foreach (var workItem in channel.Reader.ReadAllAsync(context.CancellationToken).ConfigureAwait(false))
+            {
+                await responseStream.WriteAsync(workItem).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            // Reached on ordinary cancellation (the agent disconnected) as much as on a real
+            // fault - either way, this agent can no longer be dispatched to.
+            connections.Disconnect(request.AgentId);
+        }
+    }
 
     /// <inheritdoc />
-    public override Task<Ack> ReportInstallResult(ReportInstallResultRequest request, ServerCallContext context) =>
-        throw ServiceScaffolding.Unimplemented();
+    public override async Task<Ack> ReportInstallResult(ReportInstallResultRequest request, ServerCallContext context)
+    {
+        Guid? packageVersionId = null;
+
+        if (connections.TryGetPendingInstall(request.WorkItemId, out var pending))
+        {
+            packageVersionId = await catalogService.RecordInstallResultAsync(
+                pending.PackageId,
+                pending.Version,
+                request.Succeeded,
+                request.PipelineNames,
+                context.CancellationToken).ConfigureAwait(false);
+        }
+
+        connections.TryCompleteInstall(
+            request.WorkItemId,
+            new InstallDispatchResult(
+                request.Succeeded,
+                packageVersionId,
+                request.PipelineNames.ToList(),
+                request.Succeeded ? null : request.Error));
+
+        return new Ack();
+    }
 
     /// <inheritdoc />
     public override Task<Ack> ReportExecutionStatus(ReportExecutionStatusRequest request, ServerCallContext context) =>

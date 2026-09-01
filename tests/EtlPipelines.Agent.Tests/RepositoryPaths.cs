@@ -1,18 +1,15 @@
-namespace EtlPipelines.Server.Tests;
+namespace EtlPipelines.Agent.Tests;
 
 /// <summary>Finds paths under the repository root from wherever this test assembly happens to run.</summary>
 /// <remarks>
-/// The same small pattern <c>EtlPipelines.PipelinePackaging.Tests</c> and
-/// <c>EtlPipelines.Server.Database.Tests</c> use for the same reason - duplicated here rather than
-/// shared, matching how this repo's test projects generally keep their own copies of small
-/// fixtures.
+/// The same small pattern <c>EtlPipelines.PipelinePackaging.Tests</c> (Phase 1) and
+/// <c>EtlPipelines.Server.Database.Tests</c>/<c>EtlPipelines.Server.Tests</c> use for the same
+/// reason - duplicated here rather than shared, matching how this repo's test projects generally
+/// keep their own copies of small fixtures.
 /// </remarks>
 internal static class RepositoryPaths
 {
     private static readonly Lazy<string> Root = new(FindRoot);
-
-    /// <summary>The full path to <c>db</c> at the repository root - dbdeploy's own <c>--path</c>.</summary>
-    public static string DbDirectory => Path.Combine(Root.Value, "db");
 
     /// <summary>
     /// The full path to a project living directly under <c>src/</c>, e.g.

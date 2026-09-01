@@ -5,13 +5,32 @@
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Testcontainers.PostgreSql" />
-    <!-- Drives the globally-installed `dbdeploy` CLI - see ManagementServiceDockerTests. -->
+    <!-- Drives the globally-installed `dbdeploy` CLI - see SchemaDeployer. -->
     <PackageReference Include="CliWrap" />
     <PackageReference Include="Moq" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\EtlPipelines.Server\EtlPipelines.Server.csproj" />
+    <!--
+      The one end-to-end test in this project (InstallLoopDockerTests) runs a real Agent host
+      in-process alongside the real Server - the only place in this test project that needs the
+      agent side at all.
+    -->
+    <ProjectReference Include="..\..\src\EtlPipelines.Agent\EtlPipelines.Agent.csproj" />
+  </ItemGroup>
+
+  <!--
+    Same reasoning as EtlPipelines.Agent's own copy of this item: a ProjectReference does not roll
+    a referenced project's RuntimeHostConfigurationOption items into this project's own
+    runtimeconfig.json (only NuGet package references do that, via buildTransitive) - confirmed by
+    inspecting bin/.../EtlPipelines.Server.Tests.runtimeconfig.json after adding it only to
+    EtlPipelines.Agent.csproj and finding the entry missing here. This test process is what
+    actually needs it: InstallLoopDockerTests runs the real Agent host, and its gRPC calls, in
+    this same process.
+  -->
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport" Value="true" />
   </ItemGroup>
 
 </Project>

@@ -17,6 +17,7 @@
     <Project Path="src/EtlPipelines.Core/EtlPipelines.Core.csproj" />
     <Project Path="src/EtlPipelines.Hosting/EtlPipelines.Hosting.csproj" />
     <Project Path="src/EtlPipelines.GrpcClient/EtlPipelines.GrpcClient.csproj" />
+    <Project Path="src/EtlPipelines.Protos/EtlPipelines.Protos.csproj" />
   </Folder>
   <Folder Name="/server/">
     <Project Path="src/EtlPipelines.Server/EtlPipelines.Server.csproj" />
