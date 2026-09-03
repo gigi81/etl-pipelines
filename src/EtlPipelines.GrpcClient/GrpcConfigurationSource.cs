@@ -30,10 +30,17 @@ public sealed class GrpcConfigurationSource(PipelineExecutionService.PipelineExe
 /// <summary>The <see cref="ConfigurationProvider"/> <see cref="GrpcConfigurationSource"/> builds.</summary>
 public sealed class GrpcConfigurationProvider(PipelineExecutionService.PipelineExecutionServiceClient client, string sessionId) : ConfigurationProvider
 {
+    // A gRPC call with no deadline can hang indefinitely on a stalled connection (a server that
+    // never answers, a proxy that swallows the request) - this is the very first thing a run
+    // does, so a hang here would otherwise hang the whole process before it ever gets the chance
+    // to report anything back, with no failure anyone could see. Failing loudly beats that.
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
+
     /// <inheritdoc />
     public override void Load()
     {
-        var response = client.GetConfiguration(new GetConfigurationRequest { SessionId = sessionId });
+        var response = client.GetConfiguration(
+            new GetConfigurationRequest { SessionId = sessionId }, deadline: DateTime.UtcNow.Add(Timeout));
 
         foreach (var entry in response.Entries)
         {

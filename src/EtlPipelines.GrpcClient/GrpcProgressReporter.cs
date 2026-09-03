@@ -48,6 +48,12 @@ public sealed class GrpcProgressReporter : IDisposable
     // would collide with.
     private int _sequence = -1;
 
+    // A gRPC call with no deadline can hang indefinitely on a stalled connection - the OnActivityStopped
+    // catch below is what keeps a stalled server from taking down the pipeline, but a hang inside
+    // this call (rather than a fast failure) would still stall the pipeline process's own exit for
+    // just as long, which is exactly what that catch means to avoid.
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
+
     /// <summary>Begins listening to the runtime's activity source.</summary>
     public GrpcProgressReporter(
         PipelineExecutionService.PipelineExecutionServiceClient client, string sessionId, ILogger<GrpcProgressReporter> logger)
@@ -116,7 +122,7 @@ public sealed class GrpcProgressReporter : IDisposable
             ErrorDescription = failed ? activity.StatusDescription ?? string.Empty : string.Empty,
         };
 
-        _client.ReportStageResult(request);
+        _client.ReportStageResult(request, deadline: DateTime.UtcNow.Add(Timeout));
     }
 
     private void ReportRun(Activity activity)
@@ -141,7 +147,7 @@ public sealed class GrpcProgressReporter : IDisposable
             RowsFailed = stages.Sum(stage => stage.RowsFailed),
         };
 
-        _client.ReportRunResult(request);
+        _client.ReportRunResult(request, deadline: DateTime.UtcNow.Add(Timeout));
     }
 
     private static bool MovedRows(StageTotals stage) => stage.RowsIn > 0 || stage.RowsOut > 0 || stage.RowsFailed > 0;
