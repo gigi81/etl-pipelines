@@ -9,68 +9,21 @@ on:
 permissions:
   contents: read
 jobs:
-  # One job per image, each its own fresh runner - not three sequential `docker build`s in one
-  # job. Every other shape tried first (a single batched `docker compose build`, one `docker
-  # compose build <service>` step per image, plain `docker build`, `docker buildx build` against a
-  # freshly-created isolated builder) hit the identical failure: whichever build ran *third* in a
-  # job failed to read its own Dockerfile off disk at all ("transferring dockerfile: 2B done",
-  # "failed to solve: failed to read dockerfile: open Dockerfile.seed: no such file or
-  # directory"), regardless of which image that happened to be, despite that file being completely
-  # unremarkable on disk (plain ASCII, correct size, no BOM) and that exact path resolving
-  # correctly through `docker compose build --print` every time. A freshly-created isolated
-  # builder still hit it - ruling out stale builder/driver state - which points at something
-  # host-level in this runner's own environment specific to a third sequential heavy build within
-  # one job, not at this repo's own files or how they are invoked. A separate runner per image
-  # rules that whole class of problem out by construction, rather than continuing to guess at it.
-  build:
-    name: Build image
-    strategy:
-      fail-fast: false
-      matrix:
-        image: [server, agent, seed]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v7
-        with:
-          # This image's own build stage runs `dotnet publish`/`dotnet pack`, and Nerdbank.
-          # GitVersioning computes the version from the commit height - a shallow clone fails
-          # that outright, same reasoning as every other workflow's own fetch-depth: 0.
-          fetch-depth: 0
-      - name: Build ${{ matrix.image }} image
-        run: docker build --file docker/Dockerfile.${{ matrix.image }} --tag docker-${{ matrix.image }}:latest .
-      - name: Save ${{ matrix.image }} image
-        run: docker save docker-${{ matrix.image }}:latest --output docker-${{ matrix.image }}.tar
-      - name: Upload ${{ matrix.image }} image artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: docker-${{ matrix.image }}-image
-          path: docker-${{ matrix.image }}.tar
   compose:
-    name: docker compose up
-    needs: [build]
+    name: docker compose up --build
+    # Linux only, same reasoning as integration-tests.yml's own "Databases" job - a Docker engine
+    # is only available on the Linux runners.
     runs-on: ubuntu-latest
     steps:
-      # No fetch-depth: 0 here - this job only runs docker/docker-compose.yml against the images
-      # the build job above already produced, nothing here runs `dotnet publish`/`dotnet pack`
-      # itself.
       - name: Checkout sources
         uses: actions/checkout@v7
-      - name: Download image artifacts
-        uses: actions/download-artifact@v8
         with:
-          pattern: docker-*-image
-          path: images
-      # Each image the build job above tagged exactly as docker-compose.yml's own build.dockerfile
-      # entries would have tagged it themselves - `docker compose up` below, with no --build of
-      # its own, finds every one of them already loaded under the tag it would otherwise have
-      # built itself and uses it as-is.
-      - name: Load images
-        shell: bash
-        run: |
-          for image in server agent seed; do
-            docker load --input "images/docker-${image}-image/docker-${image}.tar"
-          done
+          # Every image built below runs `dotnet publish`/`dotnet pack` inside its own build
+          # stage, and Nerdbank.GitVersioning computes the version from the commit height - a
+          # shallow clone fails that outright ("GitException: Shallow clone lacks the objects
+          # required to calculate version height"), not merely with the wrong version, same
+          # reasoning as every other workflow's own fetch-depth: 0.
+          fetch-depth: 0
       # SERVER.md's own Phase 7 verification bullet, run for real: "docker compose up --build
       # against a genuinely fresh set of volumes, all four containers healthy" - a runner always
       # starts with none, so every run here already is that. --wait blocks until every service
@@ -79,9 +32,9 @@ jobs:
       # entrypoint runs `dbdeploy deploy` before the app itself ever starts, so a failed deploy
       # means server never reports healthy at all) and bagetter seeding (seed's own exit code) are
       # both proven by this one command succeeding, not asserted separately.
-      - name: docker compose up
+      - name: docker compose up --build
         working-directory: docker
-        run: docker compose up --wait --wait-timeout 600
+        run: docker compose up --build --wait --wait-timeout 600
       - name: docker compose ps
         if: always()
         working-directory: docker
