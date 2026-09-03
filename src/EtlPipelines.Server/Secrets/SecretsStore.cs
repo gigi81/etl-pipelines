@@ -68,4 +68,27 @@ public sealed class SecretsStore
 
         return entry is null ? null : Encoding.UTF8.GetString(_protector.Unprotect(entry.EncryptedValue));
     }
+
+    /// <summary>
+    /// Reads and decrypts every entry - what <c>PipelineExecutionService.GetConfiguration</c>
+    /// (SERVER.md Phase 6) hands a launched pipeline process, keyed exactly as
+    /// <c>ConfigurationEntries.Key</c> already stores them, for
+    /// <c>EtlPipelines.GrpcClient.GrpcConfigurationProvider</c> to materialize straight into
+    /// <see cref="Microsoft.Extensions.Configuration.IConfiguration"/> with no translation.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, string>> GetAllAsync(CancellationToken cancellationToken)
+    {
+        var entries = await _context.ConfigurationEntries
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var result = new Dictionary<string, string>(entries.Count, StringComparer.Ordinal);
+        foreach (var entry in entries)
+        {
+            result[entry.Key] = Encoding.UTF8.GetString(_protector.Unprotect(entry.EncryptedValue));
+        }
+
+        return result;
+    }
 }

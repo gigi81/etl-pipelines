@@ -1,6 +1,7 @@
 using EtlPipelines.Management.V1;
 using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Catalog;
+using EtlPipelines.Server.Runs;
 using EtlPipelines.Server.Secrets;
 using Grpc.Core;
 
@@ -14,17 +15,23 @@ namespace EtlPipelines.Server.Services;
 /// SERVER.md Phase 4 gave this the four metadata-only RPCs (<see cref="ListInstalledPipelines"/>,
 /// <see cref="ListAvailablePackages"/>, <see cref="ListUpdates"/>,
 /// <see cref="SetConfigurationEntry"/>), real end to end against <c>Server.Database</c> and the
-/// configured feed. Phase 5 adds <see cref="InstallPackage"/>, dispatched to a connected agent via
-/// <see cref="AgentConnectionRegistry"/> and awaited until that agent's own
-/// <c>ReportInstallResult</c> resolves it (or it times out). <see cref="ExecutePipeline"/> still
-/// fails with <see cref="ServiceScaffolding.NoAgentsAvailable"/> unconditionally - not because no
-/// agent is connected, but because dispatching real work (as opposed to an install) is Phase 6's
-/// job, not this one's. Everything else here is still Phase 2's
-/// <see cref="ServiceScaffolding.Unimplemented"/> stub - <see cref="UninstallPackage"/>,
-/// <see cref="UpdatePackage"/>, <see cref="StreamRunProgress"/> and <see cref="ListAgents"/> are
+/// configured feed. Phase 5 added <see cref="InstallPackage"/>, dispatched to a connected agent
+/// via <see cref="AgentConnectionRegistry"/> and awaited until that agent's own
+/// <c>ReportInstallResult</c> resolves it (or it times out). Phase 6 adds
+/// <see cref="ExecutePipeline"/> (dispatched via <see cref="RunDispatcher"/>, returning the new
+/// run's id immediately rather than waiting for it to finish - see that RPC's own proto comment)
+/// and <see cref="StreamRunProgress"/> (backed by <see cref="RunStatusStore"/>, published to by
+/// <see cref="PipelineExecutionServiceImpl"/> as the launched process reports in). Everything else
+/// here is still Phase 2's <see cref="ServiceScaffolding.Unimplemented"/> stub -
+/// <see cref="UninstallPackage"/>, <see cref="UpdatePackage"/> and <see cref="ListAgents"/> are
 /// none of them this phase's concern either.
 /// </remarks>
-public sealed class ManagementServiceImpl(PackageCatalogService catalogService, SecretsStore secretsStore, AgentConnectionRegistry connections)
+public sealed class ManagementServiceImpl(
+    PackageCatalogService catalogService,
+    SecretsStore secretsStore,
+    AgentConnectionRegistry connections,
+    RunDispatcher runDispatcher,
+    RunStatusStore statusStore)
     : ManagementService.ManagementServiceBase
 {
     // How long InstallPackage waits for the dispatched agent to report back before giving up -
@@ -135,13 +142,33 @@ public sealed class ManagementServiceImpl(PackageCatalogService catalogService, 
         throw ServiceScaffolding.Unimplemented();
 
     /// <inheritdoc />
-    public override Task<ExecutePipelineResponse> ExecutePipeline(ExecutePipelineRequest request, ServerCallContext context) =>
-        throw ServiceScaffolding.NoAgentsAvailable();
+    public override async Task<ExecutePipelineResponse> ExecutePipeline(ExecutePipelineRequest request, ServerCallContext context)
+    {
+        if (!Guid.TryParse(request.PipelineId, out var pipelineId))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, $"'{request.PipelineId}' is not a valid pipeline id."));
+        }
+
+        var runId = await runDispatcher.DispatchAsync(pipelineId, context.CancellationToken).ConfigureAwait(false);
+        return new ExecutePipelineResponse { RunId = runId.ToString() };
+    }
 
     /// <inheritdoc />
-    public override Task StreamRunProgress(
-        StreamRunProgressRequest request, IServerStreamWriter<RunProgressEvent> responseStream, ServerCallContext context) =>
-        throw ServiceScaffolding.Unimplemented();
+    public override async Task StreamRunProgress(
+        StreamRunProgressRequest request, IServerStreamWriter<RunProgressEvent> responseStream, ServerCallContext context)
+    {
+        if (!Guid.TryParse(request.RunId, out var runId))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, $"'{request.RunId}' is not a valid run id."));
+        }
+
+        var reader = statusStore.Subscribe(runId);
+
+        await foreach (var progressEvent in reader.ReadAllAsync(context.CancellationToken).ConfigureAwait(false))
+        {
+            await responseStream.WriteAsync(progressEvent).ConfigureAwait(false);
+        }
+    }
 
     /// <inheritdoc />
     public override Task<ListAgentsResponse> ListAgents(Empty request, ServerCallContext context) =>

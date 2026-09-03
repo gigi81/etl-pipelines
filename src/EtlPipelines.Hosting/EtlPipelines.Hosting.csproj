@@ -26,6 +26,16 @@
   <ItemGroup>
     <ProjectReference Include="..\EtlPipelines.Abstractions\EtlPipelines.Abstractions.csproj" />
     <ProjectReference Include="..\EtlPipelines.Core\EtlPipelines.Core.csproj" />
+    <!--
+      SERVER.md Phase 6: every application built on EtlPipelinesHost gets the session-id/server-url
+      options and the gRPC-backed configuration pull/progress reporting they turn on built in, not as a
+      separate opt-in package a sample has to reference and call itself - see
+      EtlPipelinesHost's own constructor/RunAsync. EtlPipelines.GrpcClient stays the home of the
+      actual gRPC pieces (GrpcConfigurationSource/Provider, GrpcProgressReporter) precisely so it
+      can be referenced on its own, by something that is not an EtlPipelinesHost application at
+      all - the dependency runs this direction, never the reverse.
+    -->
+    <ProjectReference Include="..\EtlPipelines.GrpcClient\EtlPipelines.GrpcClient.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -37,6 +47,9 @@
       because the host is the thing that supplies the real implementation.
     -->
     <PackageReference Include="TestableIO.System.IO.Abstractions.Wrappers" />
+    <!-- The typed PipelineExecutionServiceClient this host wires in by default - see the ProjectReference to EtlPipelines.GrpcClient above. -->
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Grpc.Net.ClientFactory" />
   </ItemGroup>
 
 </Project>

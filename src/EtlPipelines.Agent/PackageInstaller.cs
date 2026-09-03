@@ -95,6 +95,30 @@ public sealed class PackageInstaller(IOptions<AgentOptions> options)
     }
 
     /// <summary>
+    /// The installed shim's path for a package this agent has already installed via
+    /// <see cref="InstallAsync"/> - computed the same deterministic way Phase 1's own verification
+    /// did (<c>&lt;agent-cache&gt;/&lt;packageId&gt;/&lt;version&gt;/&lt;toolCommandName&gt;</c>),
+    /// for <c>ExecutePipeline</c> work items (SERVER.md Phase 6), which carry no feed url to
+    /// (re-)install from - only an agent that already validated this exact package/version can run
+    /// it, matching SERVER.md's own "every agent installs its own copy" limitation.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="packageId"/> <paramref name="version"/> is not installed in this agent's cache.
+    /// </exception>
+    public string GetInstalledShimPath(string packageId, string version)
+    {
+        var installDirectory = Path.Combine(options.Value.CacheDirectory, packageId, version);
+
+        if (!Directory.Exists(installDirectory))
+        {
+            throw new InvalidOperationException(
+                $"'{packageId}' {version} is not installed in this agent's cache ({installDirectory}) - install it before executing a pipeline from it.");
+        }
+
+        return FindShim(installDirectory);
+    }
+
+    /// <summary>
     /// <c>dotnet tool install --tool-path</c> drops the generated shim directly in the tool-path
     /// directory, alongside a <c>.store</c> subdirectory holding the actual package contents - the
     /// same discovery Phase 1's own packaging test uses, since the shim's exact name (casing,

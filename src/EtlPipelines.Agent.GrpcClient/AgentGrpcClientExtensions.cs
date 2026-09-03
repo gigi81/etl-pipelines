@@ -8,8 +8,8 @@ public static class AgentGrpcClientExtensions
 {
     /// <summary>
     /// Adds <see cref="AgentService.AgentServiceClient"/> to the container, pointed at
-    /// <paramref name="serverUrl"/> - the same URL <c>--server-url</c>
-    /// (<c>EtlPipelines.Hosting.EtlPipelinesHost.UseGrpcClient</c>, Phase 6) hands a launched
+    /// <paramref name="serverUrl"/> - the same URL the <c>--server-url</c> option
+    /// (built into <c>EtlPipelines.Hosting.EtlPipelinesHost</c> itself, Phase 6) hands a launched
     /// pipeline process, but resolved for the agent itself here at startup rather than read off a
     /// per-run command line.
     /// </summary>

@@ -5,10 +5,13 @@
   </PropertyGroup>
 
   <!--
-    Phase 2 scaffolding only: the generated client type from EtlPipelines.Protos is everything
-    this project has for now - no code here calls it yet. Phase 6 adds
-    GrpcConfigurationProvider/GrpcConfigurationSource and GrpcProgressReporter, the real
-    consumers, plus EtlPipelinesHost.UseGrpcClient(...) for the session-id/server-url options.
+    Phase 6: GrpcConfigurationProvider/GrpcConfigurationSource pull configuration once at startup;
+    GrpcProgressReporter forwards EtlDiagnostics' own traces as progress. Deliberately independent
+    of EtlPipelines.Hosting - EtlPipelinesHost wires both in by default for every application built
+    on it (see its own constructor/RunAsync), but nothing here needs to know EtlPipelinesHost
+    exists: this project is just the gRPC pieces, referenceable on their own by anything that
+    isn't an EtlPipelinesHost application at all. The dependency runs Hosting -> GrpcClient, never
+    the other way around.
   -->
   <ItemGroup>
     <PackageReference Include="Grpc.Net.Client" />
@@ -18,6 +21,12 @@
   <ItemGroup>
     <!-- Generated proto types (messages, typed client) - see that project's own comment. -->
     <ProjectReference Include="..\EtlPipelines.Protos\EtlPipelines.Protos.csproj" />
+    <!--
+      EtlDiagnostics.SourceName and its public tag-key constants (Stage, RunId, RowsIn/Out/Failed,
+      ErrorCode) - GrpcProgressReporter reads them straight off the runtime's own ActivitySource
+      rather than duplicating their literal string values.
+    -->
+    <ProjectReference Include="..\EtlPipelines.Core\EtlPipelines.Core.csproj" />
   </ItemGroup>
 
 </Project>

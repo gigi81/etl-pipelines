@@ -1,9 +1,11 @@
 using System.Threading.Channels;
 using EtlPipelines.AgentExecution.V1;
+using EtlPipelines.Management.V1;
 using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
+using EtlPipelines.Server.Runs;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,11 +20,15 @@ namespace EtlPipelines.Server.Services;
 /// SERVER.md Phase 5: registration (<see cref="RegisterAgent"/>), liveness
 /// (<see cref="Heartbeat"/>), and the work-item dispatch loop
 /// (<see cref="Subscribe"/>/<see cref="ReportInstallResult"/>, via
-/// <see cref="AgentConnectionRegistry"/>) are real. <see cref="ReportExecutionStatus"/> stays
-/// <see cref="ServiceScaffolding.Unimplemented"/> - nothing calls it until Phase 6 actually
-/// dispatches an <c>ExecutePipeline</c> work item for an agent to run.
+/// <see cref="AgentConnectionRegistry"/>) are real. Phase 6 adds <see cref="ReportExecutionStatus"/>
+/// itself, now that <c>RunDispatcher</c> actually sends an agent an <c>ExecutePipeline</c> work
+/// item to run - a fallback signal only: the launched process's own
+/// <c>PipelineExecutionService.ReportRunResult</c> is what normally settles a run's final state,
+/// so this only ever fills in <c>Runs</c> when the process exited without managing to report that
+/// itself.
 /// </remarks>
-public sealed class AgentServiceImpl(ServerDbContext dbContext, AgentConnectionRegistry connections, PackageCatalogService catalogService)
+public sealed class AgentServiceImpl(
+    ServerDbContext dbContext, AgentConnectionRegistry connections, PackageCatalogService catalogService, RunStatusStore statusStore)
     : AgentService.AgentServiceBase
 {
     /// <inheritdoc />
@@ -45,7 +51,7 @@ public sealed class AgentServiceImpl(ServerDbContext dbContext, AgentConnectionR
     }
 
     /// <inheritdoc />
-    public override async Task<Ack> Heartbeat(AgentHeartbeatRequest request, ServerCallContext context)
+    public override async Task<AgentExecution.V1.Ack> Heartbeat(AgentHeartbeatRequest request, ServerCallContext context)
     {
         // A heartbeat from an agent id Server.Database has no row for (a restart wiped the
         // in-memory registry, but not the agent process itself, which keeps heartbeating its old
@@ -63,7 +69,7 @@ public sealed class AgentServiceImpl(ServerDbContext dbContext, AgentConnectionR
             await dbContext.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
         }
 
-        return new Ack();
+        return new AgentExecution.V1.Ack();
     }
 
     /// <inheritdoc />
@@ -91,7 +97,7 @@ public sealed class AgentServiceImpl(ServerDbContext dbContext, AgentConnectionR
     }
 
     /// <inheritdoc />
-    public override async Task<Ack> ReportInstallResult(ReportInstallResultRequest request, ServerCallContext context)
+    public override async Task<AgentExecution.V1.Ack> ReportInstallResult(ReportInstallResultRequest request, ServerCallContext context)
     {
         Guid? packageVersionId = null;
 
@@ -113,10 +119,83 @@ public sealed class AgentServiceImpl(ServerDbContext dbContext, AgentConnectionR
                 request.PipelineNames.ToList(),
                 request.Succeeded ? null : request.Error));
 
-        return new Ack();
+        return new AgentExecution.V1.Ack();
     }
 
     /// <inheritdoc />
-    public override Task<Ack> ReportExecutionStatus(ReportExecutionStatusRequest request, ServerCallContext context) =>
-        throw ServiceScaffolding.Unimplemented();
+    public override async Task<AgentExecution.V1.Ack> ReportExecutionStatus(ReportExecutionStatusRequest request, ServerCallContext context)
+    {
+        // Malformed or unknown - nothing meaningful to record. Reported statuses are operationally
+        // low-stakes (the process's own ReportRunResult is authoritative), so this stays a no-op
+        // Ack rather than an error a well-behaved agent would have to handle.
+        if (!Guid.TryParse(request.SessionId, out var runId))
+        {
+            return new AgentExecution.V1.Ack();
+        }
+
+        var run = await dbContext.Runs
+            .SingleOrDefaultAsync(r => r.Id == runId, context.CancellationToken)
+            .ConfigureAwait(false);
+
+        if (run is null)
+        {
+            return new AgentExecution.V1.Ack();
+        }
+
+        switch (request.Status)
+        {
+            case ReportExecutionStatusRequest.Types.Status.Started:
+                run.StartedAt ??= DateTime.UtcNow;
+                if (run.Status is "Queued" or "Dispatched")
+                {
+                    run.Status = "Running";
+                }
+
+                break;
+
+            case ReportExecutionStatusRequest.Types.Status.Exited:
+                // The launched process's own ReportRunResult (PipelineExecutionServiceImpl) is
+                // what normally settles Status/ExitCode/row counts - only fill them in here when
+                // the process exited without ever managing to report that itself (crashed before
+                // it could, or the server never heard from it), so a run is never left "Running"
+                // forever once the agent already knows it is done. Left untouched if
+                // ReportRunResult already settled it first - which also means it already
+                // published its own RunCompleted, so this never publishes a second one for the
+                // same run.
+                if (run.Status is "Queued" or "Dispatched" or "Running")
+                {
+                    var succeeded = request.ExitCode == 0;
+                    run.Status = succeeded ? "Succeeded" : "Failed";
+                    run.CompletedAt ??= DateTime.UtcNow;
+                    run.ExitCode = request.ExitCode;
+
+                    // Without this, StreamRunProgress would wait forever for a RunCompleted event
+                    // that ReportRunResult was supposed to publish but never got the chance to -
+                    // this fallback is the only other place a run's terminal state is ever known,
+                    // so it has to close the stream out the same way.
+                    statusStore.PublishRunCompleted(run.Id, new RunCompleted
+                    {
+                        Status = succeeded ? RunCompleted.Types.Status.Succeeded : RunCompleted.Types.Status.Failed,
+                        ExitCode = request.ExitCode,
+                    });
+                }
+
+                break;
+
+            case ReportExecutionStatusRequest.Types.Status.ResourceSample:
+                dbContext.AgentResourceSamples.Add(new AgentResourceSample
+                {
+                    Id = Guid.NewGuid(),
+                    RunId = run.Id,
+                    AgentId = Guid.Parse(request.AgentId),
+                    SampledAt = DateTime.UtcNow,
+                    CpuPercent = request.CpuPercent,
+                    WorkingSetBytes = request.WorkingSetBytes,
+                });
+                break;
+        }
+
+        await dbContext.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
+        return new AgentExecution.V1.Ack();
+    }
 }

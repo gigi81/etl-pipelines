@@ -78,21 +78,25 @@ public sealed class AgentRegistration(
         }
     }
 
-    private async Task HandleWorkItemAsync(string agentId, WorkItem workItem, CancellationToken cancellationToken)
-    {
-        if (workItem.KindCase != WorkItem.KindOneofCase.InstallPackage)
+    private Task HandleWorkItemAsync(string agentId, WorkItem workItem, CancellationToken cancellationToken) =>
+        workItem.KindCase switch
         {
-            // ExecutePipeline work items are Phase 6's concern - nothing dispatches one yet, but
-            // this guards against silently doing nothing if one ever arrives before that phase
-            // lands, rather than failing in a confusing way somewhere downstream.
-            logger.LogWarning(
-                "Ignoring work item {WorkItemId} of kind {Kind} - not handled until a later phase.",
-                workItem.WorkItemId, workItem.KindCase);
-            return;
-        }
+            WorkItem.KindOneofCase.InstallPackage => HandleInstallPackageAsync(agentId, workItem.InstallPackage, workItem.WorkItemId, cancellationToken),
+            WorkItem.KindOneofCase.ExecutePipeline => HandleExecutePipelineAsync(agentId, workItem.ExecutePipeline, cancellationToken),
+            _ => LogUnhandledAsync(workItem),
+        };
 
-        var install = workItem.InstallPackage;
-        var report = new ReportInstallResultRequest { AgentId = agentId, WorkItemId = workItem.WorkItemId };
+    private Task LogUnhandledAsync(WorkItem workItem)
+    {
+        logger.LogWarning(
+            "Ignoring work item {WorkItemId} of kind {Kind} - not handled.", workItem.WorkItemId, workItem.KindCase);
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleInstallPackageAsync(
+        string agentId, InstallPackageWorkItem install, string workItemId, CancellationToken cancellationToken)
+    {
+        var report = new ReportInstallResultRequest { AgentId = agentId, WorkItemId = workItemId };
 
         try
         {
@@ -117,5 +121,72 @@ public sealed class AgentRegistration(
         }
 
         await client.ReportInstallResultAsync(report, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs an already-installed pipeline package's shim for <paramref name="work"/> - the run
+    /// itself reports its own configuration pull and progress straight to
+    /// <c>PipelineExecutionService</c> (via the launched process's own <c>EtlPipelines.GrpcClient</c>,
+    /// SERVER.md Phase 6), so this only ever tells the server when the process started and when it
+    /// exited, via <c>ReportExecutionStatus</c> - a fallback signal for a run whose process never
+    /// managed to report anything itself.
+    /// </summary>
+    private async Task HandleExecutePipelineAsync(string agentId, ExecutePipelineWorkItem work, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var shimPath = packageInstaller.GetInstalledShimPath(work.PackageId, work.PackageVersion);
+
+            await client.ReportExecutionStatusAsync(
+                new ReportExecutionStatusRequest
+                {
+                    AgentId = agentId,
+                    SessionId = work.SessionId,
+                    Status = ReportExecutionStatusRequest.Types.Status.Started,
+                },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            var exitCode = await PipelineProcessRunner
+                .RunAsync(shimPath, work.PipelineName, work.SessionId, work.ServerUrl, cancellationToken)
+                .ConfigureAwait(false);
+
+            await client.ReportExecutionStatusAsync(
+                new ReportExecutionStatusRequest
+                {
+                    AgentId = agentId,
+                    SessionId = work.SessionId,
+                    Status = ReportExecutionStatusRequest.Types.Status.Exited,
+                    ExitCode = exitCode,
+                },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Deliberately broad, same reasoning as HandleInstallPackageAsync's own catch: this
+            // work item's own failure (the package isn't in this agent's cache, the shim could
+            // not be started) never takes down the agent's ability to serve other work. Reported
+            // as an EXITED(-1) rather than left silent, so the run does not sit "Dispatched"
+            // forever with nobody ever having told the server it will never report in.
+            logger.LogWarning(
+                exception, "Execution failed for pipeline {PipelineName} ({PackageId} {Version})",
+                work.PipelineName, work.PackageId, work.PackageVersion);
+
+            try
+            {
+                await client.ReportExecutionStatusAsync(
+                    new ReportExecutionStatusRequest
+                    {
+                        AgentId = agentId,
+                        SessionId = work.SessionId,
+                        Status = ReportExecutionStatusRequest.Types.Status.Exited,
+                        ExitCode = -1,
+                    },
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception reportException) when (reportException is not OperationCanceledException)
+            {
+                logger.LogWarning(reportException, "Failed to report execution failure for session {SessionId}", work.SessionId);
+            }
+        }
     }
 }
