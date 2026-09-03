@@ -1,4 +1,5 @@
 using EtlPipelines.Server.Database;
+using EtlPipelines.Server.Database.Entities;
 using Microsoft.EntityFrameworkCore;
 using NuGet.Versioning;
 
@@ -89,13 +90,92 @@ public sealed class PackageCatalogService(ServerDbContext context, INuGetFeedCli
         return updates;
     }
 
-    private async Task<string?> GetFeedUrlAsync(CancellationToken cancellationToken) =>
+    /// <summary>
+    /// Resolves what version to install: <paramref name="requestedVersion"/> verbatim if given,
+    /// otherwise the feed's latest stable version - "empty resolves to latest stable" per
+    /// <c>InstallPackageRequest</c>'s own proto comment. Null if neither is available (nothing
+    /// requested and nothing stable on the feed).
+    /// </summary>
+    public async Task<string?> ResolveVersionAsync(string packageId, string? requestedVersion, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrEmpty(requestedVersion))
+        {
+            return requestedVersion;
+        }
+
+        var feedUrl = await GetFeedUrlAsync(cancellationToken).ConfigureAwait(false);
+        if (feedUrl is null)
+        {
+            return null;
+        }
+
+        var latest = await feedClient.GetLatestVersionAsync(feedUrl, packageId, cancellationToken).ConfigureAwait(false);
+        return latest?.ToNormalizedString();
+    }
+
+    /// <summary>
+    /// Every feed URL <c>NuGetFeeds</c> currently holds - the <c>--add-source</c> argument(s) for
+    /// the agent's <c>dotnet tool install</c>. In practice this is 0 or 1 rows (SERVER.md's
+    /// "Package feed" decision), matching the proto's own <c>repeated string feed_urls</c> either way.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> GetFeedUrlsAsync(CancellationToken cancellationToken) =>
         await context.NuGetFeeds
             .AsNoTracking()
             .OrderBy(feed => feed.Ordinal)
             .Select(feed => feed.Url)
-            .FirstOrDefaultAsync(cancellationToken)
+            .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+
+    /// <summary>
+    /// Records what an agent reported back for an install: a new <c>Packages</c> row the first
+    /// time this NuGet package id is ever seen, always a new <c>PackageVersions</c> row, and -
+    /// only when <paramref name="succeeded"/> - one <c>Pipelines</c> row per name the installed
+    /// package's own <c>list</c> verb reported.
+    /// </summary>
+    /// <returns>The new <c>PackageVersions</c> row's id.</returns>
+    public async Task<Guid> RecordInstallResultAsync(
+        string packageId, string version, bool succeeded, IReadOnlyList<string> pipelineNames, CancellationToken cancellationToken)
+    {
+        var package = await context.Packages
+            .SingleOrDefaultAsync(p => p.NugetPackageId == packageId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (package is null)
+        {
+            package = new Package { Id = Guid.NewGuid(), NugetPackageId = packageId, CreatedAt = DateTime.UtcNow };
+            context.Packages.Add(package);
+        }
+
+        var packageVersion = new PackageVersion
+        {
+            Id = Guid.NewGuid(),
+            PackageId = package.Id,
+            Version = version,
+            InstalledAt = DateTime.UtcNow,
+            Status = succeeded ? "Installed" : "Failed",
+        };
+        context.PackageVersions.Add(packageVersion);
+
+        if (succeeded)
+        {
+            foreach (var name in pipelineNames)
+            {
+                context.Pipelines.Add(new Pipeline
+                {
+                    Id = Guid.NewGuid(),
+                    PackageVersionId = packageVersion.Id,
+                    Name = name,
+                    CreatedAt = DateTime.UtcNow,
+                });
+            }
+        }
+
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return packageVersion.Id;
+    }
+
+    private async Task<string?> GetFeedUrlAsync(CancellationToken cancellationToken) =>
+        (await GetFeedUrlsAsync(cancellationToken).ConfigureAwait(false)).FirstOrDefault();
 }
 
 /// <summary>One installed pipeline, joined out to the package/version that registered it.</summary>

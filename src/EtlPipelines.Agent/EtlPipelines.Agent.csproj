@@ -2,11 +2,40 @@
 
   <!--
     Generic host, not the Web SDK: the agent never listens for inbound connections - it only ever
-    calls out to EtlPipelines.Server (AgentService.Subscribe, Phase 5) and shells out to `dotnet
-    tool install`/the installed pipeline shim (Phase 5).
+    calls out to EtlPipelines.Server (AgentService.Subscribe) and shells out to `dotnet tool
+    install`/the installed pipeline shim (Phase 5).
   -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <!-- Runs `dotnet tool install` and the installed shim - the same package EtlPipelines.
+         Extensions.Cli and EtlPipelines.Server.Database.Tests already depend on for the same
+         reason: a process spawn/exit-code/stderr wrapper across every platform. -->
+    <PackageReference Include="CliWrap" />
+  </ItemGroup>
+
+  <!-- Not a Web SDK project, so - unlike EtlPipelines.Server's appsettings.json - this needs an
+       explicit content item to actually reach the output directory. -->
+  <ItemGroup>
+    <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!--
+    Belt-and-suspenders alongside AgentGrpcClientExtensions.AddAgentGrpcClient's own
+    AppContext.SetSwitch call: that runtime call only works if it runs before anything in this
+    process has already constructed a SocketsHttpHandler (the switch backs a static field read
+    once). This app.runtimeconfig.json entry is what grpc-dotnet's own docs recommend instead -
+    baked in at build time, so it applies no matter what already ran first. Discovered the hard
+    way: EtlPipelines.Server.Tests's real end-to-end test (InstallLoopDockerTests) runs many other
+    tests - several of which construct an HttpClient - in the same shared TUnit process before
+    this agent's own AddAgentGrpcClient call ever executes, and the runtime-only switch alone
+    left that one real client connection negotiating HTTP/1.1 and failing with "HTTP_1_1_REQUIRED".
+  -->
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport" Value="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EtlPipelines.Agent.GrpcClient\EtlPipelines.Agent.GrpcClient.csproj" />
   </ItemGroup>
 
 </Project>

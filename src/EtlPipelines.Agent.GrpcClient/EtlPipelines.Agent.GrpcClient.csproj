@@ -1,20 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Phase 2 scaffolding only: the proto reference below is everything this project has for now -
-    codegen produces the request/response/client/WorkItem types, but no code here calls them yet.
-    Phase 5 adds AgentRegistration (the BackgroundService that holds Subscribe open), the real
-    consumer.
+    Phase 5: AddAgentGrpcClient(...) is the one thing this project adds beyond the generated
+    client itself - a typed-client DI registration EtlPipelines.Agent's own Program.cs/
+    AgentApplication.cs calls, the same shape EtlPipelines.GrpcClient will eventually offer
+    pipeline processes (Phase 6).
   -->
   <ItemGroup>
-    <Protobuf Include="..\..\protos\v1\agent_execution.proto" GrpcServices="Client" ProtoRoot="..\..\protos" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Grpc.Net.ClientFactory" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Google.Protobuf" />
-    <PackageReference Include="Grpc.Net.Client" />
-    <PackageReference Include="Grpc.Net.ClientFactory" />
-    <PackageReference Include="Grpc.Tools" />
+    <!-- Generated proto types (messages, typed client) - see that project's own comment. -->
+    <ProjectReference Include="..\EtlPipelines.Protos\EtlPipelines.Protos.csproj" />
   </ItemGroup>
 
 </Project>

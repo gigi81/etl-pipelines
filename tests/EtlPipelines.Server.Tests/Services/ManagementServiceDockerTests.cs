@@ -1,7 +1,5 @@
-using System.Text.Json;
-using CliWrap;
-using CliWrap.Buffered;
 using EtlPipelines.Management.V1;
+using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
@@ -42,8 +40,17 @@ public class ManagementServiceDockerTests(PostgreSqlFixture fixture)
         await using var context = await DeploySchemaAndCreateContextAsync();
         var packageId = Guid.NewGuid();
         var versionId = Guid.NewGuid();
+        // A synthetic id, not a real sample's - NuGetFeeds isn't the only table Docker tests in
+        // this project share (one Postgres container, SharedType.PerAssembly): this test used to
+        // hardcode "EtlPipelines.Samples.ArchiveToDatabase" with pipelines "build-feed"/"archive",
+        // which collided for real with InstallLoopDockerTests actually installing that exact
+        // sample - ListInstalledPipelines has no per-test scoping, so its response is whatever the
+        // whole table holds. Filtering the assertion below to this fixture's own package id is
+        // what makes this test correct regardless of what else is in the table, rather than merely
+        // avoiding today's one known collision.
+        var nugetPackageId = $"Test.Fixture.{Guid.NewGuid():N}";
 
-        context.Packages.Add(new Package { Id = packageId, NugetPackageId = "EtlPipelines.Samples.ArchiveToDatabase", CreatedAt = DateTime.UtcNow });
+        context.Packages.Add(new Package { Id = packageId, NugetPackageId = nugetPackageId, CreatedAt = DateTime.UtcNow });
         context.PackageVersions.Add(new PackageVersion { Id = versionId, PackageId = packageId, Version = "1.0.0", InstalledAt = DateTime.UtcNow, Status = "Installed" });
         context.Pipelines.AddRange(
             new Pipeline { Id = Guid.NewGuid(), PackageVersionId = versionId, Name = "build-feed", CreatedAt = DateTime.UtcNow },
@@ -56,14 +63,26 @@ public class ManagementServiceDockerTests(PostgreSqlFixture fixture)
         var response = await service.ListInstalledPipelines(new Empty(), TestServerCallContext());
 
         //assert
-        response.Pipelines.Select(pipeline => pipeline.Name).Should().BeEquivalentTo(["build-feed", "archive"]);
+        response.Pipelines
+            .Where(pipeline => pipeline.PackageId == nugetPackageId)
+            .Select(pipeline => pipeline.Name)
+            .Should().BeEquivalentTo(["build-feed", "archive"]);
     }
 
+    // NuGetFeeds is a table every Docker-tagged test in this project shares (one Postgres
+    // container, SharedType.PerAssembly) - this test and ListUpdates_... below are the only ones
+    // that write to it, so [NotInParallel("NuGetFeeds")] plus clearing it first is what keeps them
+    // from leaving a stale row for each other, or for InstallLoopDockerTests (whose whole point is
+    // that GetFeedUrlsAsync returns exactly the one real bagetter feed it pushed a package to -
+    // caught for real when a leftover "http://nuget:5000/v3/index.json" row from this test made
+    // the agent's own `dotnet tool install` fail against a URL nothing was ever listening on).
     [Test]
+    [NotInParallel("NuGetFeeds")]
     public async Task ListAvailablePackages_asks_the_feed_client_for_whatever_url_NuGetFeeds_holds()
     {
         //arrange
         await using var context = await DeploySchemaAndCreateContextAsync();
+        context.NuGetFeeds.RemoveRange(await context.NuGetFeeds.ToListAsync());
         context.NuGetFeeds.Add(new NuGetFeed { Id = Guid.NewGuid(), Url = "http://nuget:5000/v3/index.json", Ordinal = 0 });
         await context.SaveChangesAsync();
 
@@ -82,11 +101,13 @@ public class ManagementServiceDockerTests(PostgreSqlFixture fixture)
     }
 
     [Test]
+    [NotInParallel("NuGetFeeds")]
     public async Task ListUpdates_compares_the_real_installed_row_against_the_feed()
     {
         //arrange
         await using var context = await DeploySchemaAndCreateContextAsync();
         var packageId = Guid.NewGuid();
+        context.NuGetFeeds.RemoveRange(await context.NuGetFeeds.ToListAsync());
         context.NuGetFeeds.Add(new NuGetFeed { Id = Guid.NewGuid(), Url = "http://nuget:5000/v3/index.json", Ordinal = 0 });
         context.Packages.Add(new Package { Id = packageId, NugetPackageId = "EtlPipelines.Samples.CsvToDatabase", CreatedAt = DateTime.UtcNow });
         context.PackageVersions.Add(new PackageVersion { Id = Guid.NewGuid(), PackageId = packageId, Version = "1.0.0", InstalledAt = DateTime.UtcNow, Status = "Installed" });
@@ -137,10 +158,14 @@ public class ManagementServiceDockerTests(PostgreSqlFixture fixture)
     }
 
     private static ManagementServiceImpl CreateService(
-        ServerDbContext context, INuGetFeedClient? feedClient = null, IDataProtectionProvider? dataProtectionProvider = null) =>
+        ServerDbContext context,
+        INuGetFeedClient? feedClient = null,
+        IDataProtectionProvider? dataProtectionProvider = null,
+        AgentConnectionRegistry? connections = null) =>
         new(
             new PackageCatalogService(context, feedClient ?? Mock.Of<INuGetFeedClient>()),
-            new SecretsStore(context, dataProtectionProvider ?? Mock.Of<IDataProtectionProvider>()));
+            new SecretsStore(context, dataProtectionProvider ?? Mock.Of<IDataProtectionProvider>()),
+            connections ?? new AgentConnectionRegistry());
 
     private static ServerCallContext TestServerCallContext()
     {
@@ -149,105 +174,14 @@ public class ManagementServiceDockerTests(PostgreSqlFixture fixture)
         return context.Object;
     }
 
-    // Every test in this class shares one Postgres container ([ClassDataSource<PostgreSqlFixture>
-    // (Shared = SharedType.PerAssembly)]), so `dbdeploy deploy` must run exactly once for it, not
-    // once per test - a second `deploy` against an already-deployed database fails outright
-    // ("relation \"Packages\" already exists"), unlike a real dbdeploy run where re-deploying an
-    // up-to-date database is a normal no-op (there is nothing left in main.csv to apply the second
-    // time; the failure here is specific to concurrently/repeatedly staging the very same "_Init"
-    // step against a database that has already recorded it as deployed within this single
-    // temporary --path). A lock plus a cached Task is enough: only one test's call actually
-    // deploys, and every other test's call awaits that same Task instead of starting its own.
-    private static Task? _schemaDeployTask;
-    private static readonly Lock DeployLock = new();
-
-    private Task EnsureSchemaDeployedAsync()
-    {
-        lock (DeployLock)
-        {
-            _schemaDeployTask ??= DeploySchemaAsync();
-        }
-
-        return _schemaDeployTask;
-    }
-
     private async Task<ServerDbContext> DeploySchemaAndCreateContextAsync()
     {
-        await EnsureSchemaDeployedAsync();
+        await SchemaDeployer.EnsureDeployedAsync(Fixture.ConnectionString);
 
         var options = new DbContextOptionsBuilder<ServerDbContext>()
             .UseNpgsql(Fixture.ConnectionString)
             .Options;
 
         return new ServerDbContext(options);
-    }
-
-    private async Task DeploySchemaAsync()
-    {
-        var work = Directory.CreateTempSubdirectory("EtlPipelines.Server.Tests.");
-
-        try
-        {
-            await StageScriptsAsync(work.FullName);
-
-            BufferedCommandResult deploy;
-            try
-            {
-                deploy = await Cli.Wrap("dbdeploy")
-                    .WithArguments(["deploy", "--path", work.FullName])
-                    .WithValidation(CommandResultValidation.None)
-                    .ExecuteBufferedAsync();
-            }
-            catch (System.ComponentModel.Win32Exception exception)
-            {
-                throw new InvalidOperationException(
-                    "'dbdeploy' could not be started - install it with " +
-                    "'dotnet tool install --global dbdeploy' before running [Category(\"Docker\")] tests.",
-                    exception);
-            }
-
-            if (deploy.ExitCode != 0)
-            {
-                throw new InvalidOperationException(
-                    $"dbdeploy deploy failed: {(string.IsNullOrWhiteSpace(deploy.StandardError) ? deploy.StandardOutput : deploy.StandardError)}");
-            }
-        }
-        finally
-        {
-            try
-            {
-                Directory.Delete(work.FullName, recursive: true);
-            }
-            catch (IOException)
-            {
-                // A leftover temp directory is not worth failing a test over.
-            }
-        }
-    }
-
-    private async Task StageScriptsAsync(string workDirectory)
-    {
-        var sourceServerDirectory = Path.Combine(RepositoryPaths.DbDirectory, "server");
-        var destinationServerDirectory = Directory.CreateDirectory(Path.Combine(workDirectory, "server"));
-
-        foreach (var script in Directory.GetFiles(sourceServerDirectory))
-        {
-            File.Copy(script, Path.Combine(destinationServerDirectory.FullName, Path.GetFileName(script)));
-        }
-
-        File.Copy(
-            Path.Combine(RepositoryPaths.DbDirectory, "main.csv"),
-            Path.Combine(workDirectory, "main.csv"));
-
-        var settings = JsonSerializer.Serialize(new
-        {
-            global = new { defaultProvider = "postgreSql", scriptTimeout = 600 },
-            databases = new Dictionary<string, object>
-            {
-                ["server"] = new { connectionString = Fixture.ConnectionString },
-            },
-        });
-
-        await File.WriteAllTextAsync(Path.Combine(workDirectory, "dbsettings.json"), settings);
     }
 }

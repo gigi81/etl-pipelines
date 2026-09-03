@@ -51,6 +51,10 @@ message WorkItem {
 message InstallPackageWorkItem {
   string package_id = 1;
   string version = 2;
+  // The `--add-source` argument(s) for `dotnet tool install` - the agent has no database access
+  // of its own (by design), so the server hands over whatever NuGetFeeds currently holds at
+  // dispatch time rather than the agent reading a possibly-stale local copy of the same URL.
+  repeated string feed_urls = 3;
 }
 
 message ExecutePipelineWorkItem {

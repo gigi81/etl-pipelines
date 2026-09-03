@@ -3,9 +3,9 @@ using EtlPipelines.Agent;
 namespace EtlPipelines.Agent.Tests;
 
 /// <summary>
-/// Phase 2 smoke test: proves the generic host builds - no real behaviour exists yet (see
-/// <see cref="AgentApplication"/>'s own remarks), so building without error is all there is to
-/// check.
+/// Smoke test: proves the generic host builds, including the real DI wiring Phase 5 added -
+/// building without error is all there is to check here; <c>EtlPipelines.Server.Tests</c>'
+/// <c>[Category("Docker")]</c> suite is what proves the agent actually works end to end.
 /// </summary>
 /// <remarks>Never calls <c>RunAsync()</c> - see <see cref="AgentApplication"/> for why.</remarks>
 [Category("Agent")]

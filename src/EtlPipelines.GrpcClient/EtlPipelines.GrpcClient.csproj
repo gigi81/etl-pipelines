@@ -5,20 +5,19 @@
   </PropertyGroup>
 
   <!--
-    Phase 2 scaffolding only: the proto reference below is everything this project has for now -
-    codegen produces the request/response/client types, but no code here calls them yet. Phase 6
-    adds GrpcConfigurationProvider/GrpcConfigurationSource and GrpcProgressReporter, the real
+    Phase 2 scaffolding only: the generated client type from EtlPipelines.Protos is everything
+    this project has for now - no code here calls it yet. Phase 6 adds
+    GrpcConfigurationProvider/GrpcConfigurationSource and GrpcProgressReporter, the real
     consumers, plus EtlPipelinesHost.UseGrpcClient(...) for the session-id/server-url options.
   -->
   <ItemGroup>
-    <Protobuf Include="..\..\protos\v1\pipeline_execution.proto" GrpcServices="Client" ProtoRoot="..\..\protos" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Grpc.Net.ClientFactory" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Google.Protobuf" />
-    <PackageReference Include="Grpc.Net.Client" />
-    <PackageReference Include="Grpc.Net.ClientFactory" />
-    <PackageReference Include="Grpc.Tools" />
+    <!-- Generated proto types (messages, typed client) - see that project's own comment. -->
+    <ProjectReference Include="..\EtlPipelines.Protos\EtlPipelines.Protos.csproj" />
   </ItemGroup>
 
 </Project>

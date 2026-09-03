@@ -1,9 +1,10 @@
-# Started here in Phase 4 (SERVER.md) with just postgres/nuget - enough to bring up the two
-# services EtlPipelines.Server depends on and prove ListAvailablePackages works end to end against
-# a real bagetter. Phase 7 ("Docker Compose hardening and image build") finishes this file: the
-# server/agent services themselves, their Dockerfiles, health checks, restart policies, and the
-# bagetter/schema seeding steps that make `docker compose up` produce a stack with something
-# installable and no separate manual step.
+# Started in Phase 4 (SERVER.md) with just postgres/nuget; Phase 5 adds server/agent themselves,
+# on the plain dotnet SDK image with the repo bind-mounted rather than a purpose-built image -
+# there is no Dockerfile.server/Dockerfile.agent yet, and there deliberately isn't one until Phase
+# 7 ("Docker Compose hardening and image build"), which is what replaces this section with a real
+# multi-stage build, adds health checks and restart policies, and seeds bagetter/deploys the
+# schema automatically. Until then, this is what actually makes `docker compose up` bring up a
+# working Server+Agent today rather than nothing at all.
 services:
   postgres:
     image: postgres:15.1
@@ -22,6 +23,32 @@ services:
     volumes:
       - nuget-data:/data
 
+  server:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    working_dir: /src
+    volumes:
+      - ../:/src
+      - server-cache:/var/lib/etlpipelines/server-cache
+    command: dotnet run --project src/EtlPipelines.Server --configuration Release
+    depends_on:
+      - postgres
+      - nuget
+
+  # Not yet running dbdeploy against `postgres` on its own - Phase 7's "Schema deployment on
+  # startup" is what makes a fresh postgres-data volume take itself from empty to serving traffic;
+  # until then, `dbdeploy deploy --path db` against this stack is a manual step.
+  agent:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    working_dir: /src
+    volumes:
+      - ../:/src
+      - agent-cache:/var/lib/etlpipelines/agent-cache
+    command: dotnet run --project src/EtlPipelines.Agent --configuration Release
+    depends_on:
+      - server
+
 volumes:
   postgres-data:
   nuget-data:
+  server-cache:
+  agent-cache:
