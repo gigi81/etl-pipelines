@@ -24,25 +24,28 @@ jobs:
           # required to calculate version height"), not merely with the wrong version, same
           # reasoning as every other workflow's own fetch-depth: 0.
           fetch-depth: 0
-      # One service at a time, deliberately - not `docker compose build` (equivalent to `up
-      # --build`'s own implicit build step) with no arguments. That compiles every build-enabled
-      # service into a single batched `buildx bake` call, and - confirmed the hard way, by a real
-      # run of this exact workflow - bake's own handling of three targets sharing one identical
-      # context (`..`, the whole repository - every one of these three needs the full solution
-      # for its own ProjectReferences) can corrupt which Dockerfile one of them actually reads
-      # ("failed to solve: failed to read dockerfile: open Dockerfile.seed: no such file or
-      # directory", despite that exact path resolving correctly on its own - see
-      # `docker compose build --print seed` versus `docker compose build --print`). Building each
-      # service through its own, independent single-target bake call sidesteps that entirely.
+      # Plain `docker build`, not `docker compose build`/`up --build` - confirmed the hard way,
+      # by two real runs of this exact workflow, that `docker compose build` (batched across all
+      # three services, and even called for "seed" alone on its own) intermittently fails to read
+      # Dockerfile.seed off disk at all ("failed to solve: failed to read dockerfile: open
+      # Dockerfile.seed: no such file or directory", "transferring dockerfile: 2B" - a couple of
+      # bytes, not this file's real ~1.2kB), despite that exact path resolving correctly every
+      # time through `docker compose build --print`. Root cause not fully pinned down (the file on
+      # disk is unremarkable - plain ASCII, LF line endings, no BOM - and it recurred as the third
+      # build in a sequence where the first two, structurally identical builds each succeeded), but
+      # it is specific to the bake-definition-over-stdin path `docker compose build` always goes
+      # through, one way or another - so this sidesteps that whole mechanism rather than continuing
+      # to guess at it. Every image tag matches exactly what compose's own `<project>-<service>`
+      # naming would produce (confirmed against this workflow's own successful build logs:
+      # "naming to docker.io/library/docker-server") - `docker compose up` below, with no --build
+      # of its own, finds each image already built under the tag it would otherwise have built
+      # itself and uses it as-is.
       - name: Build server image
-        working-directory: docker
-        run: docker compose build server
+        run: docker build --file docker/Dockerfile.server --tag docker-server:latest .
       - name: Build agent image
-        working-directory: docker
-        run: docker compose build agent
+        run: docker build --file docker/Dockerfile.agent --tag docker-agent:latest .
       - name: Build seed image
-        working-directory: docker
-        run: docker compose build seed
+        run: docker build --file docker/Dockerfile.seed --tag docker-seed:latest .
       # SERVER.md's own Phase 7 verification bullet, run for real: "docker compose up --build
       # against a genuinely fresh set of volumes, all four containers healthy" - a runner always
       # starts with none, so every run here already is that (images are already built by the
