@@ -1,0 +1,21 @@
+# Phase 7 (SERVER.md "Docker Compose hardening and image build"): unlike Dockerfile.server, this
+# ships the SDK all the way through to the runtime stage, not just the runtime -
+# PackageInstaller.cs shells out to `dotnet tool install --tool-path ...` at runtime, for
+# whatever package an operator asks this agent to install next (see that file's own remarks).
+# There is no way to know ahead of time which packages that will be, so a runtime-only image can
+# never be enough here, unlike Server's own one-time, build-known dbdeploy install.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY . .
+RUN dotnet publish src/EtlPipelines.Agent/EtlPipelines.Agent.csproj \
+      --configuration Release \
+      --output /app/publish
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS runtime
+WORKDIR /app
+COPY --from=build /app/publish .
+
+# No HEALTHCHECK here - this agent never listens for inbound connections by design (only ever
+# calls out to Server/`dotnet tool install`/an installed shim), so there is no endpoint of its
+# own to probe.
+ENTRYPOINT ["dotnet", "EtlPipelines.Agent.dll"]
