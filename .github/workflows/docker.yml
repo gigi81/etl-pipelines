@@ -26,15 +26,28 @@ jobs:
           fetch-depth: 0
       # SERVER.md's own Phase 7 verification bullet, run for real: "docker compose up --build
       # against a genuinely fresh set of volumes, all four containers healthy" - a runner always
-      # starts with none, so every run here already is that. --wait blocks until every service
-      # with a healthcheck (postgres, server) reports healthy and every one-shot service (seed)
-      # exits, failing the step outright if any of them doesn't - schema deployment (server's own
-      # entrypoint runs `dbdeploy deploy` before the app itself ever starts, so a failed deploy
-      # means server never reports healthy at all) and bagetter seeding (seed's own exit code) are
-      # both proven by this one command succeeding, not asserted separately.
-      - name: docker compose up --build
+      # starts with none, so every run here already is that. --wait blocks until every named
+      # service with a healthcheck (postgres, server) reports healthy and every other one (nuget,
+      # agent - no HEALTHCHECK of their own, so compose treats "started" as satisfying --wait)
+      # actually starts, failing the step outright if either doesn't - schema deployment (server's
+      # own entrypoint runs `dbdeploy deploy` before the app itself ever starts, so a failed
+      # deploy means server never reports healthy at all) is proven by this succeeding, not
+      # asserted separately. seed is named explicitly here specifically to exclude it - a
+      # `restart: "no"` one-shot container exiting, even on its own success (exit 0), is not what
+      # --wait is for and confirmed the hard way (a real run of this exact workflow) to make the
+      # whole command fail regardless of that exit code.
+      - name: docker compose up (long-running services)
         working-directory: docker
-        run: docker compose up --build --wait --wait-timeout 600
+        run: docker compose up --build --wait --wait-timeout 600 postgres nuget server agent
+      # Run to completion in the foreground now that nuget - the one dependency it actually needs
+      # - is already up. --exit-code-from seed (which implies --abort-on-container-exit) is what
+      # makes this command's own exit code seed's, explicitly, rather than relying on compose's
+      # unflagged default behavior for a single one-shot service - so bagetter seeding (every
+      # sample actually installable, per SERVER.md's own Phase 7 verification bullet) is proven by
+      # this step succeeding, the same way schema deployment is proven by the step above.
+      - name: docker compose up (seed)
+        working-directory: docker
+        run: docker compose up --build --exit-code-from seed seed
       - name: docker compose ps
         if: always()
         working-directory: docker
