@@ -158,6 +158,49 @@ public sealed class EtlPipelinesHost
     }
 
     /// <summary>
+    /// The parsed command line. Only valid to read once parsing has actually happened - safe to
+    /// capture in a closure and read later from a callback that itself runs deferred (e.g. inside
+    /// <c>ConfigureHost(hostBuilder =&gt; hostBuilder.ConfigureAppConfiguration((_, builder) =&gt; ...))</c>,
+    /// which only actually runs during <see cref="RunAsync"/>'s own <c>Build()</c> call, well after
+    /// its <c>Parse(args)</c>) - never read eagerly from code that runs before
+    /// <see cref="RunAsync"/> itself (an extension's own <c>Use...()</c> method, say), which is
+    /// exactly why this is a property to read lazily rather than a value <see cref="RunAsync"/>
+    /// could just hand an extension directly.
+    /// </summary>
+    public ParseResult ParseResult => _host.RequiredResult;
+
+    /// <summary>
+    /// Runs <paramref name="configure"/> once the host is built, with the resolved container to
+    /// hand - the same hook the constructor uses internally to start <see cref="PipelineTraceLogger"/>
+    /// listening, exposed so an extension like <c>EtlPipelines.GrpcClient</c>'s
+    /// <c>UseGrpcClient</c> can eagerly resolve a service of its own (<c>GrpcProgressReporter</c>)
+    /// the same way, without <see cref="EtlPipelinesHost"/> needing to know that type exists.
+    /// </summary>
+    public EtlPipelinesHost ConfigureApplication(Action<IServiceProvider> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        _host.ConfigureApplication((_, services) => configure(services));
+        return this;
+    }
+
+    /// <summary>
+    /// Adds <paramref name="option"/> to the root command, visible to every verb - the same
+    /// mechanism the constructor uses for <see cref="VerboseOption"/>/<see cref="WorkDirOption"/>
+    /// themselves, exposed so an extension can add options of its own (e.g.
+    /// <c>EtlPipelines.GrpcClient</c>'s <c>--session-id</c>/<c>--server-url</c>) the same way.
+    /// <paramref name="option"/> should be declared <c>Recursive = true</c> to actually reach every
+    /// subcommand, matching the two built-in options' own shape.
+    /// </summary>
+    public EtlPipelinesHost AddRecursiveOption(Option option)
+    {
+        ArgumentNullException.ThrowIfNull(option);
+
+        _host.CommandBuilder.RootCommand.Add(option);
+        return this;
+    }
+
+    /// <summary>
     /// Adds the application's own commands to the tree.
     /// </summary>
     /// <remarks>

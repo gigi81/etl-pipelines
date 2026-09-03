@@ -1,6 +1,7 @@
 using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
+using EtlPipelines.Server.Runs;
 using EtlPipelines.Server.Secrets;
 using EtlPipelines.Server.Services;
 using Microsoft.AspNetCore.DataProtection;
@@ -87,6 +88,24 @@ public static class ServerApplication
         // connected agent's Subscribe stream and a pending InstallPackage dispatch both outlive
         // any one gRPC call.
         builder.Services.AddSingleton<AgentConnectionRegistry>();
+
+        // Process-wide run-progress fan-out (Phase 6) - a singleton for the same reason as
+        // AgentConnectionRegistry above: a run's history and its live StreamRunProgress
+        // subscribers outlive any one gRPC call.
+        builder.Services.AddSingleton<RunStatusStore>();
+
+        // The address embedded in every ExecutePipeline work item's ServerUrl - where a launched
+        // pipeline process's own EtlPipelines.GrpcClient calls back to. Server:PublicUrl is what
+        // an operator sets when this server is reachable at a different address than the one it
+        // binds to (a reverse proxy, a container's published port); falling back to
+        // "localhost:<Server:Port>" is right for a bare local run, and for
+        // ExecutePipelineDockerTests-style in-process tests, which reserve a real port ahead of
+        // time and pass it as Server:Port precisely so this fallback already names it correctly.
+        var publicUrl = builder.Configuration["Server:PublicUrl"] ?? $"http://localhost:{port}";
+        builder.Services.AddScoped(provider => new RunDispatcher(
+            provider.GetRequiredService<ServerDbContext>(),
+            provider.GetRequiredService<AgentConnectionRegistry>(),
+            publicUrl));
 
         var app = builder.Build();
 

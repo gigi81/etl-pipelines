@@ -18,9 +18,12 @@ namespace EtlPipelines.Server.Services;
 /// SERVER.md Phase 5: registration (<see cref="RegisterAgent"/>), liveness
 /// (<see cref="Heartbeat"/>), and the work-item dispatch loop
 /// (<see cref="Subscribe"/>/<see cref="ReportInstallResult"/>, via
-/// <see cref="AgentConnectionRegistry"/>) are real. <see cref="ReportExecutionStatus"/> stays
-/// <see cref="ServiceScaffolding.Unimplemented"/> - nothing calls it until Phase 6 actually
-/// dispatches an <c>ExecutePipeline</c> work item for an agent to run.
+/// <see cref="AgentConnectionRegistry"/>) are real. Phase 6 adds <see cref="ReportExecutionStatus"/>
+/// itself, now that <c>RunDispatcher</c> actually sends an agent an <c>ExecutePipeline</c> work
+/// item to run - a fallback signal only: the launched process's own
+/// <c>PipelineExecutionService.ReportRunResult</c> is what normally settles a run's final state,
+/// so this only ever fills in <c>Runs</c> when the process exited without managing to report that
+/// itself.
 /// </remarks>
 public sealed class AgentServiceImpl(ServerDbContext dbContext, AgentConnectionRegistry connections, PackageCatalogService catalogService)
     : AgentService.AgentServiceBase
@@ -117,6 +120,66 @@ public sealed class AgentServiceImpl(ServerDbContext dbContext, AgentConnectionR
     }
 
     /// <inheritdoc />
-    public override Task<Ack> ReportExecutionStatus(ReportExecutionStatusRequest request, ServerCallContext context) =>
-        throw ServiceScaffolding.Unimplemented();
+    public override async Task<Ack> ReportExecutionStatus(ReportExecutionStatusRequest request, ServerCallContext context)
+    {
+        // Malformed or unknown - nothing meaningful to record. Reported statuses are operationally
+        // low-stakes (the process's own ReportRunResult is authoritative), so this stays a no-op
+        // Ack rather than an error a well-behaved agent would have to handle.
+        if (!Guid.TryParse(request.SessionId, out var runId))
+        {
+            return new Ack();
+        }
+
+        var run = await dbContext.Runs
+            .SingleOrDefaultAsync(r => r.Id == runId, context.CancellationToken)
+            .ConfigureAwait(false);
+
+        if (run is null)
+        {
+            return new Ack();
+        }
+
+        switch (request.Status)
+        {
+            case ReportExecutionStatusRequest.Types.Status.Started:
+                run.StartedAt ??= DateTime.UtcNow;
+                if (run.Status is "Queued" or "Dispatched")
+                {
+                    run.Status = "Running";
+                }
+
+                break;
+
+            case ReportExecutionStatusRequest.Types.Status.Exited:
+                // The launched process's own ReportRunResult (PipelineExecutionServiceImpl) is
+                // what normally settles Status/ExitCode/row counts - only fill them in here when
+                // the process exited without ever managing to report that itself (crashed before
+                // it could, or the server never heard from it), so a run is never left "Running"
+                // forever once the agent already knows it is done. Left untouched if
+                // ReportRunResult already settled it first.
+                if (run.Status is "Queued" or "Dispatched" or "Running")
+                {
+                    run.Status = request.ExitCode == 0 ? "Succeeded" : "Failed";
+                    run.CompletedAt ??= DateTime.UtcNow;
+                    run.ExitCode = request.ExitCode;
+                }
+
+                break;
+
+            case ReportExecutionStatusRequest.Types.Status.ResourceSample:
+                dbContext.AgentResourceSamples.Add(new AgentResourceSample
+                {
+                    Id = Guid.NewGuid(),
+                    RunId = run.Id,
+                    AgentId = Guid.Parse(request.AgentId),
+                    SampledAt = DateTime.UtcNow,
+                    CpuPercent = request.CpuPercent,
+                    WorkingSetBytes = request.WorkingSetBytes,
+                });
+                break;
+        }
+
+        await dbContext.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
+        return new Ack();
+    }
 }

@@ -9,6 +9,14 @@
     <ProjectReference Include="..\EtlPipelines.Hosting\EtlPipelines.Hosting.csproj" />
     <ProjectReference Include="..\EtlPipelines.Extensions.Csv\EtlPipelines.Extensions.Csv.csproj" />
     <ProjectReference Include="..\EtlPipelines.Extensions.Sql.Sqlite\EtlPipelines.Extensions.Sql.Sqlite.csproj" />
+    <!--
+      This sample is SERVER.md Phase 6's own pick for the first pipeline actually run end to end
+      through EtlPipelines.Server/.Agent ("already proven against five real database engines") -
+      UseGrpcClient() below is the one line that makes it installable and dispatchable through
+      that path, while still running exactly as before when launched with neither the session-id
+      nor the server-url option (every existing sample test still does that).
+    -->
+    <ProjectReference Include="..\EtlPipelines.GrpcClient\EtlPipelines.GrpcClient.csproj" />
   </ItemGroup>
 
 </Project>

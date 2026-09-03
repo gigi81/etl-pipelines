@@ -3,6 +3,7 @@ using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
+using EtlPipelines.Server.Runs;
 using EtlPipelines.Server.Secrets;
 using EtlPipelines.Server.Services;
 using Grpc.Core;
@@ -161,11 +162,17 @@ public class ManagementServiceDockerTests(PostgreSqlFixture fixture)
         ServerDbContext context,
         INuGetFeedClient? feedClient = null,
         IDataProtectionProvider? dataProtectionProvider = null,
-        AgentConnectionRegistry? connections = null) =>
-        new(
+        AgentConnectionRegistry? connections = null)
+    {
+        var registry = connections ?? new AgentConnectionRegistry();
+
+        return new ManagementServiceImpl(
             new PackageCatalogService(context, feedClient ?? Mock.Of<INuGetFeedClient>()),
             new SecretsStore(context, dataProtectionProvider ?? Mock.Of<IDataProtectionProvider>()),
-            connections ?? new AgentConnectionRegistry());
+            registry,
+            new RunDispatcher(context, registry, "http://localhost:5000"),
+            new RunStatusStore());
+    }
 
     private static ServerCallContext TestServerCallContext()
     {

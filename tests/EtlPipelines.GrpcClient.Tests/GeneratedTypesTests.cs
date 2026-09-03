@@ -4,8 +4,8 @@ namespace EtlPipelines.GrpcClient.Tests;
 
 /// <summary>
 /// Phase 2 smoke test: proves <c>protos/v1/pipeline_execution.proto</c> actually codegenned into
-/// this project under <c>EtlPipelines.PipelineExecution.V1</c> - no consumer of the generated
-/// client exists yet (Phase 6), so there is nothing else to test here.
+/// this project under <c>EtlPipelines.PipelineExecution.V1</c>. <see cref="GrpcConfigurationProviderTests"/>/
+/// <see cref="GrpcProgressReporterTests"/> are Phase 6's real consumers of the generated client.
 /// </summary>
 [Category("GrpcClient")]
 public class GeneratedTypesTests

@@ -2,13 +2,21 @@
 
   <PropertyGroup>
     <Description>Typed gRPC client for an arbitrary pipeline process to reach PipelineExecutionService - configuration, progress reporting, heartbeats.</Description>
+    <!--
+      Same reason as EtlPipelines.Hosting's own copy of this: referencing it (transitively, via
+      EtlPipelines.Hosting.csproj below) pulls in Albatross.CommandLine's source generator, which
+      emits public RegisterCommands/AddCommands extension methods with no XML comments into every
+      project that references the package - CS1591 would otherwise fail this project's build on
+      generated code nobody here writes.
+    -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
   <!--
-    Phase 2 scaffolding only: the generated client type from EtlPipelines.Protos is everything
-    this project has for now - no code here calls it yet. Phase 6 adds
-    GrpcConfigurationProvider/GrpcConfigurationSource and GrpcProgressReporter, the real
-    consumers, plus EtlPipelinesHost.UseGrpcClient(...) for the session-id/server-url options.
+    Phase 6: GrpcConfigurationProvider/GrpcConfigurationSource pull configuration once at startup,
+    GrpcProgressReporter forwards EtlDiagnostics' own traces as progress, and
+    EtlPipelinesHost.UseGrpcClient(...) is the one line a pipeline application's Program.cs adds to
+    wire both in behind the session-id/server-url options.
   -->
   <ItemGroup>
     <PackageReference Include="Grpc.Net.Client" />
@@ -18,6 +26,18 @@
   <ItemGroup>
     <!-- Generated proto types (messages, typed client) - see that project's own comment. -->
     <ProjectReference Include="..\EtlPipelines.Protos\EtlPipelines.Protos.csproj" />
+    <!--
+      EtlDiagnostics.SourceName and its public tag-key constants (Stage, RunId, RowsIn/Out/Failed,
+      ErrorCode) - GrpcProgressReporter reads them straight off the runtime's own ActivitySource
+      rather than duplicating their literal string values.
+    -->
+    <ProjectReference Include="..\EtlPipelines.Core\EtlPipelines.Core.csproj" />
+    <!--
+      EtlPipelinesHost itself - UseGrpcClient is an extension method on it, the same relationship
+      EtlPipelines.Agent.GrpcClient has with nothing (the agent process is not itself an
+      EtlPipelinesHost application), but a pipeline process built on EtlPipelinesHost very much is.
+    -->
+    <ProjectReference Include="..\EtlPipelines.Hosting\EtlPipelines.Hosting.csproj" />
   </ItemGroup>
 
 </Project>

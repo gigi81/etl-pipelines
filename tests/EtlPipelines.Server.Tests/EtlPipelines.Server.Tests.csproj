@@ -13,11 +13,17 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\EtlPipelines.Server\EtlPipelines.Server.csproj" />
     <!--
-      The one end-to-end test in this project (InstallLoopDockerTests) runs a real Agent host
-      in-process alongside the real Server - the only place in this test project that needs the
-      agent side at all.
+      The end-to-end tests in this project (InstallLoopDockerTests, ExecutePipelineDockerTests)
+      run a real Agent host in-process alongside the real Server - the only place in this test
+      project that needs the agent side at all.
     -->
     <ProjectReference Include="..\..\src\EtlPipelines.Agent\EtlPipelines.Agent.csproj" />
+    <!--
+      ExecutePipelineDockerTests only, for CsvToDatabase.Pipeline.ExpectedRows/Name - the same
+      sample SERVER.md Phase 6 picks to actually execute end to end, not just install
+      (InstallLoopDockerTests still installs EtlPipelines.Samples.ArchiveToDatabase).
+    -->
+    <ProjectReference Include="..\..\src\EtlPipelines.Samples.CsvToDatabase\EtlPipelines.Samples.CsvToDatabase.csproj" />
   </ItemGroup>
 
   <!--

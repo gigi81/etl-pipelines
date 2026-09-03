@@ -89,6 +89,30 @@ public sealed class AgentConnectionRegistry
     }
 
     /// <summary>
+    /// Pushes an <c>ExecutePipeline</c> work item onto <paramref name="agentId"/>'s outbound
+    /// queue. Fire-and-forget from this method's own point of view - unlike
+    /// <see cref="DispatchInstallPackageAsync"/> there is no completion to await here:
+    /// <c>ExecutePipelineResponse</c> hands the run id back immediately (see that RPC's own proto
+    /// comment), and the launched pipeline process reports its own results back over
+    /// <c>PipelineExecutionService</c> directly, never through this connection.
+    /// </summary>
+    /// <exception cref="InvalidOperationException"><paramref name="agentId"/> is not currently connected, or stopped accepting work between the caller checking and this call.</exception>
+    public void DispatchExecutePipeline(string agentId, ExecutePipelineWorkItem workItem)
+    {
+        if (!_connections.TryGetValue(agentId, out var channel))
+        {
+            throw new InvalidOperationException($"Agent '{agentId}' is not connected.");
+        }
+
+        var item = new WorkItem { WorkItemId = Guid.NewGuid().ToString(), ExecutePipeline = workItem };
+
+        if (!channel.Writer.TryWrite(item))
+        {
+            throw new InvalidOperationException($"Agent '{agentId}' is no longer accepting work.");
+        }
+    }
+
+    /// <summary>
     /// The package id/version <paramref name="workItemId"/> was dispatched for - what
     /// <c>AgentServiceImpl.ReportInstallResult</c> needs to record the result against
     /// <c>Server.Database</c>'s catalog tables, since <c>ReportInstallResultRequest</c> itself

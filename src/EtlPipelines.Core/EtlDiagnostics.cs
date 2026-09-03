@@ -25,20 +25,50 @@ public static class EtlDiagnostics
     // it — deliberately the same word in all three, which is what lets a trace and a metric be lined
     // up against each other.
     private const string Pipeline = $"{Prefix}.pipeline";
-    private const string Stage = $"{Prefix}.stage";
+
+    /// <summary>
+    /// Tag key holding a stage's name, set on every stage span (never on the top-level run span) -
+    /// the one tag that tells an external <see cref="ActivityListener"/> it is looking at a stage
+    /// span rather than the run span. <c>EtlPipelines.GrpcClient</c>'s <c>GrpcProgressReporter</c>
+    /// (SERVER.md Phase 6) reads it for exactly that, rather than duplicating this literal string
+    /// of its own.
+    /// </summary>
+    public const string Stage = $"{Prefix}.stage";
+
     private const string Rows = $"{Prefix}.rows";
 
     // Dot-separated throughout, per OpenTelemetry's attribute naming: the dot is what namespaces a
     // name, and a quantity that is both counted and put on a span should be called the same thing in
     // each place rather than etl.rows.in in one and etl.rows_in in the other.
-    private const string RowsIn = $"{Rows}.in";
-    private const string RowsOut = $"{Rows}.out";
-    private const string RowsFailed = $"{Rows}.failed";
+
+    /// <summary>Tag key holding the rows a stage consumed, set on every stage span.</summary>
+    public const string RowsIn = $"{Rows}.in";
+
+    /// <summary>Tag key holding the rows a stage produced, set on every stage span.</summary>
+    public const string RowsOut = $"{Rows}.out";
+
+    /// <summary>Tag key holding the rows a stage rejected, set on every stage span.</summary>
+    public const string RowsFailed = $"{Rows}.failed";
+
     private const string StageDuration = $"{Stage}.duration";
     private const string RunDuration = $"{Pipeline}.duration";
     private const string Runs = $"{Pipeline}.runs";
-    private const string RunId = $"{Prefix}.run.id";
+
+    /// <summary>
+    /// Tag key holding the run's id, set on both the run span and every stage span it contains -
+    /// what correlates a stage's tags back to the run they belong to.
+    /// </summary>
+    public const string RunId = $"{Prefix}.run.id";
+
     private const string Outcome = $"{Prefix}.outcome";
+
+    /// <summary>
+    /// Tag key holding a failed span's <c>Error.Code</c> - the one piece of a failure the span
+    /// does not already expose through <see cref="Activity.Status"/>/
+    /// <see cref="Activity.StatusDescription"/> (which <see cref="Fail"/> sets to the error's
+    /// description). Only present when the span failed.
+    /// </summary>
+    public const string ErrorCode = $"{Prefix}.error.code";
 
     // Not a published name - carried on Error.Metadata only, between DataflowStage and the run loop
     // that now records every stage. Never appears on a span or an instrument.
@@ -120,6 +150,7 @@ public static class EtlDiagnostics
 
         activity?.SetTag(RowsIn, result.RowsIn);
         activity?.SetTag(RowsOut, result.RowsOut);
+        activity?.SetTag(RowsFailed, result.RowsFailed);
 
         Fail(activity, error);
     }
@@ -168,6 +199,7 @@ public static class EtlDiagnostics
         if (error is { } failure)
         {
             activity?.SetStatus(ActivityStatusCode.Error, failure.Description);
+            activity?.SetTag(ErrorCode, failure.Code);
         }
     }
 }

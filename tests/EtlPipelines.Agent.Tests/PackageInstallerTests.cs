@@ -52,6 +52,71 @@ public class PackageInstallerTests
         }
     }
 
+    [Test]
+    public async Task GetInstalledShimPath_finds_a_package_this_agent_already_installed()
+    {
+        //arrange
+        var work = Directory.CreateTempSubdirectory("EtlPipelines.Agent.Tests.");
+
+        try
+        {
+            var packagesDirectory = Path.Combine(work.FullName, "packages");
+            var cacheDirectory = Path.Combine(work.FullName, "agent-cache");
+            var version = await PackAsync(packagesDirectory);
+
+            var installer = new PackageInstaller(Options.Create(new AgentOptions { CacheDirectory = cacheDirectory }));
+            var installedShimPath = await installer.InstallAsync(PackageId, version, [packagesDirectory], CancellationToken.None);
+
+            //act - the same path GetInstalledShimPath computes for an ExecutePipeline work item
+            // (SERVER.md Phase 6), which carries no feed url to install from - only whatever
+            // InstallAsync already put in this agent's cache.
+            var shimPath = installer.GetInstalledShimPath(PackageId, version);
+
+            //assert
+            shimPath.Should().Be(installedShimPath);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(work.FullName, recursive: true);
+            }
+            catch (IOException)
+            {
+                // A leftover temp directory is not worth failing a test over.
+            }
+        }
+    }
+
+    [Test]
+    public async Task GetInstalledShimPath_throws_for_a_package_this_agent_never_installed()
+    {
+        //arrange
+        var work = Directory.CreateTempSubdirectory("EtlPipelines.Agent.Tests.");
+
+        try
+        {
+            var installer = new PackageInstaller(Options.Create(new AgentOptions { CacheDirectory = work.FullName }));
+
+            //act
+            var act = () => installer.GetInstalledShimPath("EtlPipelines.Samples.NeverInstalled", "1.0.0");
+
+            //assert
+            act.Should().Throw<InvalidOperationException>();
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(work.FullName, recursive: true);
+            }
+            catch (IOException)
+            {
+                // A leftover temp directory is not worth failing a test over.
+            }
+        }
+    }
+
     /// <summary>Packs the sample and returns the version <c>dotnet pack</c> gave it.</summary>
     private static async Task<string> PackAsync(string outputDirectory)
     {

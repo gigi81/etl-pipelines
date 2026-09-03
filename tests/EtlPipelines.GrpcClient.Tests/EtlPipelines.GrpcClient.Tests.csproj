@@ -1,6 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <!-- Mocks PipelineExecutionServiceClient's virtual RPC methods - SERVER.md Phase 6's own test plan for GrpcConfigurationProvider. -->
+    <PackageReference Include="Moq" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\EtlPipelines.GrpcClient\EtlPipelines.GrpcClient.csproj" />
   </ItemGroup>
 
