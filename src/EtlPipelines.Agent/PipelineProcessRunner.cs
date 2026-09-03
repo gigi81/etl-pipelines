@@ -33,19 +33,32 @@ public static class PipelineProcessRunner
     /// <summary>
     /// Runs <c>&lt;shimPath&gt; run &lt;pipelineName&gt; --session-id &lt;sessionId&gt;
     /// --server-url &lt;serverUrl&gt;</c> and returns its exit code. Standard output/error are
-    /// left to flow to this process's own, unbuffered - unlike <see cref="ListPipelineNamesAsync"/>,
-    /// nothing here needs to parse them: the launched process reports its own results back to
-    /// <c>PipelineExecutionService</c> over gRPC (Phase 6), not through captured console output.
+    /// piped to this process's own, unbuffered - unlike <see cref="ListPipelineNamesAsync"/>,
+    /// nothing here needs to parse them (the launched process reports its own results back to
+    /// <c>PipelineExecutionService</c> over gRPC, not through captured console output), but a
+    /// pipeline that fails - or crashes outright, never getting the chance to report anything
+    /// itself - should still leave its own diagnostics somewhere an operator watching this
+    /// agent's own console can actually see, rather than silently discarded (CliWrap's own
+    /// default target for an unconfigured pipe).
     /// </summary>
     public static async Task<int> RunAsync(string shimPath, string pipelineName, string sessionId, string serverUrl, CancellationToken cancellationToken)
     {
-        var result = await Cli.Wrap(shimPath)
-            .WithArguments(["run", pipelineName, "--session-id", sessionId, "--server-url", serverUrl])
-            .WithValidation(CommandResultValidation.None)
-            .ExecuteAsync(cancellationToken)
-            .ConfigureAwait(false);
+        try
+        {
+            var result = await Cli.Wrap(shimPath)
+                .WithArguments(["run", pipelineName, "--session-id", sessionId, "--server-url", serverUrl])
+                .WithStandardOutputPipe(PipeTarget.ToStream(Console.OpenStandardOutput()))
+                .WithStandardErrorPipe(PipeTarget.ToStream(Console.OpenStandardError()))
+                .WithValidation(CommandResultValidation.None)
+                .ExecuteAsync(cancellationToken)
+                .ConfigureAwait(false);
 
-        return result.ExitCode;
+            return result.ExitCode;
+        }
+        catch (System.ComponentModel.Win32Exception exception)
+        {
+            throw new InvalidOperationException($"'{shimPath}' could not be started.", exception);
+        }
     }
 
     private static async Task<BufferedCommandResult> ExecuteAsync(string shimPath, IEnumerable<string> arguments, CancellationToken cancellationToken)

@@ -138,7 +138,19 @@ public class ManagementServiceDockerTests(PostgreSqlFixture fixture)
             update.LatestVersion == "1.1.0");
     }
 
+    // ConfigurationEntries is another table every Docker-tagged test in this project shares (same
+    // reasoning as NuGetFeeds above) - this is the only test that ever writes to it, but a row it
+    // leaves behind is worse than a stale NuGetFeeds row: it is unconditionally poisonous, not
+    // merely a same-name collision. ExecutePipelineDockerTests' own server (a real
+    // PersistKeysToFileSystem key ring) calls SecretsStore.GetAllAsync, which decrypts every row
+    // in the table - one encrypted by this test's own EphemeralDataProtectionProvider (a key that
+    // never outlives this test, by design) throws CryptographicException there regardless of its
+    // key, caught for real when it took AgentServiceImpl's own "not this PR's" out from under a
+    // launched pipeline process that had done nothing wrong. [NotInParallel("NuGetFeeds")] keeps
+    // this from ever overlapping such a run, and the finally below keeps the row from surviving
+    // for a later one.
     [Test]
+    [NotInParallel("NuGetFeeds")]
     public async Task SetConfigurationEntry_round_trips_through_a_real_IDataProtector()
     {
         //arrange
@@ -152,17 +164,25 @@ public class ManagementServiceDockerTests(PostgreSqlFixture fixture)
         var dataProtectionProvider = new EphemeralDataProtectionProvider();
         var service = CreateService(context, dataProtectionProvider: dataProtectionProvider);
 
-        //act
-        await service.SetConfigurationEntry(
-            new SetConfigurationEntryRequest { Key = "ConnectionStrings:sales", Value = "super-secret" },
-            TestServerCallContext());
+        try
+        {
+            //act
+            await service.SetConfigurationEntry(
+                new SetConfigurationEntryRequest { Key = "ConnectionStrings:sales", Value = "super-secret" },
+                TestServerCallContext());
 
-        //assert - never stored as plaintext, but reads back correctly through the same protector.
-        var stored = await context.ConfigurationEntries.SingleAsync(entry => entry.Key == "ConnectionStrings:sales");
-        System.Text.Encoding.UTF8.GetString(stored.EncryptedValue).Should().NotBe("super-secret");
+            //assert - never stored as plaintext, but reads back correctly through the same protector.
+            var stored = await context.ConfigurationEntries.SingleAsync(entry => entry.Key == "ConnectionStrings:sales");
+            System.Text.Encoding.UTF8.GetString(stored.EncryptedValue).Should().NotBe("super-secret");
 
-        var secretsStore = new SecretsStore(context, dataProtectionProvider);
-        (await secretsStore.GetAsync("ConnectionStrings:sales", CancellationToken.None)).Should().Be("super-secret");
+            var secretsStore = new SecretsStore(context, dataProtectionProvider);
+            (await secretsStore.GetAsync("ConnectionStrings:sales", CancellationToken.None)).Should().Be("super-secret");
+        }
+        finally
+        {
+            context.ConfigurationEntries.RemoveRange(await context.ConfigurationEntries.ToListAsync());
+            await context.SaveChangesAsync();
+        }
     }
 
     private static ManagementServiceImpl CreateService(

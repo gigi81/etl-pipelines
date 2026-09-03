@@ -5,6 +5,8 @@ using EtlPipelines.Server.Runs;
 using EtlPipelines.Server.Secrets;
 using EtlPipelines.Server.Services;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 
@@ -97,16 +99,17 @@ public static class ServerApplication
         // The address embedded in every ExecutePipeline work item's ServerUrl - where a launched
         // pipeline process's own EtlPipelines.GrpcClient calls back to. Server:PublicUrl is what
         // an operator sets when this server is reachable at a different address than the one it
-        // binds to (a reverse proxy, a container's published port); falling back to
-        // "localhost:<Server:Port>" is right for a bare local run. ExecutePipelineDockerTests
-        // passes Server:PublicUrl explicitly instead of relying on this fallback - a real,
-        // already-reserved loopback address it knows resolves, rather than trusting "localhost"
-        // to resolve identically to whatever address its own test client already proved reachable.
-        var publicUrl = builder.Configuration["Server:PublicUrl"] ?? $"http://localhost:{port}";
+        // binds to (a reverse proxy, a container's published port, or another container entirely
+        // in docker-compose, which needs the "server" hostname rather than any address this
+        // process could discover about itself). Resolved lazily, from IServer's own real bound
+        // address when unconfigured, rather than guessed at Build() time (before Kestrel has
+        // actually bound anything) - RunDispatcher is only ever resolved once ExecutePipeline
+        // itself is being handled, which can only happen after StartAsync() has bound Kestrel for
+        // real, so this is never called too early.
         builder.Services.AddScoped(provider => new RunDispatcher(
             provider.GetRequiredService<ServerDbContext>(),
             provider.GetRequiredService<AgentConnectionRegistry>(),
-            publicUrl));
+            ResolvePublicUrl(provider)));
 
         var app = builder.Build();
 
@@ -120,5 +123,32 @@ public static class ServerApplication
             "EtlPipelines.Server hosts gRPC services only - use a gRPC client to reach them.");
 
         return app;
+    }
+
+    /// <summary>
+    /// <c>Server:PublicUrl</c> if an operator set one; otherwise Kestrel's own real bound address
+    /// (the same "http://[::]:port" -&gt; "http://127.0.0.1:port" rewrite
+    /// <c>EtlPipelines.Server.Tests</c>' own end-to-end tests already have to do for their client
+    /// to dial the same instance), never a value assembled from configuration alone before Kestrel
+    /// has actually bound anything - a port passed in ahead of time (0 for an OS-assigned one, or
+    /// one reserved separately) is not guaranteed to be the one Kestrel actually ends up listening
+    /// on, or reachable the same way from a separately-launched process.
+    /// </summary>
+    private static string ResolvePublicUrl(IServiceProvider provider)
+    {
+        var configuration = provider.GetRequiredService<IConfiguration>();
+        var configured = configuration["Server:PublicUrl"];
+        if (!string.IsNullOrEmpty(configured))
+        {
+            return configured;
+        }
+
+        var addresses = provider.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()?.Addresses;
+        var boundAddress = addresses?.FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                "Server:PublicUrl is not set and Kestrel has not bound any address yet - " +
+                "this can only be resolved once the server has actually started.");
+
+        return $"http://127.0.0.1:{new Uri(boundAddress).Port}";
     }
 }

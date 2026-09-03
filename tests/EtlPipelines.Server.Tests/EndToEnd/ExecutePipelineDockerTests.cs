@@ -1,5 +1,3 @@
-using System.Net;
-using System.Net.Sockets;
 using CliWrap;
 using CliWrap.Buffered;
 using EtlPipelines.Management.V1;
@@ -50,19 +48,12 @@ public class ExecutePipelineDockerTests(PostgreSqlFixture postgres, BagetterFixt
         await ClearNuGetFeedsAsync();
         var version = await PackAndPushAsync();
 
-        // Reserved ahead of Kestrel binding it for real, so this test can pass a real,
-        // already-known address as Server:PublicUrl before ServerApplication.Build() ever runs -
-        // the launched pipeline process's own --server-url has to be correct from the start, and
-        // "127.0.0.1" here (rather than leaving Server:PublicUrl to its own "localhost" fallback)
-        // matches exactly what GetBoundUrl below already proves reachable for the test's own
-        // client, rather than trusting a second, never-otherwise-exercised hostname to resolve
-        // the same way on whatever machine runs this.
-        var port = GetFreeTcpPort();
-        var publicUrl = $"http://127.0.0.1:{port}";
-
+        // Port 0, same as InstallLoopDockerTests - an OS-assigned ephemeral port, no reservation
+        // dance needed: ServerApplication.ResolvePublicUrl reads Kestrel's own real bound address
+        // lazily (once ExecutePipeline is actually handled, necessarily after StartAsync() has
+        // bound it for real) rather than this test having to guess one ahead of time.
         await using var server = EtlPipelines.Server.ServerApplication.Build([
-            "--Server:Port", port.ToString(),
-            "--Server:PublicUrl", publicUrl,
+            "--Server:Port", "0",
             "--ConnectionStrings:Server", postgres.ConnectionString,
             "--NuGetFeed:Url", bagetter.FeedUrl,
         ]);
@@ -196,21 +187,6 @@ public class ExecutePipelineDockerTests(PostgreSqlFixture postgres, BagetterFixt
         }
 
         return events;
-    }
-
-    /// <summary>A free TCP port, reserved just long enough to read it back - see this test's own remarks on why it needs one ahead of time.</summary>
-    private static int GetFreeTcpPort()
-    {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        try
-        {
-            return ((IPEndPoint)listener.LocalEndpoint).Port;
-        }
-        finally
-        {
-            listener.Stop();
-        }
     }
 
     /// <summary>Same reasoning as <see cref="InstallLoopDockerTests"/>'s own copy of this helper.</summary>
