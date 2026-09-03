@@ -6,14 +6,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EtlPipelines.Core\EtlPipelines.Core.csproj" />
-    <!--
-      EtlPipelinesHost wires the session-id/server-url options in by default for every application
-      built on it (SERVER.md Phase 6) - no separate ProjectReference to EtlPipelines.GrpcClient or
-      opt-in call needed here. This sample is SERVER.md Phase 6's own pick for the first pipeline
-      actually installed and executed end to end through EtlPipelines.Server/.Agent ("already
-      proven against five real database engines"), which is why ExecutePipelineDockerTests uses
-      it - not because it needs anything the other five samples don't already have too.
-    -->
     <ProjectReference Include="..\EtlPipelines.Hosting\EtlPipelines.Hosting.csproj" />
     <ProjectReference Include="..\EtlPipelines.Extensions.Csv\EtlPipelines.Extensions.Csv.csproj" />
     <ProjectReference Include="..\EtlPipelines.Extensions.Sql.Sqlite\EtlPipelines.Extensions.Sql.Sqlite.csproj" />
