@@ -9,65 +9,73 @@ on:
 permissions:
   contents: read
 jobs:
-  compose:
-    name: docker compose build/up
-    # Linux only, same reasoning as integration-tests.yml's own "Databases" job - a Docker engine
-    # is only available on the Linux runners.
+  # One job per image, each its own fresh runner - not three sequential `docker build`s in one
+  # job. Every other shape tried first (a single batched `docker compose build`, one `docker
+  # compose build <service>` step per image, plain `docker build`, `docker buildx build` against a
+  # freshly-created isolated builder) hit the identical failure: whichever build ran *third* in a
+  # job failed to read its own Dockerfile off disk at all ("transferring dockerfile: 2B done",
+  # "failed to solve: failed to read dockerfile: open Dockerfile.seed: no such file or
+  # directory"), regardless of which image that happened to be, despite that file being completely
+  # unremarkable on disk (plain ASCII, correct size, no BOM) and that exact path resolving
+  # correctly through `docker compose build --print` every time. A freshly-created isolated
+  # builder still hit it - ruling out stale builder/driver state - which points at something
+  # host-level in this runner's own environment specific to a third sequential heavy build within
+  # one job, not at this repo's own files or how they are invoked. A separate runner per image
+  # rules that whole class of problem out by construction, rather than continuing to guess at it.
+  build:
+    name: Build image
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [server, agent, seed]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
         uses: actions/checkout@v7
         with:
-          # Every image built below runs `dotnet publish`/`dotnet pack` inside its own build
-          # stage, and Nerdbank.GitVersioning computes the version from the commit height - a
-          # shallow clone fails that outright ("GitException: Shallow clone lacks the objects
-          # required to calculate version height"), not merely with the wrong version, same
-          # reasoning as every other workflow's own fetch-depth: 0.
+          # This image's own build stage runs `dotnet publish`/`dotnet pack`, and Nerdbank.
+          # GitVersioning computes the version from the commit height - a shallow clone fails
+          # that outright, same reasoning as every other workflow's own fetch-depth: 0.
           fetch-depth: 0
-      # A dedicated, isolated builder (the "docker-container" driver, its own buildkitd instance)
-      # instead of the runner's default embedded "docker" driver - confirmed the hard way, across
-      # three separate real runs of this exact workflow (batched `docker compose build`, one
-      # `docker compose build <service>` step apiece, then even plain `docker build` with no
-      # compose/bake involvement at all), that the *third* sequential build against this same
-      # context - server and agent, whichever order, always succeed; whichever runs third fails -
-      # reads a corrupt handful of bytes for its own Dockerfile.seed ("transferring dockerfile:
-      # 2B", "failed to solve: failed to read dockerfile: open Dockerfile.seed: no such file or
-      # directory") despite that file being completely unremarkable on disk (plain ASCII, correct
-      # size, no BOM) and that exact path resolving correctly through `docker compose build
-      # --print` every time. That pattern - always the third build, identity aside - points at
-      # stale internal state in the runner's shared, long-lived embedded builder carrying across
-      # rapid sequential builds against the same context, not at anything wrong with this repo's
-      # own files. A fresh, isolated builder is the well-supported way to rule that whole class of
-      # problem out, rather than continuing to reverse-engineer BuildKit internals from CI logs.
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      # `docker buildx build`, not plain `docker build` - confirmed the hard way, by this exact
-      # workflow's own next run, that the isolated builder above alone was not enough: `docker
-      # build` still logged "building with 'default' instance using docker driver" and hit the
-      # identical seed failure again, because setup-buildx-action switches the *buildx* CLI's own
-      # active builder without making it plain `docker build`'s backend too (that needs its own
-      # `install: true`, which replaces the classic build backend entirely - more than this step
-      # needs). Invoking `docker buildx build` explicitly is what actually routes through the
-      # isolated builder buildx itself is already using; --load is required for that (unlike plain
-      # `docker build`, `docker buildx build` does not load its result into the local image store
-      # by default) so `docker compose up` below finds it the same way it otherwise would have.
-      # Every image tag matches exactly what compose's own `<project>-<service>` naming would
-      # produce (confirmed against this workflow's own successful build logs: "naming to
-      # docker.io/library/docker-server") - `docker compose up` below, with no --build of its own,
-      # finds each image already built under the tag it would otherwise have built itself and uses
-      # it as-is.
-      - name: Build server image
-        run: docker buildx build --load --file docker/Dockerfile.server --tag docker-server:latest .
-      - name: Build agent image
-        run: docker buildx build --load --file docker/Dockerfile.agent --tag docker-agent:latest .
-      - name: Build seed image
-        run: docker buildx build --load --file docker/Dockerfile.seed --tag docker-seed:latest .
+      - name: Build ${{ matrix.image }} image
+        run: docker build --file docker/Dockerfile.${{ matrix.image }} --tag docker-${{ matrix.image }}:latest .
+      - name: Save ${{ matrix.image }} image
+        run: docker save docker-${{ matrix.image }}:latest --output docker-${{ matrix.image }}.tar
+      - name: Upload ${{ matrix.image }} image artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: docker-${{ matrix.image }}-image
+          path: docker-${{ matrix.image }}.tar
+  compose:
+    name: docker compose up
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      # No fetch-depth: 0 here - this job only runs docker/docker-compose.yml against the images
+      # the build job above already produced, nothing here runs `dotnet publish`/`dotnet pack`
+      # itself.
+      - name: Checkout sources
+        uses: actions/checkout@v7
+      - name: Download image artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: docker-*-image
+          path: images
+      # Each image the build job above tagged exactly as docker-compose.yml's own build.dockerfile
+      # entries would have tagged it themselves - `docker compose up` below, with no --build of
+      # its own, finds every one of them already loaded under the tag it would otherwise have
+      # built itself and uses it as-is.
+      - name: Load images
+        shell: bash
+        run: |
+          for image in server agent seed; do
+            docker load --input "images/docker-${image}-image/docker-${image}.tar"
+          done
       # SERVER.md's own Phase 7 verification bullet, run for real: "docker compose up --build
       # against a genuinely fresh set of volumes, all four containers healthy" - a runner always
-      # starts with none, so every run here already is that (images are already built by the
-      # three steps above, so no --build here). --wait blocks until every service with a
-      # healthcheck (postgres, server) reports healthy and every one-shot service (seed) exits,
-      # failing the step outright if any of them doesn't - schema deployment (server's own
+      # starts with none, so every run here already is that. --wait blocks until every service
+      # with a healthcheck (postgres, server) reports healthy and every one-shot service (seed)
+      # exits, failing the step outright if any of them doesn't - schema deployment (server's own
       # entrypoint runs `dbdeploy deploy` before the app itself ever starts, so a failed deploy
       # means server never reports healthy at all) and bagetter seeding (seed's own exit code) are
       # both proven by this one command succeeding, not asserted separately.
