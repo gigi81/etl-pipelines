@@ -14,9 +14,9 @@ namespace EtlPipelines.GrpcClient;
 /// already makes, with a gRPC sink instead of a log line (SERVER.md Phase 6).
 /// </summary>
 /// <remarks>
-/// Listening starts in the constructor - resolving this from the container (via
-/// <see cref="EtlPipelinesHostExtensions.UseGrpcClient"/>) is what turns it on, the same contract
-/// <c>PipelineTraceLogger</c> already has.
+/// Listening starts in the constructor - resolving this from the container (which
+/// <c>EtlPipelines.Hosting.EtlPipelinesHost</c> does by default for every application built on
+/// it) is what turns it on, the same contract <c>PipelineTraceLogger</c> already has.
 /// <para>
 /// <see cref="EtlDiagnostics"/> tags a stage's span with its own row counts
 /// (<see cref="EtlDiagnostics.RowsIn"/>/<see cref="EtlDiagnostics.RowsOut"/>/

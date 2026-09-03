@@ -1,6 +1,5 @@
 using EtlPipelines.Hosting;
 using EtlPipelines.Extensions.Sql.Sqlite;
-using EtlPipelines.GrpcClient;
 
 namespace EtlPipelines.Samples.CsvToDatabase;
 
@@ -29,7 +28,6 @@ public static class Program
     public static Task<int> RunAsync(string[] args)
     {
         return new EtlPipelinesHost(Description)
-            .UseGrpcClient()
             .ConfigureServices((_, services, workspace) =>
                 services
                     .AddSqliteConnection(Pipeline.Connection, Pipeline.ConnectionString(workspace))

@@ -14,11 +14,12 @@ namespace EtlPipelines.GrpcClient;
 /// </summary>
 /// <remarks>
 /// Takes an already-built <see cref="PipelineExecutionService.PipelineExecutionServiceClient"/>
-/// rather than a server url - <see cref="EtlPipelinesHostExtensions.UseGrpcClient"/> builds the
-/// channel/client itself (this runs during <c>IHostBuilder.Build()</c>'s app-configuration phase,
-/// before the container that would otherwise hand one over even exists), and taking the client
-/// directly rather than a url is what lets <see cref="GrpcConfigurationProvider"/> be tested
-/// against a mocked client instead of a real socket.
+/// rather than a server url - <c>EtlPipelines.Hosting.EtlPipelinesHost</c> (the one built-in
+/// caller) builds the channel/client itself (this runs during <c>IHostBuilder.Build()</c>'s
+/// app-configuration phase, before the container that would otherwise hand one over even
+/// exists), and taking the client directly rather than a url is what lets
+/// <see cref="GrpcConfigurationProvider"/> be tested against a mocked client instead of a real
+/// socket.
 /// </remarks>
 public sealed class GrpcConfigurationSource(PipelineExecutionService.PipelineExecutionServiceClient client, string sessionId) : IConfigurationSource
 {

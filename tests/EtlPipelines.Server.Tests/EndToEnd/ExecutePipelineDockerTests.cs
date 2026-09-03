@@ -24,12 +24,12 @@ namespace EtlPipelines.Server.Tests.EndToEnd;
 /// <remarks>
 /// Builds on exactly what <see cref="InstallLoopDockerTests"/> already proves (install closes the
 /// loop) - this test installs the same way, then goes one step further and actually executes what
-/// it just installed. <c>EtlPipelines.Samples.CsvToDatabase</c>, not <c>ArchiveToDatabase</c>, is
-/// this phase's own pick (SERVER.md: "already proven against five real database engines") - the
-/// one sample with a <c>ProjectReference</c> to <c>EtlPipelines.GrpcClient</c> and its own
-/// <c>UseGrpcClient()</c> call, so the run this test triggers is the first one this repo runs
-/// through the real gRPC round trip end to end rather than only through
-/// <c>tests/EtlPipelines.Samples.Tests</c>' in-process/CLI coverage.
+/// it just installed. Every sample gets the session-id/server-url wiring for free (it is built
+/// into <c>EtlPipelinesHost</c> itself, not an opt-in any one sample asks for), so
+/// <c>EtlPipelines.Samples.CsvToDatabase</c> is this phase's own pick for a different reason
+/// (SERVER.md: "already proven against five real database engines") - the run this test triggers
+/// is the first one this repo runs through the real gRPC round trip end to end rather than only
+/// through <c>tests/EtlPipelines.Samples.Tests</c>' in-process/CLI coverage.
 /// </remarks>
 [Category("Docker")]
 [ClassDataSource<PostgreSqlFixture, BagetterFixture>(Shared = [SharedType.PerAssembly, SharedType.PerAssembly])]
