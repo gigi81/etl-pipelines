@@ -41,18 +41,27 @@ jobs:
       # problem out, rather than continuing to reverse-engineer BuildKit internals from CI logs.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      # Plain `docker build` (using the isolated builder above), not `docker compose build`/`up
-      # --build` - every image tag matches exactly what compose's own `<project>-<service>` naming
-      # would produce (confirmed against this workflow's own successful build logs: "naming to
+      # `docker buildx build`, not plain `docker build` - confirmed the hard way, by this exact
+      # workflow's own next run, that the isolated builder above alone was not enough: `docker
+      # build` still logged "building with 'default' instance using docker driver" and hit the
+      # identical seed failure again, because setup-buildx-action switches the *buildx* CLI's own
+      # active builder without making it plain `docker build`'s backend too (that needs its own
+      # `install: true`, which replaces the classic build backend entirely - more than this step
+      # needs). Invoking `docker buildx build` explicitly is what actually routes through the
+      # isolated builder buildx itself is already using; --load is required for that (unlike plain
+      # `docker build`, `docker buildx build` does not load its result into the local image store
+      # by default) so `docker compose up` below finds it the same way it otherwise would have.
+      # Every image tag matches exactly what compose's own `<project>-<service>` naming would
+      # produce (confirmed against this workflow's own successful build logs: "naming to
       # docker.io/library/docker-server") - `docker compose up` below, with no --build of its own,
       # finds each image already built under the tag it would otherwise have built itself and uses
       # it as-is.
       - name: Build server image
-        run: docker build --file docker/Dockerfile.server --tag docker-server:latest .
+        run: docker buildx build --load --file docker/Dockerfile.server --tag docker-server:latest .
       - name: Build agent image
-        run: docker build --file docker/Dockerfile.agent --tag docker-agent:latest .
+        run: docker buildx build --load --file docker/Dockerfile.agent --tag docker-agent:latest .
       - name: Build seed image
-        run: docker build --file docker/Dockerfile.seed --tag docker-seed:latest .
+        run: docker buildx build --load --file docker/Dockerfile.seed --tag docker-seed:latest .
       # SERVER.md's own Phase 7 verification bullet, run for real: "docker compose up --build
       # against a genuinely fresh set of volumes, all four containers healthy" - a runner always
       # starts with none, so every run here already is that (images are already built by the
