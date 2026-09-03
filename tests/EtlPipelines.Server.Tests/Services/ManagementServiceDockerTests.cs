@@ -108,15 +108,22 @@ public class ManagementServiceDockerTests(PostgreSqlFixture fixture)
         //arrange
         await using var context = await DeploySchemaAndCreateContextAsync();
         var packageId = Guid.NewGuid();
+        // A synthetic id, not a real sample's - same reasoning as
+        // ListInstalledPipelines_reads_a_real_deployed_schema's own copy of this comment.
+        // EtlPipelines.Server.Tests.EndToEnd.ExecutePipelineDockerTests installs the real
+        // EtlPipelines.Samples.CsvToDatabase into this same shared Postgres container, which used
+        // to collide for real with this test seeding a second Packages row under that exact
+        // NugetPackageId - Packages.NugetPackageId is unique.
+        var nugetPackageId = $"Test.Fixture.{Guid.NewGuid():N}";
         context.NuGetFeeds.RemoveRange(await context.NuGetFeeds.ToListAsync());
         context.NuGetFeeds.Add(new NuGetFeed { Id = Guid.NewGuid(), Url = "http://nuget:5000/v3/index.json", Ordinal = 0 });
-        context.Packages.Add(new Package { Id = packageId, NugetPackageId = "EtlPipelines.Samples.CsvToDatabase", CreatedAt = DateTime.UtcNow });
+        context.Packages.Add(new Package { Id = packageId, NugetPackageId = nugetPackageId, CreatedAt = DateTime.UtcNow });
         context.PackageVersions.Add(new PackageVersion { Id = Guid.NewGuid(), PackageId = packageId, Version = "1.0.0", InstalledAt = DateTime.UtcNow, Status = "Installed" });
         await context.SaveChangesAsync();
 
         var feedClient = new Mock<INuGetFeedClient>();
         feedClient
-            .Setup(client => client.GetLatestVersionAsync(It.IsAny<string>(), "EtlPipelines.Samples.CsvToDatabase", It.IsAny<CancellationToken>()))
+            .Setup(client => client.GetLatestVersionAsync(It.IsAny<string>(), nugetPackageId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(NuGet.Versioning.NuGetVersion.Parse("1.1.0"));
 
         var service = CreateService(context, feedClient.Object);
@@ -126,7 +133,7 @@ public class ManagementServiceDockerTests(PostgreSqlFixture fixture)
 
         //assert
         response.Updates.Should().ContainSingle(update =>
-            update.PackageId == "EtlPipelines.Samples.CsvToDatabase" &&
+            update.PackageId == nugetPackageId &&
             update.InstalledVersion == "1.0.0" &&
             update.LatestVersion == "1.1.0");
     }

@@ -98,9 +98,10 @@ public static class ServerApplication
         // pipeline process's own EtlPipelines.GrpcClient calls back to. Server:PublicUrl is what
         // an operator sets when this server is reachable at a different address than the one it
         // binds to (a reverse proxy, a container's published port); falling back to
-        // "localhost:<Server:Port>" is right for a bare local run, and for
-        // ExecutePipelineDockerTests-style in-process tests, which reserve a real port ahead of
-        // time and pass it as Server:Port precisely so this fallback already names it correctly.
+        // "localhost:<Server:Port>" is right for a bare local run. ExecutePipelineDockerTests
+        // passes Server:PublicUrl explicitly instead of relying on this fallback - a real,
+        // already-reserved loopback address it knows resolves, rather than trusting "localhost"
+        // to resolve identically to whatever address its own test client already proved reachable.
         var publicUrl = builder.Configuration["Server:PublicUrl"] ?? $"http://localhost:{port}";
         builder.Services.AddScoped(provider => new RunDispatcher(
             provider.GetRequiredService<ServerDbContext>(),

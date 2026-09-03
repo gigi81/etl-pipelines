@@ -50,15 +50,19 @@ public class ExecutePipelineDockerTests(PostgreSqlFixture postgres, BagetterFixt
         await ClearNuGetFeedsAsync();
         var version = await PackAndPushAsync();
 
-        // Reserved ahead of Kestrel binding it for real, so Server:PublicUrl's own fallback
-        // ("http://localhost:{Server:Port}", computed from the same Server:Port this passes)
-        // already names the right address before ServerApplication.Build() ever runs - the
-        // launched pipeline process's own --server-url has to be correct from the start, unlike
-        // the test client below, which can just read the real bound address back off Kestrel.
+        // Reserved ahead of Kestrel binding it for real, so this test can pass a real,
+        // already-known address as Server:PublicUrl before ServerApplication.Build() ever runs -
+        // the launched pipeline process's own --server-url has to be correct from the start, and
+        // "127.0.0.1" here (rather than leaving Server:PublicUrl to its own "localhost" fallback)
+        // matches exactly what GetBoundUrl below already proves reachable for the test's own
+        // client, rather than trusting a second, never-otherwise-exercised hostname to resolve
+        // the same way on whatever machine runs this.
         var port = GetFreeTcpPort();
+        var publicUrl = $"http://127.0.0.1:{port}";
 
         await using var server = EtlPipelines.Server.ServerApplication.Build([
             "--Server:Port", port.ToString(),
+            "--Server:PublicUrl", publicUrl,
             "--ConnectionStrings:Server", postgres.ConnectionString,
             "--NuGetFeed:Url", bagetter.FeedUrl,
         ]);
@@ -89,7 +93,12 @@ public class ExecutePipelineDockerTests(PostgreSqlFixture postgres, BagetterFixt
             var executeResponse = await client.ExecutePipelineAsync(new ExecutePipelineRequest { PipelineId = pipelineId });
             executeResponse.RunId.Should().NotBeNullOrEmpty();
 
-            var progressEvents = await StreamToCompletionAsync(client, executeResponse.RunId, TimeSpan.FromMinutes(2));
+            // Generous, matching ManagementServiceImpl.InstallTimeout's own reasoning: this run
+            // starts with the agent's own real dotnet tool install replay-through (the shim was
+            // already installed above, but the process this launches still has to JIT-start a
+            // real framework-dependent .NET app) before it ever touches a single CSV row, and a
+            // loaded CI runner is not this repo's own machine.
+            var progressEvents = await StreamToCompletionAsync(client, executeResponse.RunId, TimeSpan.FromMinutes(5));
 
             //assert
             progressEvents.Should().NotBeEmpty("at least the run's own completion event should have arrived");
