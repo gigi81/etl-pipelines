@@ -24,22 +24,29 @@ jobs:
           # required to calculate version height"), not merely with the wrong version, same
           # reasoning as every other workflow's own fetch-depth: 0.
           fetch-depth: 0
-      # Plain `docker build`, not `docker compose build`/`up --build` - confirmed the hard way,
-      # by two real runs of this exact workflow, that `docker compose build` (batched across all
-      # three services, and even called for "seed" alone on its own) intermittently fails to read
-      # Dockerfile.seed off disk at all ("failed to solve: failed to read dockerfile: open
-      # Dockerfile.seed: no such file or directory", "transferring dockerfile: 2B" - a couple of
-      # bytes, not this file's real ~1.2kB), despite that exact path resolving correctly every
-      # time through `docker compose build --print`. Root cause not fully pinned down (the file on
-      # disk is unremarkable - plain ASCII, LF line endings, no BOM - and it recurred as the third
-      # build in a sequence where the first two, structurally identical builds each succeeded), but
-      # it is specific to the bake-definition-over-stdin path `docker compose build` always goes
-      # through, one way or another - so this sidesteps that whole mechanism rather than continuing
-      # to guess at it. Every image tag matches exactly what compose's own `<project>-<service>`
-      # naming would produce (confirmed against this workflow's own successful build logs:
-      # "naming to docker.io/library/docker-server") - `docker compose up` below, with no --build
-      # of its own, finds each image already built under the tag it would otherwise have built
-      # itself and uses it as-is.
+      # A dedicated, isolated builder (the "docker-container" driver, its own buildkitd instance)
+      # instead of the runner's default embedded "docker" driver - confirmed the hard way, across
+      # three separate real runs of this exact workflow (batched `docker compose build`, one
+      # `docker compose build <service>` step apiece, then even plain `docker build` with no
+      # compose/bake involvement at all), that the *third* sequential build against this same
+      # context - server and agent, whichever order, always succeed; whichever runs third fails -
+      # reads a corrupt handful of bytes for its own Dockerfile.seed ("transferring dockerfile:
+      # 2B", "failed to solve: failed to read dockerfile: open Dockerfile.seed: no such file or
+      # directory") despite that file being completely unremarkable on disk (plain ASCII, correct
+      # size, no BOM) and that exact path resolving correctly through `docker compose build
+      # --print` every time. That pattern - always the third build, identity aside - points at
+      # stale internal state in the runner's shared, long-lived embedded builder carrying across
+      # rapid sequential builds against the same context, not at anything wrong with this repo's
+      # own files. A fresh, isolated builder is the well-supported way to rule that whole class of
+      # problem out, rather than continuing to reverse-engineer BuildKit internals from CI logs.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      # Plain `docker build` (using the isolated builder above), not `docker compose build`/`up
+      # --build` - every image tag matches exactly what compose's own `<project>-<service>` naming
+      # would produce (confirmed against this workflow's own successful build logs: "naming to
+      # docker.io/library/docker-server") - `docker compose up` below, with no --build of its own,
+      # finds each image already built under the tag it would otherwise have built itself and uses
+      # it as-is.
       - name: Build server image
         run: docker build --file docker/Dockerfile.server --tag docker-server:latest .
       - name: Build agent image
