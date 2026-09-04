@@ -34,9 +34,24 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-    # DIAGNOSTIC: if: condition removed temporarily to isolate why this workflow file started
-    # failing to parse at all (zero jobs scheduled, run name falls back to the file path) - see
-    # commit history on this branch. Restored once the actual cause is confirmed.
+    # windows-latest and (especially) macos-latest bill at 2x/10x a Linux runner-minute - across
+    # this repo's real history, macOS alone accounts for roughly 60% of every Test job's total
+    # billed cost despite being the fastest of the three to actually run. Every step below that
+    # actually costs anything is individually gated with the same condition (checkout stays
+    # unconditional - it is nearly free either way, and having it always run keeps the job
+    # visibly "did something" rather than looking broken on a skipped leg): ubuntu-latest runs on
+    # every push and PR alike for fast feedback; windows-latest/macos-latest only run once a
+    # commit has actually landed on main or is being tagged for release - not on every iteration
+    # of a PR getting there. A real cross-platform break still gets caught, just on the commit
+    # that matters rather than every one of the (sometimes many) commits along the way.
+    #
+    # A job-level `if:` referencing matrix.* here (even wrapped in ${{ }}) makes GitHub reject
+    # this entire workflow file outright - confirmed the hard way, twice, against this exact
+    # repository: the run comes back as a bare "failure" with zero jobs scheduled and the run
+    # name falling back to the file path itself, GitHub's signature for a workflow it couldn't
+    # even parse, not a job that failed. Per-step `if:` referencing matrix.* has no such
+    # restriction (it is the standard, documented way to vary step behavior across a matrix), so
+    # that is what every step below uses instead.
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout sources
@@ -46,12 +61,15 @@ jobs:
           # gives it the wrong answer.
           fetch-depth: 0
       - name: Setup .NET
+        if: matrix.os == 'ubuntu-latest' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
       - name: Restore
+        if: matrix.os == 'ubuntu-latest' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         run: dotnet restore
       - name: Build
+        if: matrix.os == 'ubuntu-latest' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         run: dotnet build --configuration Release --no-restore
       # TUnit runs on Microsoft.Testing.Platform (see global.json), so the report and coverage flags
       # are the platform's own (--report-trx / --coverage) rather than the VSTest ones
@@ -65,15 +83,15 @@ jobs:
       # reporter below would never get to render which test broke.
       #
       # The Docker category is excluded on every leg, Linux included. The container-backed tests are
-      # run by the integration-tests workflow instead, on its own runner: running them here as well
+      # run by the databases job below instead, on its own runner: running them here as well
       # meant two test assemblies each starting their own Oracle, SQL Server, PostgreSQL and MySQL at
       # the same time on one runner, and the second Oracle never finished opening its database
-      # (ORA-01109). One workflow owning the containers keeps that from happening again.
+      # (ORA-01109). One job owning the containers keeps that from happening again.
       #
       # The Packaging category is excluded for a different reason: EtlPipelines.PipelinePackaging.Tests
       # spawns a real "dotnet pack" + "dotnet tool install" round trip per test, which would roughly
       # double this job's running time on every PR for a contract that changes rarely. It runs in its
-      # own sequential step in integration-tests.yml instead, same as the Docker-tagged suites.
+      # own sequential step in the databases job instead, same as the Docker-tagged suites.
       #
       # Two exclusions, not one "Category!=Docker&Category!=Packaging" - empirically (confirmed against
       # this exact MTP version before landing this), a single bracket combining two conditions on the
@@ -88,6 +106,7 @@ jobs:
       # nothing left to run, which MTP reports as an error; it is the expected outcome here, not a
       # failure.
       - name: Run tests
+        if: matrix.os == 'ubuntu-latest' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: >
           dotnet test --configuration Release --no-build
@@ -98,33 +117,178 @@ jobs:
           --ignore-exit-code 8
           || true
       # One level, deliberately: the collector also drops a copy under TestResults/_<machine>/In/,
-      # and a ** glob would upload every report twice.
+      # and a ** glob would upload every report twice. Feeds the coverage job below, which is the
+      # only place in this workflow that actually talks to Codecov - see that job's own comment
+      # for why.
       - name: Upload coverage
+        if: always() && (matrix.os == 'ubuntu-latest' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: actions/upload-artifact@v7
-        if: always()
         with:
           name: Code coverage ${{ matrix.os }}
           path: "./TestResults/*.cobertura.xml"
-      # One leg only. Codecov merges every report it is sent for a commit, and the three legs cover
-      # the same lines, so uploading all of them would say nothing extra. The integration-tests
-      # workflow uploads the container-backed half of the coverage against the same commit.
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7
-        if: always() && runner.os == 'Linux'
-        with:
-          files: "./TestResults/*.cobertura.xml"
-          token: ${{ secrets.CODECOV_TOKEN }}
-      # Last, because this is the step that decides whether the job passes. Anything that has to
-      # happen whatever the tests did - the artifact, the Codecov upload - is above it, where a
-      # failing test cannot skip it.
       - name: Test report
+        if: always() && (matrix.os == 'ubuntu-latest' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: dorny/test-reporter@v3.0.0
-        if: always()
         with:
           name: test-results-${{ matrix.os }}
           path: "./TestResults/*-test-results.trx"
           reporter: dotnet-trx
           fail-on-error: true
+  databases:
+    name: Databases
+    # Real SQL Server, PostgreSQL, MySQL, Oracle and SFTP containers via Testcontainers - Linux
+    # only (a Docker engine is only available on the Linux runners), and slow enough (six real
+    # engines, a real "dotnet pack"/"dotnet tool install" round trip) that running it on every PR
+    # push was most of this repository's own Actions minutes spend. Runs only once a commit has
+    # actually landed on main or is being tagged for release - the same condition the Test job's
+    # own windows-latest/macos-latest legs use above, for the same reason: a real regression is
+    # still caught on the commit that matters, just not on every iteration of a PR getting there.
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v7
+        with:
+          # Nerdbank.GitVersioning computes the version from the commit height, so a shallow clone
+          # gives it the wrong answer.
+          fetch-depth: 0
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      # db's schema is owned by dbdeploy, never `dotnet ef migrations` - see SERVER.md's "Database
+      # schema management" decision. Installed here, ahead of every step below that needs it
+      # (both ServerDatabaseDockerTests and ManagementServiceDockerTests shell out to it), the
+      # same documented way an operator installs it (`dotnet tool install --global dbdeploy`)
+      # rather than a PackageReference.
+      - name: Install dbdeploy
+        run: |
+          dotnet tool install --global dbdeploy
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+      - name: Restore
+        run: dotnet restore
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+      # First, and fast: a single atmoz/sftp container, nothing near the size of the database steps
+      # below.
+      - name: File servers
+        shell: bash
+        run: >
+          dotnet test tests/EtlPipelines.Extensions.Files.Servers.Tests/EtlPipelines.Extensions.Files.Servers.Tests.csproj
+          --configuration Release --no-build
+          --results-directory ./TestResults
+          --report-trx --report-trx-filename "{asm}-integration.trx"
+          --coverage --coverage-output-format cobertura
+          || true
+      # One project at a time, deliberately. Both projects start their own Oracle, SQL Server,
+      # PostgreSQL and MySQL, and `dotnet test` runs test assemblies in parallel: run together, the
+      # runner ends up hosting two of each engine and the second Oracle never finishes opening its
+      # database (ORA-01109: database not open). Sequential steps mean at most one set is ever up.
+      - name: Bulk loaders against every engine
+        shell: bash
+        run: >
+          dotnet test tests/EtlPipelines.Extensions.Sql.Databases.Tests/EtlPipelines.Extensions.Sql.Databases.Tests.csproj
+          --configuration Release --no-build
+          --results-directory ./TestResults
+          --report-trx --report-trx-filename "{asm}-integration.trx"
+          --coverage --coverage-output-format cobertura
+          || true
+      # Runs dbdeploy deploy against a genuinely empty, Testcontainers-managed Postgres, then reads
+      # and writes through ServerDbContext against the schema it just created - the one test that
+      # proves db/server/_Init.sql and EF Core's scaffolded mapping actually agree, not merely that
+      # each is individually well-formed. dbdeploy's own CLI contract (validate/deploy/ci against a
+      # plain Postgres, not one this project's code touches) is exercised separately, in db.yml.
+      - name: Server.Database
+        shell: bash
+        run: >
+          dotnet test tests/EtlPipelines.Server.Database.Tests/EtlPipelines.Server.Database.Tests.csproj
+          --configuration Release --no-build
+          --results-directory ./TestResults
+          --report-trx --report-trx-filename "{asm}-integration.trx"
+          --coverage --coverage-output-format cobertura
+          || true
+      # The full ManagementService surface Phase 4 (SERVER.md) implements, against its own
+      # Testcontainers-managed Postgres (deployed via dbdeploy once per run - see
+      # ManagementServiceDockerTests) - a different container from the "Server.Database" step
+      # above, proving the gRPC service layer agrees with a real database, not just
+      # EtlPipelines.Server.Database's own mapping in isolation.
+      - name: Server
+        shell: bash
+        run: >
+          dotnet test tests/EtlPipelines.Server.Tests/EtlPipelines.Server.Tests.csproj
+          --configuration Release --no-build
+          --results-directory ./TestResults
+          --report-trx --report-trx-filename "{asm}-integration.trx"
+          --coverage --coverage-output-format cobertura
+          || true
+      # Every sample is executed end to end and checked against what it claims to produce. Samples are
+      # documentation nothing compiles against, so without this they rot quietly. Here they are run
+      # against the real engines; the Test job runs the same samples against SQLite.
+      - name: Samples against every engine
+        shell: bash
+        run: >
+          dotnet test tests/EtlPipelines.Samples.Tests/EtlPipelines.Samples.Tests.csproj
+          --configuration Release --no-build
+          --results-directory ./TestResults
+          --report-trx --report-trx-filename "{asm}-integration.trx"
+          --coverage --coverage-output-format cobertura
+          || true
+      # A real "dotnet pack" + "dotnet tool install" round trip, proving SERVER.md Phase 1's actual
+      # contract: that a sample survives being packed and installed as a real dotnet tool, not just run
+      # in-process. Needs no Docker, but it is slow (two MSBuild/NuGet round trips) for the same reason
+      # the Docker-backed suites above get their own step rather than running on every fast per-PR leg
+      # of the Test job.
+      - name: Pipeline packaging
+        shell: bash
+        run: >
+          dotnet test tests/EtlPipelines.PipelinePackaging.Tests/EtlPipelines.PipelinePackaging.Tests.csproj
+          --configuration Release --no-build
+          --results-directory ./TestResults
+          --report-trx --report-trx-filename "{asm}-integration.trx"
+          --coverage --coverage-output-format cobertura
+          || true
+      # Feeds the coverage job below, the same as the Test job's own "Upload coverage" step - see
+      # that job's own comment for why this no longer talks to Codecov directly.
+      - name: Upload coverage
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Code coverage databases
+          path: "./TestResults/*.cobertura.xml"
+      - name: Test report
+        uses: dorny/test-reporter@v3.0.0
+        if: always()
+        with:
+          name: integration-results
+          path: "./TestResults/*-integration.trx"
+          reporter: dotnet-trx
+          fail-on-error: true
+  # One upload for the whole workflow, not one per job. Codecov merges every report it receives
+  # for a commit regardless, so this was never about losing coverage data - it was about actually
+  # submitting once: Test and (when it runs) Databases each used to call codecov-action
+  # separately, hitting Codecov's API twice (three times counting a stray duplicate) for the same
+  # commit on every run, which - on top of being wasteful - is a real, plausible source of the
+  # flaky/failed Codecov uploads this repo has seen. `needs: [test, databases]` waits for
+  # everything that might have produced coverage; databases being skipped (its own `if:` above,
+  # true - not false) still satisfies `needs:` by default, so a PR run (which never runs
+  # databases) still uploads Test's own three legs' worth of coverage here, just without a fourth,
+  # databases-shaped file to add to it.
+  coverage:
+    name: Upload coverage
+    needs: [test, databases]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: "Code coverage *"
+          path: TestResults
+          merge-multiple: true
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: "TestResults/*.cobertura.xml"
+          token: ${{ secrets.CODECOV_TOKEN }}
   pack:
     name: Pack
     needs: [test]

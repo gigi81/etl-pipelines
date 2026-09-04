@@ -16,8 +16,8 @@ permissions:
 jobs:
   compose:
     name: docker compose up --build
-    # Linux only, same reasoning as integration-tests.yml's own "Databases" job - a Docker engine
-    # is only available on the Linux runners.
+    # Linux only, same reasoning as ci.yml's own "Databases" job - a Docker engine is only
+    # available on the Linux runners.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
