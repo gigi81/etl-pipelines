@@ -4,15 +4,26 @@ on:
     branches:
       - main
       - 'feature/**'
+    # A docs-only change touches nothing this workflow builds or runs.
+    paths-ignore:
+      - '**/*.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+# Same reasoning as ci.yml's own concurrency block: a superseded push cancels whatever of its own
+# predecessor's "docker compose up --build" (and, on main, GHCR publish) is still running rather
+# than letting it burn to completion for a commit nobody cares about any more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   compose:
     name: docker compose up --build
-    # Linux only, same reasoning as integration-tests.yml's own "Databases" job - a Docker engine
-    # is only available on the Linux runners.
+    # Linux only, same reasoning as ci.yml's own "Databases" job - a Docker engine is only
+    # available on the Linux runners.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
