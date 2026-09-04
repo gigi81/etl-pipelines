@@ -6,8 +6,23 @@ on:
       - 'feature/**'
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
+    # Nothing under here touches the .NET build/test surface this workflow exists to run -
+    # docker/** and docker.yml have their own workflow, and a docs-only change compiles nothing.
+    # Skipping the whole workflow (not merely a step) when every changed file matches is what
+    # actually saves the runner minutes - a Docker-only iteration cycle used to re-run this
+    # workflow's full 3-OS matrix + Pack for zero reason every single time.
+    paths-ignore:
+      - 'docker/**'
+      - '.github/workflows/docker.yml'
+      - '.dockerignore'
+      - '**/*.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docker/**'
+      - '.github/workflows/docker.yml'
+      - '.dockerignore'
+      - '**/*.md'
 permissions:
   contents: read
   actions: read
@@ -19,6 +34,14 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+    # windows-latest and (especially) macos-latest bill at 2x/10x a Linux runner-minute - across
+    # this repo's real history, macOS alone accounts for roughly 60% of every Test job's total
+    # billed cost despite being the fastest of the three to actually run. ubuntu-latest runs on
+    # every push and PR alike for fast feedback; windows-latest/macos-latest only run once a
+    # commit has actually landed on main or is being tagged for release - not on every iteration
+    # of a PR getting there. A real cross-platform break still gets caught, just on the commit
+    # that matters rather than every one of the (sometimes many) commits along the way.
+    if: matrix.os == 'ubuntu-latest' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout sources

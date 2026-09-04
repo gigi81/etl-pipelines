@@ -4,8 +4,21 @@ on:
     branches:
       - main
       - 'feature/**'
+    # Nothing under here is a db/ script or the .NET code this job actually deploys/builds
+    # against - docker/** and docker.yml have their own workflow, and a docs-only change touches
+    # neither.
+    paths-ignore:
+      - 'docker/**'
+      - '.github/workflows/docker.yml'
+      - '.dockerignore'
+      - '**/*.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docker/**'
+      - '.github/workflows/docker.yml'
+      - '.dockerignore'
+      - '**/*.md'
 permissions:
   contents: read
 jobs:

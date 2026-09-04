@@ -4,8 +4,13 @@ on:
     branches:
       - main
       - 'feature/**'
+    # A docs-only change touches nothing this workflow builds or runs.
+    paths-ignore:
+      - '**/*.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
 permissions:
   contents: read
 jobs:

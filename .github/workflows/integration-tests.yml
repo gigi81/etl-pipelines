@@ -4,8 +4,20 @@ on:
     branches:
       - main
       - 'feature/**'
+    # Nothing under here is .NET code or a db/ script this workflow's own suites touch - docker/**
+    # and docker.yml have their own workflow, and a docs-only change compiles nothing.
+    paths-ignore:
+      - 'docker/**'
+      - '.github/workflows/docker.yml'
+      - '.dockerignore'
+      - '**/*.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docker/**'
+      - '.github/workflows/docker.yml'
+      - '.dockerignore'
+      - '**/*.md'
 permissions:
   contents: read
   actions: read
