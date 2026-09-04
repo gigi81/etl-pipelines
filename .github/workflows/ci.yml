@@ -269,13 +269,19 @@ jobs:
   # separately, hitting Codecov's API twice (three times counting a stray duplicate) for the same
   # commit on every run, which - on top of being wasteful - is a real, plausible source of the
   # flaky/failed Codecov uploads this repo has seen. `needs: [test, databases]` waits for
-  # everything that might have produced coverage; databases being skipped (its own `if:` above,
-  # true - not false) still satisfies `needs:` by default, so a PR run (which never runs
-  # databases) still uploads Test's own three legs' worth of coverage here, just without a fourth,
-  # databases-shaped file to add to it.
+  # everything that might have produced coverage.
+  #
+  # The explicit `if:` below is load-bearing, confirmed the hard way against this exact repository:
+  # a `needs:` job's *default* status check (an implicit success()) is false whenever any needed
+  # job was skipped, not just when one failed - so on every PR run, where databases's own `if:`
+  # above is deliberately false, this job was itself silently skipped and Codecov never got
+  # anything, despite Test's three legs having already uploaded their coverage artifacts. Running
+  # whenever nothing failed or was cancelled - treating a skip as fine, same as `needs:` itself
+  # already tolerates - is what actually restores that.
   coverage:
     name: Upload coverage
     needs: [test, databases]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-latest
     steps:
       - name: Download coverage artifacts
