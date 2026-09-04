@@ -96,6 +96,17 @@ public static class ServerApplication
         // subscribers outlive any one gRPC call.
         builder.Services.AddSingleton<RunStatusStore>();
 
+        // Real wall-clock time in production; AgentLivenessMonitorTests substitutes a fake one
+        // directly (it does not go through DI) to drive the timeout decision without a real
+        // elapsed wait.
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.Configure<AgentLivenessOptions>(builder.Configuration.GetSection(AgentLivenessOptions.SectionName));
+
+        // An agent that has stopped heartbeating (its process died, rather than a clean
+        // Subscribe disconnect) is otherwise invisible to every request-driven code path in this
+        // file - this is the one background sweep that actually notices (SERVER.md Phase 8).
+        builder.Services.AddHostedService<AgentLivenessMonitor>();
+
         // The address embedded in every ExecutePipeline work item's ServerUrl - where a launched
         // pipeline process's own EtlPipelines.GrpcClient calls back to. Server:PublicUrl is what
         // an operator sets when this server is reachable at a different address than the one it

@@ -32,6 +32,11 @@ public static class AgentApplication
         builder.Services.AddSingleton<PackageInstaller>();
         builder.Services.AddHostedService<AgentRegistration>();
 
+        // agent-cache grows unboundedly through Phase 7 (one directory per installed package
+        // version, never cleaned up) - this is the LRU sweep that keeps it bounded (SERVER.md
+        // Phase 8).
+        builder.Services.AddHostedService<CacheEvictor>();
+
         return builder.Build();
     }
 }

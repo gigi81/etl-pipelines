@@ -118,10 +118,14 @@ public sealed class PipelineExecutionServiceImpl(ServerDbContext dbContext, Secr
     /// <inheritdoc />
     public override async Task<PipelineExecution.V1.Ack> Heartbeat(HeartbeatRequest request, ServerCallContext context)
     {
-        // Nothing to update yet - there is no per-run "last heartbeat" column in the schema
-        // (unlike Agents.LastHeartbeatAt), so this exists to validate the session and give a
-        // launched process something well-defined to call; a real liveness use for it is Phase
-        // 8's concern, alongside the rest of that phase's reliability work.
+        // Still nothing to update - SERVER.md Phase 8's own "Agent liveness" is scoped to exactly
+        // that, the agent's own heartbeat (Agents.LastHeartbeatAt, watched by
+        // Agents.AgentLivenessMonitor), not a per-run one here. A launched process that hangs
+        // (never exits, never calls ReportRunResult) while its own agent stays perfectly healthy
+        // is therefore still not caught by anything - a real liveness use for this RPC, and the
+        // schema column it would need, is deliberately left as a known, separate gap rather than
+        // folded into this phase. This call still exists to validate the session and give a
+        // launched process something well-defined to call either way.
         await FindRunAsync(request.SessionId, context.CancellationToken).ConfigureAwait(false);
         return new PipelineExecution.V1.Ack();
     }

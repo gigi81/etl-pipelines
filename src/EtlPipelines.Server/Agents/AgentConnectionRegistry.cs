@@ -12,10 +12,14 @@ namespace EtlPipelines.Server.Agents;
 /// <remarks>
 /// In-memory only, deliberately: an agent's live stream cannot be persisted or resumed across a
 /// <c>Server</c> restart, so there is nothing durable to keep here even if this class wanted to.
-/// Phase 8 ("Reliability") is what makes a dispatch surviving a restart or an agent going silent
-/// recoverable, rather than just "the dispatch times out" - which is all this class does about
-/// either today. Registered as a singleton: every gRPC call into <c>AgentServiceImpl</c>/
-/// <c>ManagementServiceImpl</c> shares the one instance, since a connection or a pending dispatch
+/// Phase 8 ("Reliability") is what makes an agent going silent recoverable, rather than just "the
+/// dispatch times out" - <see cref="AgentLivenessMonitor"/> watches <c>Agents.LastHeartbeatAt</c>
+/// (a durable, Server.Database-backed signal, unlike anything this class itself holds) and marks
+/// any <c>Runs</c> row still owned by a silent agent <c>AgentLost</c>. A dispatch surviving a
+/// <c>Server</c> restart is still exactly what this class's own remarks always said it could not
+/// be - Phase 8 does not change that: every connection and pending install here is still lost the
+/// moment this process restarts, same as before. Registered as a singleton: every gRPC call into
+/// <c>AgentServiceImpl</c>/<c>ManagementServiceImpl</c> shares the one instance, since a connection or a pending dispatch
 /// is process-wide state, not per-request.
 /// </remarks>
 public sealed class AgentConnectionRegistry

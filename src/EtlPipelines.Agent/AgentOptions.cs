@@ -16,4 +16,16 @@ public sealed class AgentOptions
 
     /// <summary>Free-form tags this agent registers with, e.g. <c>"linux"</c>, <c>"gpu"</c>. Empty by default.</summary>
     public IReadOnlyList<string> Tags { get; set; } = [];
+
+    /// <summary>
+    /// <see cref="CacheDirectory"/>'s total size cap, in bytes - <see cref="CacheEvictor"/> deletes
+    /// the least-recently-used installed package version(s) once this is exceeded (SERVER.md Phase
+    /// 8: "agent-cache... grows unboundedly through Phase 7"). 5 GiB by default - generous for a
+    /// handful of installed tool packages, small next to what a machine an operator dedicates to
+    /// running an agent typically has to spare.
+    /// </summary>
+    public long CacheSizeCapBytes { get; set; } = 5L * 1024 * 1024 * 1024;
+
+    /// <summary>How often <see cref="CacheEvictor"/> checks <see cref="CacheDirectory"/> against <see cref="CacheSizeCapBytes"/>.</summary>
+    public TimeSpan CacheEvictionInterval { get; set; } = TimeSpan.FromMinutes(30);
 }
