@@ -19,6 +19,12 @@ on:
       - '.github/workflows/docker.yml'
       - '.dockerignore'
       - '**/*.md'
+# Same reasoning as ci.yml's own concurrency block: a superseded push cancels whatever of its own
+# predecessor's dbdeploy run is still going rather than letting it burn to completion for a commit
+# nobody cares about any more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

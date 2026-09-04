@@ -11,6 +11,12 @@ on:
     branches: [main]
     paths-ignore:
       - '**/*.md'
+# Same reasoning as ci.yml's own concurrency block: a superseded push cancels whatever of its own
+# predecessor's "docker compose up --build" (and, on main, GHCR publish) is still running rather
+# than letting it burn to completion for a commit nobody cares about any more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

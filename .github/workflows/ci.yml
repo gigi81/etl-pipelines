@@ -23,6 +23,16 @@ on:
       - '.github/workflows/docker.yml'
       - '.dockerignore'
       - '**/*.md'
+# A superseded run (another push landing on the same branch/tag while this one is still going)
+# gets cancelled rather than left to burn its full 3-OS matrix + Pack to completion for a commit
+# nobody cares about any more - the exact shape of most of this workflow's own PR-iteration
+# minutes spend. Grouping by ref, not by commit, is what makes that "same branch" comparison work:
+# every push to the same PR branch (or main) shares one group, so the newer run's start cancels
+# whatever of the older one is still running. Different refs (two different PR branches, or a
+# tag versus main) never share a group and so never cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
   actions: read
