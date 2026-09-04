@@ -1,0 +1,111 @@
+name: Docker Compose
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  compose:
+    name: docker compose up --build
+    # Linux only, same reasoning as integration-tests.yml's own "Databases" job - a Docker engine
+    # is only available on the Linux runners.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v7
+        with:
+          # Every image built below runs `dotnet publish`/`dotnet pack` inside its own build
+          # stage, and Nerdbank.GitVersioning computes the version from the commit height - a
+          # shallow clone fails that outright ("GitException: Shallow clone lacks the objects
+          # required to calculate version height"), not merely with the wrong version, same
+          # reasoning as every other workflow's own fetch-depth: 0.
+          fetch-depth: 0
+      # SERVER.md's own Phase 7 verification bullet, run for real: "docker compose up --build
+      # against a genuinely fresh set of volumes, all four containers healthy" - a runner always
+      # starts with none, so every run here already is that. --wait blocks until every named
+      # service with a healthcheck (postgres, server) reports healthy and every other one (nuget,
+      # agent - no HEALTHCHECK of their own, so compose treats "started" as satisfying --wait)
+      # actually starts, failing the step outright if either doesn't - schema deployment (server's
+      # own entrypoint runs `dbdeploy deploy` before the app itself ever starts, so a failed
+      # deploy means server never reports healthy at all) is proven by this succeeding, not
+      # asserted separately. seed is named explicitly here specifically to exclude it - a
+      # `restart: "no"` one-shot container exiting, even on its own success (exit 0), is not what
+      # --wait is for and confirmed the hard way (a real run of this exact workflow) to make the
+      # whole command fail regardless of that exit code.
+      - name: docker compose up (long-running services)
+        working-directory: docker
+        run: docker compose up --build --wait --wait-timeout 600 postgres nuget server agent
+      # Run to completion in the foreground now that nuget - the one dependency it actually needs
+      # - is already up. --exit-code-from seed (which implies --abort-on-container-exit) is what
+      # makes this command's own exit code seed's, explicitly, rather than relying on compose's
+      # unflagged default behavior for a single one-shot service - so bagetter seeding (every
+      # sample actually installable, per SERVER.md's own Phase 7 verification bullet) is proven by
+      # this step succeeding, the same way schema deployment is proven by the step above.
+      - name: docker compose up (seed)
+        working-directory: docker
+        run: docker compose up --build --exit-code-from seed seed
+      - name: docker compose ps
+        if: always()
+        working-directory: docker
+        run: docker compose ps -a
+      - name: docker compose logs
+        if: failure()
+        working-directory: docker
+        run: docker compose logs
+      - name: docker compose down
+        if: always()
+        working-directory: docker
+        run: docker compose down --volumes
+  # Publishes server/agent to GHCR - never seed, a CI/dev-only fixture nothing downstream ever
+  # runs. main only (push, not pull_request; feature/** branches build/verify above but never
+  # publish either) - a PR's own head commit never becomes an image an operator could pull, only
+  # what actually lands on main after review. needs: [compose] means a push to main whose own
+  # `docker compose up` failed never publishes either - only an image already proven to bring up
+  # the whole stack healthy gets tagged and pushed.
+  publish:
+    name: Publish images to GHCR
+    needs: [compose]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image: [server, agent]
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v7
+        with:
+          # This image's own build stage runs `dotnet publish`, and Nerdbank.GitVersioning
+          # computes the version from the commit height - a shallow clone fails that outright,
+          # same reasoning as every other workflow's own fetch-depth: 0.
+          fetch-depth: 0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # The default GITHUB_TOKEN, not a separate secret - packages: write above is what
+          # already grants it push access to this repository's own package namespace.
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # latest (this branch's current image) and the commit SHA (an exact, immutable pull for
+      # rolling back to or pinning a deployment against) - no SemVer tag, since that would tie an
+      # image's own release cadence to version.json/git tags the way ci.yml's "Deploy" job (NuGet
+      # packages, tag-triggered) already does, which a container image pushed on every main commit
+      # is deliberately not trying to be.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.${{ matrix.image }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/etl-pipelines/${{ matrix.image }}:latest
+            ghcr.io/${{ github.repository_owner }}/etl-pipelines/${{ matrix.image }}:${{ github.sha }}

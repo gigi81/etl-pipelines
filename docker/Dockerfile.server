@@ -1,0 +1,46 @@
+# Phase 7 (SERVER.md "Docker Compose hardening and image build"): a real published image,
+# replacing the plain SDK-image-plus-bind-mount `dotnet run` docker-compose.yml used through
+# Phase 6. Two stages: build (the SDK - everything this repo's many interdependent
+# ProjectReferences need to restore/publish) and a slim runtime stage that ships only the
+# published app plus dbdeploy, installed here the exact same real dotnet tool way an operator
+# installs it by hand (SERVER.md's "Database schema management" decision: never `dotnet ef
+# migrations`), not baked in as a PackageReference.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY . .
+RUN dotnet publish src/EtlPipelines.Server/EtlPipelines.Server.csproj \
+      --configuration Release \
+      --output /app/publish
+
+# `dotnet tool install` itself is an SDK-only command (resolving from NuGet, generating the
+# shim) - installed here, in the one stage that has it, rather than the runtime stage below.
+# The shim it produces only needs a matching *runtime* to actually run, which that stage
+# already has.
+RUN dotnet tool install --global dbdeploy
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+
+# entrypoint.server.sh's own HEALTHCHECK probes this endpoint with `curl --http2-prior-knowledge`
+# - it speaks HTTP/2 over cleartext exclusively (see ServerApplication.cs's own remarks on why a
+# plain HTTP/1.1 request can't even complete a handshake against it), and curl is what already
+# proved that works, for real, the first time this endpoint existed (Phase 5). The official
+# runtime images ship without curl by default.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /app/publish .
+COPY --from=build /root/.dotnet/tools /root/.dotnet/tools
+COPY db ./db
+ENV PATH="/root/.dotnet/tools:${PATH}"
+
+COPY docker/entrypoint.server.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Same address curl already proves reachable over h2c (Server:Port's own default, unchanged by
+# this compose file) - see entrypoint.server.sh and the remark above.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=5 \
+    CMD curl --fail --http2-prior-knowledge http://localhost:5000/ || exit 1
+
+ENTRYPOINT ["/entrypoint.sh"]

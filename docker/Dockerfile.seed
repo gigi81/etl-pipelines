@@ -1,0 +1,26 @@
+# Phase 7 (SERVER.md) "Bagetter seeding": bagetter's image starts with nothing installed and no
+# upstream configured - not a useful default for `docker compose up` to hand someone. Packs
+# Phase 1's six samples exactly the way `dotnet pack` already does everywhere else in this repo
+# (e.g. tests/EtlPipelines.Server.Tests/EndToEnd/*DockerTests.cs's own PackAndPushAsync helpers),
+# then seed.sh pushes every .nupkg to the freshly-started `nuget` service once at container
+# start, so a first-run stack comes up with exactly the samples installable and nothing else.
+FROM mcr.microsoft.com/dotnet/sdk:10.0
+WORKDIR /src
+COPY . .
+RUN mkdir -p /packages && \
+    for project in \
+        src/EtlPipelines.Samples.CsvToDatabase \
+        src/EtlPipelines.Samples.CsvToExcel \
+        src/EtlPipelines.Samples.ExcelToSql \
+        src/EtlPipelines.Samples.SqlToWorkbook \
+        src/EtlPipelines.Samples.ArchiveToDatabase \
+        src/EtlPipelines.Samples.Branching \
+    ; do \
+        dotnet pack "$project" --configuration Release --output /packages ; \
+    done
+
+COPY docker/seed.sh /seed.sh
+RUN chmod +x /seed.sh
+
+WORKDIR /packages
+ENTRYPOINT ["/seed.sh"]

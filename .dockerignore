@@ -1,0 +1,9 @@
+# Keeps `docker build`'s context small and avoids copying already-built, host-specific artifacts
+# into the image - this repo's own .gitignore excludes them from git the same way, but a checkout
+# that has already run `dotnet build`/`dotnet test` locally (any of the Dockerfiles under docker/
+# COPY the whole repository in) still has them on disk. .git stays included - Nerdbank.
+# GitVersioning needs it to compute the version height during `dotnet publish`/`dotnet pack`.
+**/bin/
+**/obj/
+**/TestResults/
+packages/

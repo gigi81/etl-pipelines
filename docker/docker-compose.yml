@@ -1,10 +1,13 @@
-# Started in Phase 4 (SERVER.md) with just postgres/nuget; Phase 5 adds server/agent themselves,
-# on the plain dotnet SDK image with the repo bind-mounted rather than a purpose-built image -
-# there is no Dockerfile.server/Dockerfile.agent yet, and there deliberately isn't one until Phase
-# 7 ("Docker Compose hardening and image build"), which is what replaces this section with a real
-# multi-stage build, adds health checks and restart policies, and seeds bagetter/deploys the
-# schema automatically. Until then, this is what actually makes `docker compose up` bring up a
-# working Server+Agent today rather than nothing at all.
+# Finished in Phase 7 (SERVER.md "Docker Compose hardening and image build") - real, published
+# images (Dockerfile.server/Dockerfile.agent) instead of the plain SDK-image-plus-bind-mount
+# `dotnet run` this file used through Phase 6, health checks so `depends_on` actually waits for a
+# usable dependency rather than merely a started container, restart policies, and a one-shot
+# `seed` step so a first-run stack comes up with the six samples already installable in bagetter.
+#
+# postgres:15.1, not the postgres:18 SERVER.md's own Phase 7 sketch names - kept at the exact
+# version already pinned everywhere else this repo actually runs Postgres (db.yml's own CI
+# service container, DatabaseFixture in both Server.Tests and Server.Database.Tests) rather than
+# introducing a fourth, untested one.
 services:
   postgres:
     image: postgres:15.1
@@ -14,39 +17,61 @@ services:
       POSTGRES_DB: etlpipelines_server
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
 
-  # bagetter - the one NuGet-compatible feed every package install goes through (never straight to
-  # nuget.org - see SERVER.md's "Package feed" decision). Starts with nothing installed and no
-  # upstream configured; Phase 7's "Bagetter seeding" is what pushes the packed samples to it.
+  # bagetter - the one NuGet-compatible feed every package install goes through (never straight
+  # to nuget.org - see SERVER.md's "Package feed" decision). No committed healthcheck here (see
+  # docker/seed.sh's own comment for why) - depends_on below stays condition: service_started,
+  # not healthy.
   nuget:
     image: bagetter/bagetter
     volumes:
       - nuget-data:/data
+    restart: unless-stopped
 
   server:
-    image: mcr.microsoft.com/dotnet/sdk:10.0
-    working_dir: /src
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nuget:
+        condition: service_started
     volumes:
-      - ../:/src
       - server-cache:/var/lib/etlpipelines/server-cache
-    command: dotnet run --project src/EtlPipelines.Server --configuration Release
-    depends_on:
-      - postgres
-      - nuget
+    restart: unless-stopped
 
-  # Not yet running dbdeploy against `postgres` on its own - Phase 7's "Schema deployment on
-  # startup" is what makes a fresh postgres-data volume take itself from empty to serving traffic;
-  # until then, `dbdeploy deploy --path db` against this stack is a manual step.
   agent:
-    image: mcr.microsoft.com/dotnet/sdk:10.0
-    working_dir: /src
-    volumes:
-      - ../:/src
-      - agent-cache:/var/lib/etlpipelines/agent-cache
-    command: dotnet run --project src/EtlPipelines.Agent --configuration Release
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
     depends_on:
-      - server
+      server:
+        condition: service_healthy
+    volumes:
+      - agent-cache:/var/lib/etlpipelines/agent-cache
+    restart: unless-stopped
 
+  # One-shot: packs and pushes the six samples once, then exits - never restarted (a second run
+  # against an already-seeded bagetter would just re-push the same versions harmlessly, but
+  # there is nothing to gain from doing that on every `docker compose up`).
+  seed:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.seed
+    depends_on:
+      nuget:
+        condition: service_started
+    restart: "no"
+
+# server-cache also holds the Data Protection key ring (KeyRing:Path) - it must be a durable
+# volume, since losing it makes every encrypted ConfigurationEntries.EncryptedValue unrecoverable.
 volumes:
   postgres-data:
   nuget-data:
