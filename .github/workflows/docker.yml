@@ -60,3 +60,52 @@ jobs:
         if: always()
         working-directory: docker
         run: docker compose down --volumes
+  # Publishes server/agent to GHCR - never seed, a CI/dev-only fixture nothing downstream ever
+  # runs. main only (push, not pull_request; feature/** branches build/verify above but never
+  # publish either) - a PR's own head commit never becomes an image an operator could pull, only
+  # what actually lands on main after review. needs: [compose] means a push to main whose own
+  # `docker compose up` failed never publishes either - only an image already proven to bring up
+  # the whole stack healthy gets tagged and pushed.
+  publish:
+    name: Publish images to GHCR
+    needs: [compose]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image: [server, agent]
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v7
+        with:
+          # This image's own build stage runs `dotnet publish`, and Nerdbank.GitVersioning
+          # computes the version from the commit height - a shallow clone fails that outright,
+          # same reasoning as every other workflow's own fetch-depth: 0.
+          fetch-depth: 0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # The default GITHUB_TOKEN, not a separate secret - packages: write above is what
+          # already grants it push access to this repository's own package namespace.
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # latest (this branch's current image) and the commit SHA (an exact, immutable pull for
+      # rolling back to or pinning a deployment against) - no SemVer tag, since that would tie an
+      # image's own release cadence to version.json/git tags the way ci.yml's "Deploy" job (NuGet
+      # packages, tag-triggered) already does, which a container image pushed on every main commit
+      # is deliberately not trying to be.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.${{ matrix.image }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/etl-pipelines/${{ matrix.image }}:latest
+            ghcr.io/${{ github.repository_owner }}/etl-pipelines/${{ matrix.image }}:${{ github.sha }}
