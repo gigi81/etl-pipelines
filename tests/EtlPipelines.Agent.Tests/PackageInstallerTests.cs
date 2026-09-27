@@ -12,6 +12,10 @@ namespace EtlPipelines.Agent.Tests;
 /// "the richest - two registered pipelines, a real dependency graph" - no new fixture needed.
 /// </summary>
 [Category("Agent")]
+// Two tests here each run `dotnet pack` on the same sample project. Run concurrently (TUnit's
+// default), both write the same obj/Release/*.nuspec, and on Windows the second pack fails
+// outright because the first still holds the file open ("being used by another process").
+[NotInParallel(nameof(PackageInstallerTests))]
 public class PackageInstallerTests
 {
     private const string PackageId = "EtlPipelines.Samples.ArchiveToDatabase";
