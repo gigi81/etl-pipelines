@@ -128,11 +128,21 @@ public sealed class PackageCatalogService(ServerDbContext context, INuGetFeedCli
 
     /// <summary>
     /// Records what an agent reported back for an install: a new <c>Packages</c> row the first
-    /// time this NuGet package id is ever seen, always a new <c>PackageVersions</c> row, and -
-    /// only when <paramref name="succeeded"/> - one <c>Pipelines</c> row per name the installed
-    /// package's own <c>list</c> verb reported.
+    /// time this NuGet package id is ever seen, a <c>PackageVersions</c> row the first time this
+    /// version is, and - only when <paramref name="succeeded"/> - a <c>Pipelines</c> row for each
+    /// name the installed package's own <c>list</c> verb reported that the version does not
+    /// already have.
     /// </summary>
-    /// <returns>The new <c>PackageVersions</c> row's id.</returns>
+    /// <remarks>
+    /// Idempotent per (package, version), deliberately: the same version is legitimately installed
+    /// more than once - by a second agent (every agent keeps its own copy), or again after an
+    /// agent's cache evicted it - and <c>UX_PackageVersions_PackageId_Version</c> rejects a second
+    /// row outright. Inserting unconditionally, as this used to, threw on every such re-install,
+    /// failing <c>AgentService.ReportInstallResult</c> and with it the installing agent's whole
+    /// host. A failed re-install never downgrades a version that is already <c>Installed</c>:
+    /// that one agent's failure says nothing about the copies other agents already have.
+    /// </remarks>
+    /// <returns>The <c>PackageVersions</c> row's id - the existing one on a re-install.</returns>
     public async Task<Guid> RecordInstallResultAsync(
         string packageId, string version, bool succeeded, IReadOnlyList<string> pipelineNames, CancellationToken cancellationToken)
     {
@@ -146,20 +156,39 @@ public sealed class PackageCatalogService(ServerDbContext context, INuGetFeedCli
             context.Packages.Add(package);
         }
 
-        var packageVersion = new PackageVersion
+        var packageVersion = await context.PackageVersions
+            .Include(v => v.Pipelines)
+            .SingleOrDefaultAsync(v => v.PackageId == package.Id && v.Version == version, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (packageVersion is null)
         {
-            Id = Guid.NewGuid(),
-            PackageId = package.Id,
-            Version = version,
-            InstalledAt = DateTime.UtcNow,
-            Status = succeeded ? "Installed" : "Failed",
-        };
-        context.PackageVersions.Add(packageVersion);
+            packageVersion = new PackageVersion
+            {
+                Id = Guid.NewGuid(),
+                PackageId = package.Id,
+                Version = version,
+                InstalledAt = DateTime.UtcNow,
+                Status = succeeded ? "Installed" : "Failed",
+            };
+            context.PackageVersions.Add(packageVersion);
+        }
+        else if (succeeded)
+        {
+            packageVersion.Status = "Installed";
+            packageVersion.InstalledAt = DateTime.UtcNow;
+        }
 
         if (succeeded)
         {
+            var existingNames = packageVersion.Pipelines.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
             foreach (var name in pipelineNames)
             {
+                if (!existingNames.Add(name))
+                {
+                    continue;
+                }
+
                 context.Pipelines.Add(new Pipeline
                 {
                     Id = Guid.NewGuid(),

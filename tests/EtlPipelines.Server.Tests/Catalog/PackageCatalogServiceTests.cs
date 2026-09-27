@@ -121,6 +121,42 @@ public class PackageCatalogServiceTests
         updates.Should().BeEmpty();
     }
 
+    [Test]
+    public async Task Recording_the_same_version_twice_reuses_its_row_and_does_not_duplicate_pipelines()
+    {
+        //arrange - a second agent installing a version the first already reported, which used to
+        // fail on UX_PackageVersions_PackageId_Version.
+        await using var context = SqliteServerDbContext.Create();
+        var service = new PackageCatalogService(context, Mock.Of<INuGetFeedClient>());
+        var first = await service.RecordInstallResultAsync("EtlPipelines.Samples.CsvToDatabase", "1.0.0", true, ["trades"], CancellationToken.None);
+        context.ChangeTracker.Clear();
+
+        //act
+        var second = await service.RecordInstallResultAsync("EtlPipelines.Samples.CsvToDatabase", "1.0.0", true, ["trades", "audit"], CancellationToken.None);
+
+        //assert
+        second.Should().Be(first);
+        (await context.PackageVersions.CountAsync()).Should().Be(1);
+        (await context.Pipelines.Select(p => p.Name).OrderBy(n => n).ToListAsync()).Should().Equal("audit", "trades");
+    }
+
+    [Test]
+    public async Task A_failed_reinstall_does_not_downgrade_an_installed_version()
+    {
+        //arrange
+        await using var context = SqliteServerDbContext.Create();
+        var service = new PackageCatalogService(context, Mock.Of<INuGetFeedClient>());
+        await service.RecordInstallResultAsync("EtlPipelines.Samples.CsvToDatabase", "1.0.0", true, ["trades"], CancellationToken.None);
+        context.ChangeTracker.Clear();
+
+        //act
+        await service.RecordInstallResultAsync("EtlPipelines.Samples.CsvToDatabase", "1.0.0", false, [], CancellationToken.None);
+
+        //assert
+        (await context.PackageVersions.SingleAsync()).Status.Should().Be("Installed");
+        (await context.Pipelines.CountAsync()).Should().Be(1);
+    }
+
     private static async Task<SqliteServerDbContext> SeedInstalledPackageAsync(string installedVersion)
     {
         var context = SqliteServerDbContext.Create();
