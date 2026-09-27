@@ -103,13 +103,11 @@ jobs:
       # double this job's running time on every PR for a contract that changes rarely. It runs in its
       # own sequential step in the databases job instead, same as the Docker-tagged suites.
       #
-      # Two exclusions, not one "Category!=Docker&Category!=Packaging" - empirically (confirmed against
-      # this exact MTP version before landing this), a single bracket combining two conditions on the
-      # same property crashes the filter parser outright, and combining two whole "/*/*/*/*[...]" node
-      # paths with "&"/"|" is a set union of whatever each side matches, not an intersection - so
-      # "Category!=Docker&Category!=Packaging" that way would still let a Packaging-tagged test through
-      # (it satisfies "Category!=Docker" on its own). Negating each whole node path with a leading "!"
-      # and "&"-ing those together is what actually intersects the two exclusions.
+      # One bracket, both conditions parenthesised: "/**[(Category!=Docker)&(Category!=Packaging)]".
+      # The previous form, two negated node paths ("!/*/*/*/*[Category=Docker]&!/*/*/*/*[...]"),
+      # matched nothing at all - this job ran zero tests for weeks without failing, since the "|| true"
+      # below and --ignore-exit-code 8 both swallow an empty run. Check with
+      # `<test exe> --list-tests --treenode-filter "..."` before changing this filter again.
       #
       # --ignore-exit-code 8 is "zero tests ran". With the Docker/Packaging tests filtered out,
       # EtlPipelines.Extensions.Sql.Databases.Tests and EtlPipelines.PipelinePackaging.Tests both have
@@ -121,7 +119,7 @@ jobs:
         run: >
           dotnet test --configuration Release --no-build
           --results-directory ./TestResults
-          --treenode-filter "!/*/*/*/*[Category=Docker]&!/*/*/*/*[Category=Packaging]"
+          --treenode-filter "/**[(Category!=Docker)&(Category!=Packaging)]"
           --report-trx --report-trx-filename "{asm}-test-results.trx"
           --coverage --coverage-output-format cobertura
           --ignore-exit-code 8
@@ -136,6 +134,9 @@ jobs:
         with:
           name: Code coverage ${{ matrix.os }}
           path: "./TestResults/*.cobertura.xml"
+          # Only the coverage job below, in this same run, ever reads it - the 90-day default is
+          # what let old artifacts fill the repository's storage quota and fail every upload.
+          retention-days: 1
       - name: Test report
         if: always() && (matrix.os == 'ubuntu-latest' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: dorny/test-reporter@v3.0.0
@@ -265,6 +266,8 @@ jobs:
         with:
           name: Code coverage databases
           path: "./TestResults/*.cobertura.xml"
+          # Same reasoning as the Test job's own coverage upload.
+          retention-days: 1
       - name: Test report
         uses: dorny/test-reporter@v3.0.0
         if: always()
@@ -325,6 +328,9 @@ jobs:
         with:
           name: NuGet packages
           path: packages/*.*
+          # Deploy downloads it within this same run; a few days more is only for a manual download.
+          # ~84 MB per run - left at the 90-day default this was the steady drain on storage quota.
+          retention-days: 3
   deploy:
     name: Deploy
     if: startsWith(github.ref, 'refs/tags/v')
