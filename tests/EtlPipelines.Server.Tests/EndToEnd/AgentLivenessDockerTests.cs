@@ -151,8 +151,11 @@ public class AgentLivenessDockerTests(PostgreSqlFixture postgres, BagetterFixtur
 
             var nupkg = Directory.GetFiles(work.FullName, "*.nupkg").Single();
 
+            // --skip-duplicate: AgentLivenessDockerTests and ExecutePipelineDockerTests both push this
+            // same package and version to the one per-assembly bagetter container, so whichever runs
+            // second would otherwise fail on a 409 Conflict for a package that is already there.
             var push = await Cli.Wrap("dotnet")
-                .WithArguments(["nuget", "push", nupkg, "--source", bagetter.FeedUrl, "--api-key", "any", "--allow-insecure-connections"])
+                .WithArguments(["nuget", "push", nupkg, "--source", bagetter.FeedUrl, "--api-key", "any", "--allow-insecure-connections", "--skip-duplicate"])
                 .WithValidation(CommandResultValidation.None)
                 .ExecuteBufferedAsync();
             push.ExitCode.Should().Be(0, $"dotnet nuget push should succeed: {Tail(push)}");
