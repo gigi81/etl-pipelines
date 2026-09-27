@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using EtlPipelines.Abstractions.Building;
 using EtlPipelines.Abstractions.Ports;
 using EtlPipelines.Core.Tests.Fixtures;
@@ -19,25 +18,37 @@ public class ParallelTests
     public async Task Branches_run_at_the_same_time_rather_than_one_after_another()
     {
         //arrange
-        // Four branches at 150ms each: sequential is >= 600ms, concurrent stays close to 150ms.
-        var delay = TimeSpan.FromMilliseconds(150);
+        // A barrier, not a stopwatch: every branch checks in, then waits until all four have. Run
+        // one after another, the first branch would wait for check-ins that can never come (the
+        // others only start once it finishes) and time out; run concurrently, all four arrive and
+        // the barrier releases at once. That proves overlap outright, where the wall-clock bound
+        // this used to assert (four 150ms delays finishing in under 450ms) failed spuriously on a
+        // loaded CI runner (495ms on windows-latest) without anything actually running serially.
+        const int branchCount = 4;
+        var arrived = 0;
+        var allArrived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Action<IPipelineBuilder> branch(int index) => b => b.AddStage($"branch-{index}", async (_, ct) =>
+        {
+            if (Interlocked.Increment(ref arrived) == branchCount)
+            {
+                allArrived.TrySetResult();
+            }
+
+            await allArrived.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+            return Result.Success;
+        });
 
         var pipeline = EtlPipeline.CreateBuilder(PipelineName)
-            .Parallel(
-                b => b.AddStage("branch-0", async (_, ct) => { await Task.Delay(delay, ct); return Result.Success; }),
-                b => b.AddStage("branch-1", async (_, ct) => { await Task.Delay(delay, ct); return Result.Success; }),
-                b => b.AddStage("branch-2", async (_, ct) => { await Task.Delay(delay, ct); return Result.Success; }),
-                b => b.AddStage("branch-3", async (_, ct) => { await Task.Delay(delay, ct); return Result.Success; }))
+            .Parallel(branch(0), branch(1), branch(2), branch(3))
             .Build();
 
         //act
-        var started = Stopwatch.StartNew();
         var result = await pipeline.RunAsync(CancellationToken.None);
-        var elapsed = started.Elapsed;
 
         //assert
         result.IsError.Should().BeFalse(result.IsError ? result.FirstError.Description : null);
-        elapsed.Should().BeLessThan(delay * 3, "four 150ms branches run one after another would take 600ms+");
+        arrived.Should().Be(branchCount);
     }
 
     [Test]
