@@ -79,7 +79,14 @@ public sealed class PackageInstaller(IOptions<AgentOptions> options)
                     $"dotnet tool install failed for '{packageId}' {version}: {Tail(result)}");
             }
 
-            return FindShim(installDirectory);
+            var shimPath = FindShim(installDirectory);
+
+            // Just installed - CacheEvictor.Sweep only ever removes the least-recently-used
+            // install(s), so a version that only just finished a real dotnet tool install should
+            // never be the very next thing an eviction sweep deletes.
+            CacheEvictor.Touch(installDirectory);
+
+            return shimPath;
         }
         finally
         {
@@ -114,6 +121,11 @@ public sealed class PackageInstaller(IOptions<AgentOptions> options)
             throw new InvalidOperationException(
                 $"'{packageId}' {version} is not installed in this agent's cache ({installDirectory}) - install it before executing a pipeline from it.");
         }
+
+        // About to run - the same "just used" signal InstallAsync gives CacheEvictor, so a
+        // version this agent keeps actually executing stays the least attractive eviction
+        // candidate for as long as that stays true.
+        CacheEvictor.Touch(installDirectory);
 
         return FindShim(installDirectory);
     }
