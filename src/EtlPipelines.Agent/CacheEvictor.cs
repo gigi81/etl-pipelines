@@ -105,9 +105,9 @@ public sealed class CacheEvictor(IOptions<AgentOptions> options, ILogger<CacheEv
     }
 
     private static IEnumerable<InstalledVersion> EnumerateInstalls(string cacheDirectory) =>
-        from packageDirectory in Directory.EnumerateDirectories(cacheDirectory)
-        from versionDirectory in Directory.EnumerateDirectories(packageDirectory)
-        select new InstalledVersion(versionDirectory, DirectorySize(versionDirectory), LastUsedUtc(versionDirectory));
+        Directory.EnumerateDirectories(cacheDirectory)
+            .SelectMany(Directory.EnumerateDirectories)
+            .Select(versionDirectory => new InstalledVersion(versionDirectory, DirectorySize(versionDirectory), LastUsedUtc(versionDirectory)));
 
     private static long DirectorySize(string directory) =>
         Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories).Sum(file => new FileInfo(file).Length);
