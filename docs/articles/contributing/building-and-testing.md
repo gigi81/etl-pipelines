@@ -7,6 +7,7 @@
 - `dbdeploy` (`dotnet tool install --global dbdeploy`), for the database suites and for deploying
   the Server's schema by hand.
 - PowerShell (`pwsh`) on the `PATH`, for `EtlPipelines.Extensions.Cli.Tests`.
+- On macOS, native `protoc` and `grpc_csharp_plugin` binaries (see below).
 
 ```bash
 dotnet build --configuration Release
@@ -14,6 +15,24 @@ dotnet build --configuration Release
 
 Warnings are errors throughout (`TreatWarningsAsErrors`), and every packable project must have XML
 documentation for its public API.
+
+### macOS: native protobuf tools
+
+`EtlPipelines.Protos` compiles the `.proto` files with `Grpc.Tools`, which only bundles x86-64
+builds of `protoc` and `grpc_csharp_plugin` for macOS. On Apple Silicon those fail with
+`Bad CPU type in executable`. Install native builds with Homebrew and point `Grpc.Tools` at them:
+
+```bash
+brew install protobuf grpc
+
+# add to ~/.zshrc so every shell (and your IDE, if launched from one) picks them up
+export PROTOBUF_PROTOC="$(brew --prefix)/bin/protoc"
+export GRPC_PROTOC_PLUGIN="$(brew --prefix)/bin/grpc_csharp_plugin"
+```
+
+Both variables are needed: the bundled plugin is x86-64 only too. The Homebrew versions will not
+match the `Grpc.Tools` version pinned in `Directory.Packages.props`, which only affects the code
+generated on your machine. CI builds with the pinned version.
 
 ## Tests
 
