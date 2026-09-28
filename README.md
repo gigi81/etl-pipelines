@@ -7,6 +7,13 @@
 A streaming ETL pipeline abstraction for .NET, built so that extract, transform and load actually
 overlap rather than run one after another.
 
+Use it as a library, running pipelines in-process from your own application, or deploy the bundled
+**Server and Agents** to install pipeline packages on other machines, dispatch runs to them, and keep
+their connection strings in an encrypted store instead of in the package — see
+[Running pipelines on a server](#running-pipelines-on-a-server). Longer-form documentation lives in
+[`docs/`](https://github.com/gigi81/etl-pipelines/tree/main/docs) and builds with DocFX
+(`dotnet tool restore && dotnet docfx docs/docfx.json --serve`).
+
 ## Install
 
 | Package | For |
@@ -21,6 +28,7 @@ overlap rather than run one after another.
 | `EtlPipelines.Extensions.Files.Sftp` | Uploads and downloads files over SFTP, built on SSH.NET. |
 | `EtlPipelines.Extensions.Json` | JSON source and sink - JSON Lines or a single array - built on System.Text.Json. |
 | `EtlPipelines.Hosting` | Runs your pipelines as a command line application. |
+| `EtlPipelines.GrpcClient` | Lets a pipeline an agent launched pull its configuration from the Server and report its progress back. Referenced by `EtlPipelines.Hosting`, so you never add it yourself. |
 | `EtlPipelines.Extensions.Sql` | Source and sink for any ADO.NET provider. |
 | `EtlPipelines.Extensions.Sql.Sqlite` .`SqlServer` .`PostgreSql` .`MySql` .`Oracle` | One per engine: the driver, and that engine's bulk-load fast path. |
 | `EtlPipelines.Abstractions` | The contracts alone, for a library that defines ports without referencing the engine. Pulled in by the others. |
@@ -794,7 +802,7 @@ Rejected rows go to a registered `IDeadLetterSink<TRow>`. Expected data-level fa
 
 ## Samples
 
-Runnable programs in [`src/`](src), named `EtlPipelines.Samples.*`:
+Runnable programs in [`src/`](https://github.com/gigi81/etl-pipelines/tree/main/src), named `EtlPipelines.Samples.*`:
 
 | Sample | Shows |
 |---|---|
@@ -838,6 +846,11 @@ they left behind, then runs each one again through its command line to prove the
 `Samples.CsvToDatabase` is run again against real SQL Server, PostgreSQL, MySQL and Oracle containers
 — the same registration, not a copy of it. Samples are documentation that nothing compiles against,
 so without that they rot quietly.
+
+Every sample also packs as a `dotnet tool`, which is what makes them installable through the
+[Server](#running-pipelines-on-a-server): the Docker Compose stack seeds its feed with all six, and
+`tests/EtlPipelines.PipelinePackaging.Tests` proves `Samples.ArchiveToDatabase` survives a real
+`dotnet pack` and `dotnet tool install` round trip.
 
 ## Running as a command line application
 
@@ -921,6 +934,44 @@ return await new EtlPipelinesHost("Loads the nightly orders file.")
     .ConfigureServices(services => services.RegisterCommands().AddEtlPipeline("orders", ...))
     .RunAsync(args);
 ```
+
+Two more options, `--session-id` and `--server-url`, are there for the [Server](#running-pipelines-on-a-server):
+an agent passes both when it launches a run, and with both present the host pulls its configuration
+from the Server and reports every stage back to it. With neither, nothing about a local run changes.
+
+## Running pipelines on a server
+
+Packed as a [`dotnet tool`](https://learn.microsoft.com/dotnet/core/tools/global-tools), the same
+application becomes something a central **Server** can install and run on its **Agents**:
+
+```xml
+<PropertyGroup>
+  <OutputType>Exe</OutputType>
+  <PackAsTool>true</PackAsTool>
+</PropertyGroup>
+```
+
+```bash
+cd docker && docker compose up --build -d
+```
+
+brings up Postgres, a [bagetter](https://www.bagetter.com/) NuGet feed already seeded with the six
+samples, the Server and an Agent. Everything else is gRPC (`protos/v1/`):
+
+- `ManagementService.InstallPackage` has an agent run `dotnet tool install` and records the pipelines
+  the package's `list` verb reports;
+- `SetConfigurationEntry` stores a connection string or credential, encrypted at rest, for launched
+  runs to read through `IConfiguration` as if it came from `appsettings.json`;
+- `ExecutePipeline` dispatches a run to an agent and returns its id; `StreamRunProgress` streams each
+  stage as it completes;
+- an agent that stops heartbeating is marked offline and its unfinished runs `AgentLost` — never
+  retried, since a half-applied load is not safe to replay blindly.
+
+The Server has **no authentication yet** and belongs on a trusted network only. See
+[the architecture](https://github.com/gigi81/etl-pipelines/blob/main/docs/articles/server/architecture.md), [deployment](https://github.com/gigi81/etl-pipelines/blob/main/docs/articles/server/deployment.md),
+[writing a pipeline package](https://github.com/gigi81/etl-pipelines/blob/main/docs/articles/server/pipeline-packages.md) and
+[known limitations](https://github.com/gigi81/etl-pipelines/blob/main/docs/articles/server/limitations.md). [`SERVER.md`](https://github.com/gigi81/etl-pipelines/blob/main/SERVER.md)
+records the design decisions behind it and how it was built.
 
 ## Observability
 

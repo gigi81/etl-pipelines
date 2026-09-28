@@ -16,17 +16,17 @@ internal static class ServiceScaffolding
     public static RpcException Unimplemented([CallerMemberName] string method = "") =>
         new(new Status(
             StatusCode.Unimplemented,
-            $"{method} is scaffolded (Phase 2 of SERVER.md's server/agent plan) but not implemented yet."));
+            $"{method} is part of the v1 contract but not implemented yet."));
 
     /// <summary>
     /// What <see cref="ManagementServiceImpl.InstallPackage"/>/<see cref="ManagementServiceImpl.ExecutePipeline"/>
-    /// give until Phase 5 registers an agent to actually delegate to -
+    /// give when no agent is connected to delegate to -
     /// <see cref="StatusCode.FailedPrecondition"/> ("the system is not in a state required for the
     /// operation's execution") rather than <see cref="Unimplemented"/>, since both RPCs are fully
-    /// implemented here; there is simply never yet anything registered that could carry them out.
+    /// implemented; there is simply nothing connected right now that could carry them out.
     /// </summary>
     public static RpcException NoAgentsAvailable([CallerMemberName] string method = "") =>
         new(new Status(
             StatusCode.FailedPrecondition,
-            $"{method} needs an agent to delegate to, and none is registered yet (Phase 5 of SERVER.md's server/agent plan)."));
+            $"{method} needs an agent to delegate to, and none is connected."));
 }

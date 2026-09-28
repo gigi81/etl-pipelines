@@ -1,0 +1,50 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/docfx/main/schemas/docfx.schema.json",
+  "metadata": [
+    {
+      "src": [
+        {
+          "src": "../src",
+          "files": [
+            "EtlPipelines.Abstractions/*.csproj",
+            "EtlPipelines.Core/*.csproj",
+            "EtlPipelines.Hosting/*.csproj",
+            "EtlPipelines.GrpcClient/*.csproj",
+            "EtlPipelines.Extensions.*/*.csproj"
+          ]
+        }
+      ],
+      "dest": "api",
+      "properties": {
+        "Configuration": "Release"
+      }
+    }
+  ],
+  "build": {
+    "content": [
+      {
+        "files": [
+          "**/*.{md,yml}"
+        ],
+        "exclude": [
+          "_site/**",
+          "obj/**"
+        ]
+      }
+    ],
+    "output": "_site",
+    "template": [
+      "default",
+      "modern"
+    ],
+    "globalMetadata": {
+      "_appName": "EtlPipelines",
+      "_appTitle": "EtlPipelines",
+      "_enableSearch": true,
+      "_gitContribute": {
+        "repo": "https://github.com/gigi81/etl-pipelines",
+        "branch": "main"
+      }
+    }
+  }
+}
