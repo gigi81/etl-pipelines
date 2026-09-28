@@ -54,7 +54,7 @@ once every other phase has landed, brings the documentation up to date with the 
 | 6 — Execute end to end | [#10](https://github.com/gigi81/etl-pipelines/pull/10), [#11](https://github.com/gigi81/etl-pipelines/pull/11) | `ExecutePipeline` → agent → process → `GetConfiguration`/`ReportStageResult`/`ReportRunResult` → `Runs`/`StageResults`, with `StreamRunProgress`. |
 | 7 — Docker Compose and images | [#12](https://github.com/gigi81/etl-pipelines/pull/12) | Real images, health checks, restart policies, schema deployed on start, a one-shot `seed` service, GHCR publishing. |
 | 8 — Reliability | [#14](https://github.com/gigi81/etl-pipelines/pull/14) | `AgentLivenessMonitor` (offline + `AgentLost`, never retried) and the agent's LRU `CacheEvictor`. |
-| 9 — Documentation | this PR | DocFX site under `docs/`, README, and this file brought in line with the above. |
+| 9 — Documentation | [#15](https://github.com/gigi81/etl-pipelines/pull/15) | DocFX site under `docs/`, README, and this file brought in line with the above. |
 
 What is still open is listed in "Other gaps worth stating, not solving now," at the end of this file,
 and, from an operator's point of view, in [`docs/articles/server/limitations.md`](docs/articles/server/limitations.md).
