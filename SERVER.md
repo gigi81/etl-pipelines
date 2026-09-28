@@ -817,7 +817,8 @@ across every phase. Last, because documenting a still-moving target is wasted ef
   XML docs (Server/Agent projects, being deployables, are excluded).
 - DocFX is a local tool (`.config/dotnet-tools.json`): `dotnet tool restore && dotnet docfx
   docs/docfx.json --serve`. **`docs.yml`** builds the site with `--warningsAsErrors` whenever docs or
-  Markdown change, and uploads nothing. Publishing it (e.g. to GitHub Pages) is left for later.
+  Markdown change, uploading nothing, and on a release tag (`v1.0.0`) also publishes it to GitHub
+  Pages — only then, so the published docs always describe a released version.
 - **README** gained a "Running pipelines on a server" section, the `EtlPipelines.GrpcClient` package,
   and links into `docs/`.
 - **This file**: the status table at the top and an "As shipped" note per phase.

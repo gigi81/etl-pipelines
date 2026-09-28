@@ -4,10 +4,17 @@ on:
     branches:
       - main
       - 'feature/**'
+    # A release tag - the same pattern ci.yml's own Deploy job releases to NuGet on - is the only
+    # thing that publishes the site to GitHub Pages (the deploy job below), so the published docs
+    # always describe a released version rather than whatever main happens to hold.
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
     # The inverse of ci.yml's own paths-ignore: that workflow skips a Markdown-only change, this one
     # exists for exactly that change. The API reference is generated from the sources' XML docs too,
     # but the compiler already fails the build on a malformed or missing doc comment
     # (GenerateDocumentationFile + TreatWarningsAsErrors), so ci.yml is what guards that side.
+    # GitHub does not evaluate path filters for tag pushes, so a release tag always runs this
+    # workflow whatever it changed.
     paths:
       - 'docs/**'
       - '**/*.md'
@@ -20,7 +27,8 @@ on:
       - '**/*.md'
       - '.config/dotnet-tools.json'
       - '.github/workflows/docs.yml'
-# Same reasoning as ci.yml's own concurrency block.
+# Same reasoning as ci.yml's own concurrency block. A tag is its own ref, so a release's run is
+# never cancelled by a later push to main.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -44,8 +52,38 @@ jobs:
       - name: Restore tools
         run: dotnet tool restore
       # --warningsAsErrors turns a broken cross-reference or a link to a missing page into a failed
-      # build rather than a silently dead link on the published site. Nothing is uploaded: the site
-      # is small to rebuild, and artifact storage is the one Actions quota this repository has
-      # actually run out of.
+      # build rather than a silently dead link on the published site.
       - name: Build documentation
         run: dotnet docfx docs/docfx.json --warningsAsErrors
+      # Only a release tag uploads anything: artifact storage is the one Actions quota this
+      # repository has actually run out of, so branch and PR runs stay build-only. The Pages
+      # artifact is only needed until the deploy job below has picked it up, hence one day.
+      - name: Upload site for GitHub Pages
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/_site
+          retention-days: 1
+  deploy:
+    name: Publish to GitHub Pages
+    needs: [build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    # Requires the repository's Settings -> Pages -> Source to be "GitHub Actions". The
+    # github-pages environment is created by GitHub the first time this runs; its default
+    # deployment-branch rule allows only the default branch, so it also needs this tag pattern
+    # added (Settings -> Environments -> github-pages) before a tag can deploy.
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    # Never cancel a deployment half-way: a second tag pushed while one is publishing waits its turn.
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

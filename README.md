@@ -11,8 +11,9 @@ Use it as a library, running pipelines in-process from your own application, or 
 **Server and Agents** to install pipeline packages on other machines, dispatch runs to them, and keep
 their connection strings in an encrypted store instead of in the package — see
 [Running pipelines on a server](#running-pipelines-on-a-server). Longer-form documentation lives in
-[`docs/`](https://github.com/gigi81/etl-pipelines/tree/main/docs) and builds with DocFX
-(`dotnet tool restore && dotnet docfx docs/docfx.json --serve`).
+[`docs/`](https://github.com/gigi81/etl-pipelines/tree/main/docs), builds with DocFX
+(`dotnet tool restore && dotnet docfx docs/docfx.json --serve`), and is published for each release
+at [gigi81.github.io/etl-pipelines](https://gigi81.github.io/etl-pipelines/).
 
 ## Install
 
