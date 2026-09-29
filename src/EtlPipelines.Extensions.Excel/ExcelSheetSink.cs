@@ -120,7 +120,12 @@ public sealed class ExcelSheetSink<TRow> : IDataSink<TRow>, IAsyncInitializable,
     {
         try
         {
+            // Only reached from WriteAsync, past its own "_sheet is null" guard - true, but not
+            // something the compiler's nullable analysis carries across the call, so it still flags
+            // a removal here, and the compiler wins the disagreement with S8969.
+#pragma warning disable S8969
             await _sheet!.Writing.ConfigureAwait(false);
+#pragma warning restore S8969
         }
         catch (Exception exception)
         {

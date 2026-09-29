@@ -202,9 +202,15 @@ public sealed class SqlSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsync
     {
         using var rows = new BatchDataReader<TRow>(batch, _columns, _readers);
 
+        // S8969 is wrong here: _bulkLoader is a nullable field, and neither this method nor the
+        // compiler's own nullable flow analysis can see the UseBulkLoader check on the caller's side
+        // that makes calling this method safe - removing the operator makes the compiler's own
+        // nullable analysis flag a genuine CS8602, so the two rules disagree and the compiler wins.
+#pragma warning disable S8969
         return await _bulkLoader!
             .LoadAsync(_connection!, _transaction, _options.Table, _columns, rows, cancellationToken)
             .ConfigureAwait(false);
+#pragma warning restore S8969
     }
 
     private async ValueTask<int> InsertAsync(ReadOnlyMemory<TRow> batch, CancellationToken cancellationToken)
@@ -221,7 +227,11 @@ public sealed class SqlSink<TRow> : IDataSink<TRow>, IAsyncInitializable, IAsync
                 _insert!.Parameters[c].Value = _readers[c](row) ?? DBNull.Value;
             }
 
+            // S8969 is wrong here too, for the same reason as BulkWriteAsync's suppression above:
+            // the compiler's own nullable analysis still sees _insert as possibly null at this point.
+#pragma warning disable S8969
             await _insert!.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+#pragma warning restore S8969
         }
 
         return batch.Length;
