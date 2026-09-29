@@ -4,7 +4,7 @@ on:
     branches:
       - main
       - 'feature/**'
-    # A release tag - the same pattern ci.yml's own Deploy job releases to NuGet on - is the only
+    # A release tag - the same pattern ci.yml's own Deploy job releases on - is the only
     # thing that publishes the site to GitHub Pages (the deploy job below), so the published docs
     # always describe a released version rather than whatever main happens to hold.
     tags:

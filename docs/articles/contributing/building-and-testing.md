@@ -85,7 +85,7 @@ in-process against real Postgres and bagetter containers: install, execute, and 
 
 | Workflow | Trigger | What it proves |
 |---|---|---|
-| `ci.yml` | Pushes and PRs, except changes only to `docker/**` or Markdown | Build and the fast tests (Ubuntu on PRs; all three OSes on `main` and tags), Docker and packaging suites (`main` and tags), a single Codecov upload, `dotnet pack`, and on a `v*` tag the NuGet push (sample packages excluded) and a GitHub release. |
+| `ci.yml` | Pushes and PRs, except changes only to `docker/**` or Markdown | Build and the fast tests (Ubuntu on PRs; all three OSes on `main` and tags), Docker and packaging suites (`main` and tags), a single Codecov upload, `dotnet pack`, and on a `v*` tag a GitHub release plus the NuGet push (sample packages excluded; off unless the `PUBLISH_TO_NUGET` repository variable is `true`). |
 | `db.yml` | Pushes and PRs, except changes only to `docker/**` or Markdown | `dbdeploy validate`, `deploy`, and `ci` (which proves every rollback) against a Postgres service container. |
 | `docker.yml` | Pushes and PRs, except changes only to Markdown | `docker compose up --build --wait` on fresh volumes, then the seed job. On `main`, also publishes the Server and Agent images to GHCR. |
 | `docs.yml` | Changes to `docs/**`, Markdown, or the tool manifest; release tags | Builds this documentation site with warnings as errors. On a `v*` tag, also publishes it to GitHub Pages. |
@@ -106,7 +106,19 @@ dotnet docfx docs/docfx.json --serve   # builds, then serves on http://localhost
 The API reference is generated from the XML documentation of the projects listed in `docfx.json`.
 `docs/api/*.yml` and `docs/_site/` are build output and are not checked in.
 
-### Publishing
+### Releasing
+
+A release is a pushed tag matching `v[0-9]+.[0-9]+.[0-9]+` whose number equals `version.json`'s
+`version` (bump it on `main` first, e.g. to `0.2.0`, then tag that commit `v0.2.0`). The tag:
+
+- creates a GitHub release with generated notes (`ci.yml`, Deploy job);
+- publishes this site to GitHub Pages (`docs.yml`, below);
+- pushes the packages to nuget.org **only if** the repository variable `PUBLISH_TO_NUGET` is set to
+  `true` (Settings → Secrets and variables → Actions → Variables). It is off for now. Turning it on
+  also needs the `NUGET_USER` secret and a nuget.org trusted-publishing policy for this repository's
+  `ci.yml`, which the `NuGet/login` step uses instead of a stored API key.
+
+### Publishing the docs
 
 The site is published to GitHub Pages only when a release tag (`v1.0.0`, matching
 `v[0-9]+.[0-9]+.[0-9]+`) is pushed, so the published docs always match a released version. Pushes to
