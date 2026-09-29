@@ -68,10 +68,10 @@ these is in [docs/articles/server/limitations.md](docs/articles/server/limitatio
 
 ## Housekeeping
 
-- [ ] **GHCR image retention.** `docker.yml` pushes new `server`/`agent` images (`latest` + commit
-  SHA) on every push to `main` and never deletes old versions. Storage is free now that the repo is
-  public, so this is tidiness: publish only on release tags, and/or prune old versions with
-  `actions/delete-package-versions`.
+- [ ] **Prune old GHCR images.** `docker.yml` now publishes only for `v*` tags and `release/**`
+  branches, but the per-commit images pushed from `main` before that change are still in the
+  registry. Delete them (your profile → Packages → `etl-pipelines/server` and `/agent`), and
+  consider `actions/delete-package-versions` to cap `release-*` SHA-tagged versions.
 - [ ] **Turn on NuGet publishing** when ready: set the `PUBLISH_TO_NUGET` repository variable to
   `true`, add the `NUGET_USER` secret, and configure a nuget.org trusted-publishing policy for
   `ci.yml`. See "Releasing" in

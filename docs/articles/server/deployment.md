@@ -34,17 +34,24 @@ the key ring.
 
 ## Published images
 
-On every push to `main` that passes its own `docker compose up` check, the `docker.yml` workflow
-publishes the Server and Agent images to GitHub Container Registry:
+The `docker.yml` workflow publishes the Server and Agent images to GitHub Container Registry for
+releases only, and only once that run's own `docker compose up` check has passed:
+
+| Trigger | Image tags |
+|---|---|
+| a release tag, e.g. `v0.2.0` | `0.2.0`, `0.2`, `latest`, and the commit SHA |
+| a push to a `release/**` branch, e.g. `release/0.2` | `release-0.2` (the branch's latest build) and the commit SHA |
 
 ```text
-ghcr.io/gigi81/etl-pipelines/server:latest   (and :<commit sha>)
-ghcr.io/gigi81/etl-pipelines/agent:latest    (and :<commit sha>)
+ghcr.io/gigi81/etl-pipelines/server:<tag>
+ghcr.io/gigi81/etl-pipelines/agent:<tag>
 ```
 
+Pushes to `main`, feature branches and pull requests build and check the images but publish nothing.
+
 To run published images instead of building locally, replace the `build:` sections with
-`image:` references in a compose override file. Tag by commit SHA if you need a deployment that
-never changes under you.
+`image:` references in a compose override file. Pin a version tag, or a commit SHA, if you need a
+deployment that never changes under you.
 
 ## Talking to the Server
 
