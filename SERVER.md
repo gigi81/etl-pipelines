@@ -756,8 +756,10 @@ test re-run entirely against the built images.
 - **Seeding is a separate one-shot `seed` service** (`restart: "no"`) that packs the six samples and
   pushes them to `nuget`, retrying until the feed answers. Upstream proxying stays off.
 - **`docker.yml`** runs `docker compose up --build --wait` on fresh volumes plus the seed job on every
-  relevant push and PR, and on `main` publishes `ghcr.io/gigi81/etl-pipelines/{server,agent}` tagged
-  `latest` and the commit SHA — only after that compose check passed.
+  relevant push and PR. It originally published `ghcr.io/gigi81/etl-pipelines/{server,agent}` on
+  every push to `main`; it now publishes only for a `v*` tag (`<version>`, `<major>.<minor>`,
+  `latest`, SHA) or a `release/**` branch (`release-<name>`, SHA), in both cases only after that
+  compose check passed.
 - The compose file publishes no host ports; `docs/articles/server/deployment.md` shows how to reach
   the Server from the host.
 

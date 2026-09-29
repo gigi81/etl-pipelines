@@ -4,6 +4,12 @@ on:
     branches:
       - main
       - 'feature/**'
+      # Release branches build, verify and publish images (see the publish job below).
+      - 'release/**'
+    # Release tags publish versioned images. GitHub does not apply paths-ignore to tag pushes, so
+    # every release tag runs this workflow.
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
     # A docs-only change touches nothing this workflow builds or runs.
     paths-ignore:
       - '**/*.md'
@@ -12,7 +18,7 @@ on:
     paths-ignore:
       - '**/*.md'
 # Same reasoning as ci.yml's own concurrency block: a superseded push cancels whatever of its own
-# predecessor's "docker compose up --build" (and, on main, GHCR publish) is still running rather
+# predecessor's "docker compose up --build" (and, on a release, GHCR publish) is still running rather
 # than letting it burn to completion for a commit nobody cares about any more.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -72,15 +78,15 @@ jobs:
         working-directory: docker
         run: docker compose down --volumes
   # Publishes server/agent to GHCR - never seed, a CI/dev-only fixture nothing downstream ever
-  # runs. main only (push, not pull_request; feature/** branches build/verify above but never
-  # publish either) - a PR's own head commit never becomes an image an operator could pull, only
-  # what actually lands on main after review. needs: [compose] means a push to main whose own
+  # runs. Only for a release: a v* tag or a push to a release/** branch. Pushes to main, feature/**
+  # branches and PRs still build and verify the stack above, but publish nothing - an image per
+  # main commit, never pruned, is storage nobody pulls. needs: [compose] means a release whose own
   # `docker compose up` failed never publishes either - only an image already proven to bring up
   # the whole stack healthy gets tagged and pushed.
   publish:
     name: Publish images to GHCR
     needs: [compose]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -106,17 +112,26 @@ jobs:
           # The default GITHUB_TOKEN, not a separate secret - packages: write above is what
           # already grants it push access to this repository's own package namespace.
           password: ${{ secrets.GITHUB_TOKEN }}
-      # latest (this branch's current image) and the commit SHA (an exact, immutable pull for
-      # rolling back to or pinning a deployment against) - no SemVer tag, since that would tie an
-      # image's own release cadence to version.json/git tags the way ci.yml's "Deploy" job (NuGet
-      # packages, tag-triggered) already does, which a container image pushed on every main commit
-      # is deliberately not trying to be.
+      # A v1.2.3 tag publishes :1.2.3, :1.2 and :latest; a release/1.2 branch publishes
+      # :release-1.2 (its moving head). Both also get the commit SHA - an exact, immutable pull for
+      # pinning a deployment or rolling back.
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/etl-pipelines/${{ matrix.image }}
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=ref,event=branch
+            type=sha,format=long,prefix=
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile.${{ matrix.image }}
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/etl-pipelines/${{ matrix.image }}:latest
-            ghcr.io/${{ github.repository_owner }}/etl-pipelines/${{ matrix.image }}:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
