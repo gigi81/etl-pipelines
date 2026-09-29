@@ -365,7 +365,13 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME does not match version.json ($actual). Bump version.json to $expected on main and re-tag."
             exit 1
           fi
+      # Publishing to nuget.org is switched off until the repository variable PUBLISH_TO_NUGET is set
+      # to "true" (Settings -> Secrets and variables -> Actions -> Variables). Until then a release tag
+      # still verifies the version and creates the GitHub release (and docs.yml publishes the docs),
+      # but pushes nothing to nuget.org - where a package, once pushed, can only be unlisted, never
+      # deleted. Both NuGet steps carry the same condition, so the login is not attempted either.
       - name: NuGet login (OIDC → temp API key)
+        if: vars.PUBLISH_TO_NUGET == 'true'
         uses: NuGet/login@v1
         id: login
         with:
@@ -375,6 +381,7 @@ jobs:
       # share the "EtlPipelines." prefix (samples are "EtlPipelines.Samples.*"), so this excludes them
       # by name explicitly rather than narrowing the glob.
       - name: Push packages
+        if: vars.PUBLISH_TO_NUGET == 'true'
         shell: bash
         run: |
           shopt -s nullglob
