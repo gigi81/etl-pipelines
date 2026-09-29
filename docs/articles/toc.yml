@@ -1,0 +1,26 @@
+- name: Introduction
+  href: introduction.md
+- name: Library guide
+  href: library-guide.md
+- name: Server and agents
+  items:
+    - name: Architecture
+      href: server/architecture.md
+    - name: Deploying with Docker Compose
+      href: server/deployment.md
+    - name: Configuration
+      href: server/configuration.md
+    - name: Writing a pipeline package
+      href: server/pipeline-packages.md
+    - name: gRPC API
+      href: server/grpc-api.md
+    - name: Operations and reliability
+      href: server/operations.md
+    - name: Known limitations
+      href: server/limitations.md
+- name: Contributing
+  items:
+    - name: Building and testing
+      href: contributing/building-and-testing.md
+    - name: Database schema
+      href: contributing/database-schema.md

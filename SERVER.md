@@ -22,6 +22,13 @@ PR, get it reviewed and merged, move to the next phase — starting with the one
 depends on: how a pipeline becomes an installable, runnable package in the first place. A final phase,
 once every other phase has landed, brings the documentation up to date with the finished system (Phase 9).
 
+> **Status: every phase has shipped.** This file is now the design record — the decisions, and the
+> reasoning behind them — rather than a to-do list. Each phase below keeps its plan as written and
+> ends with an **As shipped** note saying what actually landed, where it differs from the plan, and
+> why. The user-facing documentation (architecture, deployment, configuration, the gRPC API,
+> operations, and known limitations) lives in [`docs/`](docs/index.md), built with DocFX; this file
+> does not try to duplicate it.
+
 ## Decisions already made (do not re-open)
 
 | | |
@@ -35,7 +42,29 @@ once every other phase has landed, brings the documentation up to date with the 
 | gRPC API versioning | **Versioned from the start, `v1`.** Every proto's `package` and every generated namespace carries a version segment before a single client exists to break — see "API versioning," below. |
 | Database schema management | **[`dbdeploy`](https://github.com/gigi81/dbdeploy), not EF Core Migrations.** Schema and priming/seed data are owned by versioned `.Deploy.sql`/`.Rollback.sql` scripts, deployed by the `dbdeploy` CLI — never by `dotnet ef migrations`. EF Core in `Server.Database` is a query/mapping layer over a schema it does not own: no `Migrations` folder, no `dotnet ef database update`. See Phase 3, below. |
 
+## Status: what shipped
+
+| Phase | PR | As shipped, in one line |
+|---|---|---|
+| 1 — Pipeline packaging | [#5](https://github.com/gigi81/etl-pipelines/pull/5) | Samples pack as `dotnet tool`s by naming convention (`src/Samples.Build.props`), have descriptions, are excluded from the NuGet push, and `tests/EtlPipelines.PipelinePackaging.Tests` proves a real pack/install/run round trip. |
+| 2 — Scaffolding and protos | [#6](https://github.com/gigi81/etl-pipelines/pull/6) | Five server/agent projects and the three `v1` protos, compiled once in a shared `EtlPipelines.Protos` project (added in Phase 5). |
+| 3 — Server database | [#7](https://github.com/gigi81/etl-pipelines/pull/7) | `db/` owned by dbdeploy; the EF Core model is reverse-engineered with `dotnet ef dbcontext scaffold`, not hand-written. |
+| 4 — Catalog and management API | [#8](https://github.com/gigi81/etl-pipelines/pull/8) | `ListAvailablePackages`, `ListInstalledPipelines`, `ListUpdates`, `SetConfigurationEntry` against Postgres and bagetter. |
+| 5 — Agent registration and install | [#9](https://github.com/gigi81/etl-pipelines/pull/9) | Agents register, subscribe, install with `dotnet tool install`, and report pipeline names; `InstallPackage` works end to end. |
+| 6 — Execute end to end | [#10](https://github.com/gigi81/etl-pipelines/pull/10), [#11](https://github.com/gigi81/etl-pipelines/pull/11) | `ExecutePipeline` → agent → process → `GetConfiguration`/`ReportStageResult`/`ReportRunResult` → `Runs`/`StageResults`, with `StreamRunProgress`. |
+| 7 — Docker Compose and images | [#12](https://github.com/gigi81/etl-pipelines/pull/12) | Real images, health checks, restart policies, schema deployed on start, a one-shot `seed` service, GHCR publishing. |
+| 8 — Reliability | [#14](https://github.com/gigi81/etl-pipelines/pull/14) | `AgentLivenessMonitor` (offline + `AgentLost`, never retried) and the agent's LRU `CacheEvictor`. |
+| 9 — Documentation | [#15](https://github.com/gigi81/etl-pipelines/pull/15) | DocFX site under `docs/`, README, and this file brought in line with the above. |
+
+What is still open is listed in "Other gaps worth stating, not solving now," at the end of this file,
+and, from an operator's point of view, in [`docs/articles/server/limitations.md`](docs/articles/server/limitations.md).
+
 ## Verified against the existing codebase
+
+> **Historical.** This section is the pre-implementation survey the phases below were planned
+> against. It is kept because the phases refer back to it, but the gaps it describes have all since
+> closed — each bullet that described one says where. For the codebase as it is now, read the code
+> and [`docs/`](docs/index.md).
 
 > Re-verified against `main` as of `41e8a4f` (well past `bfca455`, the commit this analysis was
 > originally written against). The repo has moved a fair distance since: connector libraries and
@@ -107,9 +136,9 @@ once every other phase has landed, brings the documentation up to date with the 
   shape to match, rather than a green field.
 - **No gRPC, EF Core, ASP.NET Core Web SDK, Data Protection, or NuGet-client package exists anywhere in
   the repo today.** All new dependencies, and central-package-management entries need to be added for
-  every one of them.
+  every one of them. *(Resolved: added across Phases 2–5, see "New central package versions.")*
 - **Docker doesn't exist in this repo at all yet** — no `Dockerfile`, no `docker-compose.yml`. Built
-  from nothing in Phase 7.
+  from nothing in Phase 7. *(Resolved: `docker/`, Phases 4–7.)*
 - **The CI push-glob narrowing this section used to describe as a Phase-1 to-do is now an outstanding,
   live gap — samples are packable today and this has not been fixed.** `.github/workflows/ci.yml`'s
   `pack` job still runs `dotnet pack --configuration Release --output ./packages` unconditionally, and
@@ -124,16 +153,14 @@ once every other phase has landed, brings the documentation up to date with the 
   samples**. The push step needs an actual exclusion (a shell loop skipping any `*.Samples.*.nupkg`, or
   the `pack` job routing sample output to a separate, never-pushed folder in the first place) rather
   than a same-prefix include glob. Small, self-contained, and worth landing on its own, independently
-  of and before any part of this plan.
+  of and before any part of this plan. *(Resolved in #5: the `deploy` job's push step is a shell loop
+  that skips every `EtlPipelines.Samples.*` package.)*
 
 ## Phase 1 — Pipeline packaging: real `dotnet tool` packages, proven on the samples
 
-> **Status: the core of this phase has landed on `main`, but not by the path described below.** Kept
-> as originally written — it is still the fuller, more deliberate version of the idea, and Phases 2
-> onward still lean on some of what it specifies (the packaging test project, the CI narrowing) that
-> the lighter version that actually shipped does not include. See "As actually implemented," at the
-> end of this phase, for exactly what exists on `main` today, what differs, and what from this
-> original plan is still worth doing.
+> **Status: shipped** — the packing itself by an earlier, lighter-weight commit, the rest (CI
+> exclusion, descriptions, the packaging test) in #5. Kept as originally written; see "As shipped,"
+> at the end of this phase, for where the result differs from this plan.
 
 **Goal:** any runnable pipeline application packs, installs, and runs exactly the way `dotnet` itself
 already packages and runs CLI tools — `dotnet pack` produces a tool package, `dotnet tool install
@@ -211,8 +238,10 @@ and assert exit code `0` and the expected output file exists, exactly as
 `tests/EtlPipelines.Samples.Tests` already does for the in-process case — this test proves the same
 behavior survives packaging, it doesn't re-derive it. Tag the class `[Category("Packaging")]`: this is
 slow (a real `dotnet pack`+`dotnet tool install` round-trip, invoking MSBuild and NuGet restore) but
-needs no Docker, so it gets its own sequential step in `integration-tests.yml` alongside the existing
-per-concern steps, rather than slowing down every fast per-PR run.
+needs no Docker, so it gets its own sequential step alongside the Docker-backed suites, rather than
+slowing down every fast per-PR run. *(As shipped: the "Pipeline packaging" step of `ci.yml`'s
+`databases` job — `integration-tests.yml` itself was later folded into `ci.yml`, gated to `main` and
+release tags.)*
 
 **Verification (run these by hand once the phase lands, in addition to the automated test above):**
 
@@ -229,38 +258,26 @@ dotnet tool uninstall --tool-path ./tool-install-test EtlPipelines.Samples.Archi
 filename — confirm the exact name empirically rather than trust the casing above; an automated test
 should assert whatever that turns out to be rather than hardcode a guess.)
 
-### As actually implemented
+### As shipped
 
-What landed on `main` (commit "Publishing samples as dotnet tools") gets to the same place — every
-sample installs and runs as a real `dotnet` tool — by a shorter, less deliberate route than the plan
-above. Concretely, against the plan:
+Every sample installs and runs as a real `dotnet` tool, and CI proves it. Against the plan above:
 
-- **No `PipelinePackage.props`, no per-project `<Import>` line.** Instead, `src/Directory.Build.props`
-  unconditionally imports a new `src/Samples.Build.props`, which applies `OutputType=Exe` and
+- **No `PipelinePackage.props`, no per-project `<Import>` line.** `src/Directory.Build.props`
+  unconditionally imports `src/Samples.Build.props`, which applies `OutputType=Exe` and
   `PackAsTool=true` to any project whose name starts with `EtlPipelines.Samples.` — a naming-convention
-  condition rather than explicit opt-in. It happens to be safe here (every project under that prefix
-  really is a runnable sample, and `Samples.Common` — the one shared library the original plan singled
-  out to exclude — doesn't exist any more; see the "recursive-option" bullet under "Verified against
-  the existing codebase," above, for where its one useful piece of code went instead), but it is a
-  divergence from this repo's own stated preference for explicit per-project opt-in over folder/prefix
-  magic, which the original plan called out deliberately and the shipped version does not follow.
-- **No `<Description>` added per sample.** Each of the six still has none — the gap the original plan
-  flagged (NuGet's pack-time diagnostic for a missing description) is real and unaddressed, though
-  harmless until these are ever actually published.
-- **The CI push-glob narrowing never happened.** Still `dotnet nuget push "packages/*.nupkg" ...`,
-  unchanged. This is no longer a "when Phase 1 lands" concern — Phase 1's packing change already landed
-  — it is a live gap on `main` right now, covered in detail in "Verified against the existing
-  codebase," above. Worth fixing on its own, first.
-- **No `tests/EtlPipelines.PipelinePackaging.Tests`, no subprocess/`CliWrap`-based install-and-run
-  test.** The verification block above is still accurate as a **manual** check (with its paths
-  corrected) but nothing in CI runs it. `CliWrap` does now have a proven consumer elsewhere in the repo
-  (`EtlPipelines.Extensions.Cli` — see "Verified against the existing codebase") that a packaging test
-  project could follow the shape of, but the test project itself is still exactly as described above:
-  not built.
-
-None of this blocks later phases — the shape they all depend on (`PackAsTool`, a real installable
-shim) exists and works — but Phase 2 onward should not assume the *rest* of Phase 1 (the CI fix, the
-packaging test, the descriptions) is done just because the packing itself is.
+  condition rather than the explicit per-project opt-in planned here. Safe in practice (every project
+  under that prefix really is a runnable sample, and `Samples.Common`, the one library the plan
+  singled out, no longer exists), and the same convention was then reused for `src/ServerAgent.Build.props`
+  (see "Solution layout").
+- **Every sample has a `<Description>`** (#5).
+- **The NuGet push excludes samples with a loop, not a glob.** As the "Verified against the existing
+  codebase" section explains, `packages/EtlPipelines.*.nupkg` would still have matched every sample, so
+  `ci.yml`'s `deploy` job iterates over `packages/*.nupkg` and skips `EtlPipelines.Samples.*` (#5).
+- **`tests/EtlPipelines.PipelinePackaging.Tests` exists** (`[Category("Packaging")]`): it packs
+  `EtlPipelines.Samples.ArchiveToDatabase`, installs it with `dotnet tool install --tool-path`,
+  asserts `list` prints `build-feed` and `archive`, and runs `build-feed`. The shim is found by
+  listing the tool path rather than by a hard-coded name, as the verification note above recommended.
+  It runs in `ci.yml`'s `databases` job ("Pipeline packaging" step), on `main` and release tags.
 
 ## Solution layout
 
@@ -324,6 +341,15 @@ A new root-level `/docker/` folder (no `.csproj`, not a solution folder, and not
 top-level addition this phase actually needs on disk) holds `docker-compose.yml`, `Dockerfile.server`,
 `Dockerfile.agent`.
 
+**As shipped**, one more project joined the four above: **`src/EtlPipelines.Protos`**, in the `/src/`
+solution folder, compiles all three `.proto` files once (`GrpcServices="Both"`), and `Server`,
+`GrpcClient` and `Agent.GrpcClient` reference it instead of each compiling their own copy. Added in
+Phase 5, when the first test needed a real `Server` and a real `Agent` in one process and the two
+independently generated sets of message types collided (CS0433). It packs like any other `src/`
+library, since `EtlPipelines.GrpcClient` — a published package — depends on it. `docker/` also gained
+`Dockerfile.seed`, `seed.sh` and `entrypoint.server.sh` (Phase 7), and `docs/` (Phase 9) is the
+second non-code top-level folder.
+
 ## API versioning
 
 Every proto starts versioned, `v1`, rather than being versioned only once a `v2` is first needed — the
@@ -363,7 +389,7 @@ still calls it — not a step of adding `v2`.
 |---|---|---|
 | `Grpc.AspNetCore` | Server | Kestrel + service hosting |
 | `Grpc.Net.ClientFactory`, `Grpc.Net.Client`, `Google.Protobuf`, `Grpc.Tools` | GrpcClient, Agent.GrpcClient | typed client codegen via `AddGrpcClient` |
-| `Microsoft.EntityFrameworkCore`, `Npgsql.EntityFrameworkCore.PostgreSQL` | Server.Database | Postgres query/mapping layer only — **no** `Microsoft.EntityFrameworkCore.Design`, since there is no `dotnet ef migrations`/scaffold workflow to support (schema owned by `dbdeploy`; see "Database schema management," above). |
+| `Microsoft.EntityFrameworkCore`, `Npgsql.EntityFrameworkCore.PostgreSQL` | Server.Database | Postgres query/mapping layer only. *(As shipped, `Microsoft.EntityFrameworkCore.Design` is referenced too — not for migrations, which still do not exist, but for `dotnet ef dbcontext scaffold`, which reverse-engineers the model from the schema dbdeploy deployed; see Phase 3's "As shipped.")* |
 | `Microsoft.AspNetCore.DataProtection` | Server | secrets-at-rest, key ring on the `server-cache` volume |
 | `NuGet.Protocol`, `NuGet.Versioning` | Server only | browsing/resolving packages against the one `bagetter` feed for `ListAvailablePackages`/`ListUpdates` — metadata only, and whatever `bagetter` itself proxies through is invisible to this beyond it showing up in the results. The Agent needs **no** NuGet-client library at all: per Phase 1, installing a package is just shelling out to `dotnet tool install --tool-path ... --add-source <feed>`, which already does download+extract+shim through the SDK itself. |
 
@@ -436,6 +462,11 @@ the day a `v2` of any single one of them is actually needed.
 **Tests:** one TUnit smoke test per new test project asserting the generated types exist and the
 solution builds. **Verification:** `dotnet build --configuration Release` clean.
 
+**As shipped (#6):** as planned — the protos above, with every message fleshed out and commented in
+`protos/v1/`, and every RPC initially answering `UNIMPLEMENTED` through one shared helper
+(`ServiceScaffolding`). Later phases replaced those stubs one by one; `ListAgents`,
+`UninstallPackage` and `UpdatePackage` still return `UNIMPLEMENTED` today (see "Other gaps").
+
 ## Phase 3 — `EtlPipelines.Server.Database`
 
 The EF Core layer against Postgres, proven in isolation before `Server` depends on it — and, alongside
@@ -497,6 +528,23 @@ the `DbContext`'s hand-written mapping actually agree — following `DatabaseFix
 **Verification:** `dbdeploy deploy` against a fresh local Postgres, `dbdeploy validate`, `dbdeploy ci`,
 Docker-tagged tests green locally.
 
+**As shipped (#7):**
+
+- The schema is one baseline script, `db/server/_Init.sql`, with the tables exactly as listed above;
+  later changes are to be `Deploy`/`Rollback` pairs appended to `db/main.csv`.
+- **The EF Core model is scaffolded, not hand-written.** Instead of hand-maintained
+  `IEntityTypeConfiguration<T>` classes, `ServerDbContext.cs` and `Entities/*.cs` are generated by
+  `dotnet ef dbcontext scaffold` against a database dbdeploy has just deployed — a read-only,
+  reverse-engineering use of the EF tooling that keeps "dbdeploy owns the schema" intact while
+  removing any chance of the mapping drifting from it by hand. Customizations go in
+  `ServerDbContext.Customizations.cs`. The exact command is in
+  `src/EtlPipelines.Server.Database/README.md`. (`_Init.sql`'s own header comment still mentions
+  `IEntityTypeConfiguration<T>`; it is left as is, since editing a deployed script is exactly what
+  dbdeploy's model forbids.)
+- Postgres is `15.1` everywhere — CI, Testcontainers fixtures, and later compose.
+- `dbdeploy validate`/`deploy`/`ci` run in their own workflow, `db.yml`, against a Postgres service
+  container; the Testcontainers round trip runs in `ci.yml`'s `databases` job ("Server.Database" step).
+
 ## Phase 4 — `EtlPipelines.Server`: catalog and management API (no agent yet)
 
 `ManagementService.ListAvailablePackages`/`ListInstalledPipelines`/`ListUpdates`/
@@ -522,6 +570,11 @@ for the full `ManagementService` surface against a real Postgres container.
 
 **Verification:** `docker compose up postgres nuget -d`, `grpcurl` against `ListAvailablePackages`
 pointed at a test package pushed to bagetter.
+
+**As shipped (#8):** as planned. `NuGetFeedSeeder`, a hosted service, upserts the one `NuGetFeeds` row
+from `NuGetFeed:Url` on every start, so the feed is configuration rather than data an operator has to
+insert. `ListUpdates` compares each package's most recently installed version against the latest
+*stable* version on the feed. Bagetter seeding itself was deferred to Phase 7, as the plan allowed.
 
 ## Phase 5 — `EtlPipelines.Agent` / `EtlPipelines.Agent.GrpcClient`: registration and install
 
@@ -560,6 +613,24 @@ real `Agent` — assert `ListInstalledPipelines` reports the sample's pipeline n
 
 **Verification:** `docker compose up -d`, `grpcurl ... InstallPackage`, poll `ListInstalledPipelines`.
 
+**As shipped (#9):**
+
+- **`--configfile`, not `--add-source`.** `dotnet tool install` refuses a plain-HTTP source unless a
+  `NuGet.Config` marks it `allowInsecureConnections`, and — unlike `dotnet nuget push` — has no flag
+  for it. `PackageInstaller` writes a per-install `NuGet.Config` (with `<clear />`, so only the
+  dispatched feed is used) to a temp directory and passes it with `--configfile`.
+- `InstallPackage` sends the work item to any connected agent (`AgentConnectionRegistry`, in memory)
+  and waits up to five minutes for that agent's `ReportInstallResult`. Recording the result is
+  idempotent per package version (a re-install reuses the row and never downgrades an installed
+  version on failure).
+- `EtlPipelines.Protos` was extracted in this phase — see "Solution layout."
+- **`ResourceMonitor` exists but is not wired in.** It samples a process's CPU and working set as
+  planned, and the Server stores `RESOURCE_SAMPLE` reports in `AgentResourceSamples`, but the agent
+  never starts it, so nothing is sampled yet (see "Other gaps").
+- The end-to-end `[Category("Docker")]` test runs `Server` and `Agent` in-process against real
+  Postgres and bagetter containers, rather than as separate containers — the pattern every later
+  end-to-end test follows.
+
 ## Phase 6 — Execute a pipeline end to end
 
 `ExecutePipeline` → agent dispatch → process launch with a session id and server URL → the pipeline
@@ -577,7 +648,7 @@ verified findings above, touches them by reuse, not by change:
   sections lazily on first connect either way — this provider is a drop-in, zero changes to
   `EtlPipelines.Extensions.Sql`/`EtlPipelines.Extensions.Files.Sftp`.
 - **Session id** — `--session-id`/`--server-url` added as recursive options via a new
-  `EtlPipelinesHost.UseGrpcClient(...)` extension, built exactly like `EtlPipelinesHost` already builds
+  `EtlPipelinesHost.UseGrpcClient(...)` extension *(as shipped: no extension — see below)*, built exactly like `EtlPipelinesHost` already builds
   `VerboseOption`/`WorkDirOption` itself (`src/EtlPipelines.Hosting/EtlPipelinesHost.cs`): declared as
   `static Option<T>` properties, added to the root command as `Recursive = true` in the constructor,
   read off the `ParseResult` during `ConfigureServices`, before any provider exists to inject from. An
@@ -606,6 +677,27 @@ what `tests/EtlPipelines.Samples.Tests` already expects for that sample.
 
 **Verification:** the E2E test above; manual smoke test with `grpcurl` + `docker compose logs -f`.
 
+**As shipped (#10, follow-up #11):**
+
+- **Built in, not opted into.** There is no `UseGrpcClient(...)`: `EtlPipelinesHost` itself declares
+  `SessionIdOption`/`ServerUrlOption` on every application, and `EtlPipelines.Hosting` references
+  `EtlPipelines.GrpcClient` directly. The gRPC configuration source and `GrpcProgressReporter` are
+  registered only when **both** options are present, so a plain local run is unchanged and no pipeline
+  author has to remember a call for their package to work under an agent. The Phase 6 E2E test
+  therefore needed no test-only `ProjectReference` either.
+- `RunDispatcher` creates the `Runs` row directly as `Dispatched` (`Queued` is reserved and unused) and
+  picks any connected agent. `GetConfiguration` returns every configuration entry — entries are not
+  scoped per pipeline.
+- `RunStatusStore` keeps each run's progress in memory and replays it to late `StreamRunProgress`
+  subscribers; it is not persisted and not evicted.
+- The agent reports `STARTED`/`EXITED` via `ReportExecutionStatus`; `EXITED` settles a run whose
+  process died before calling `ReportRunResult` itself, and publishes the matching `RunCompleted`.
+- **#11:** the URL handed to a launched process is `Server:PublicUrl` when set, otherwise Kestrel's
+  real bound address resolved lazily after start — computing it at build time raced Kestrel's own
+  binding and crashed agent-launched pipelines.
+- `PipelineExecutionService.Heartbeat` validates the session and records nothing (see Phase 8's
+  "As shipped" and "Other gaps").
+
 ## Phase 7 — Docker Compose hardening and image build
 
 The compose file, finished: `Dockerfile.server`, `Dockerfile.agent`, all four volumes, health checks,
@@ -613,6 +705,7 @@ restart policies. Sequenced after Phase 6 deliberately — building images again
 surface means rebuilding every phase; doing it once here is cheaper.
 
 ```yaml
+# the plan's sketch - see "As shipped" below for the real file
 services:
   postgres: { image: postgres:18, volumes: [postgres-data:/var/lib/postgresql/data] }
   nuget:    { image: bagetter/bagetter, volumes: [nuget-data:/data] }
@@ -646,6 +739,28 @@ containers healthy, `Server`'s schema present with no manual `dbdeploy` invocati
 stack, `bagetter`'s own package listing shows the six seeded samples and nothing else, Phase 6's smoke
 test re-run entirely against the built images.
 
+**As shipped (#12):** `docker/docker-compose.yml`, `Dockerfile.server`, `Dockerfile.agent`,
+`Dockerfile.seed`:
+
+- **`postgres:15.1`**, not 18 — the version already pinned in CI and every Testcontainers fixture,
+  rather than a fourth, untested one.
+- **Health checks** on `postgres` (`pg_isready`) and `server` (`curl --http2-prior-knowledge` against
+  its h2c endpoint); `server` waits for a healthy `postgres`, `agent` for a healthy `server`. `nuget`
+  and `agent` have none (bagetter's image ships no tooling this repo controls to probe it with, so
+  `seed` retries its pushes instead; the agent listens on no port). Every
+  long-running service is `restart: unless-stopped`.
+- **Schema on startup** exactly as planned: `entrypoint.server.sh` regenerates `db/dbsettings.json`
+  for the compose network and runs `dbdeploy deploy` before starting the app.
+- **The server image is runtime-only; the agent image keeps the full SDK**, since the agent runs
+  `dotnet tool install` for packages nobody can know at build time.
+- **Seeding is a separate one-shot `seed` service** (`restart: "no"`) that packs the six samples and
+  pushes them to `nuget`, retrying until the feed answers. Upstream proxying stays off.
+- **`docker.yml`** runs `docker compose up --build --wait` on fresh volumes plus the seed job on every
+  relevant push and PR, and on `main` publishes `ghcr.io/gigi81/etl-pipelines/{server,agent}` tagged
+  `latest` and the commit SHA — only after that compose check passed.
+- The compose file publishes no host ports; `docs/articles/server/deployment.md` shows how to reach
+  the Server from the host.
+
 ## Phase 8 — Reliability: heartbeat, crash recovery, cache eviction
 
 The operational gaps nothing earlier in this plan addresses, made concrete now that the happy path is
@@ -664,10 +779,49 @@ proven:
 test that kills an agent container mid-run and asserts the server marks the run `AgentLost` within the
 timeout window.
 
+**As shipped (#14):**
+
+- **`AgentLivenessMonitor`**, a `BackgroundService` on a `TimeProvider`-driven timer
+  (`AgentLiveness:PollInterval`, default 10 s), marks agents whose `LastHeartbeatAt` is older than
+  `AgentLiveness:Timeout` (default 30 s, three missed 10-second heartbeats) `Offline`, and every
+  `Queued`/`Dispatched`/`Running` run whose agent is that far behind `AgentLost`, publishing
+  `RunCompleted { AGENT_LOST }`. Runs are joined against the agent's heartbeat directly, so a sweep
+  that failed halfway is finished by the next one. Nothing is retried, as planned.
+- **`CacheEvictor`** (agent) touches a `.last-used` marker whenever a version is installed or run, and
+  every `Agent:CacheEvictionInterval` (30 min) deletes least-recently-used
+  `<cache>/<package>/<version>` directories until the cache is under `Agent:CacheSizeCapBytes`
+  (5 GiB), skipping anything it cannot delete.
+- **`server-cache` is deliberately not swept.** By the time this phase was built it held only the Data
+  Protection key ring — a few kilobytes that must never be evicted, since losing a key makes stored
+  secrets unrecoverable. The plan's "both grow unboundedly" was true only of `agent-cache`.
+- **Scoped to agent liveness.** A pipeline process that hangs while its agent stays healthy is not
+  detected; per-run liveness via `PipelineExecutionService.Heartbeat` is left as a gap.
+- The Docker test stops an in-process agent host mid-run (`IHostedService.StopAsync`, which tears down
+  its heartbeat loop and `Subscribe` stream) rather than killing a container, consistent with every
+  other end-to-end test here, and asserts `Offline` and `AgentLost` with a 2-second timeout.
+- Found and fixed along the way: recording an install result was not idempotent (a re-install hit the
+  `PackageVersions` unique index), and `BagetterFixture` built its container during test discovery,
+  which broke the Docker category filter on machines without Docker.
+
 ## Phase 9 — Documentation
 
 DocFX, a `docs/` folder, README updates, this file itself brought in line with what actually shipped
 across every phase. Last, because documenting a still-moving target is wasted effort.
+
+**As shipped:**
+
+- **`docs/`** is a DocFX site: an introduction, the library guide (the README, included rather than
+  copied), server articles — architecture, deployment, configuration, writing a pipeline package, the
+  gRPC API, operations and reliability, known limitations — and contributor articles on building,
+  testing and the database schema, plus an API reference generated from every published package's
+  XML docs (Server/Agent projects, being deployables, are excluded).
+- DocFX is a local tool (`.config/dotnet-tools.json`): `dotnet tool restore && dotnet docfx
+  docs/docfx.json --serve`. **`docs.yml`** builds the site with `--warningsAsErrors` whenever docs or
+  Markdown change, uploading nothing, and on a release tag (`v1.0.0`) also publishes it to GitHub
+  Pages — only then, so the published docs always describe a released version.
+- **README** gained a "Running pipelines on a server" section, the `EtlPipelines.GrpcClient` package,
+  and links into `docs/`.
+- **This file**: the status table at the top and an "As shipped" note per phase.
 
 ## Other gaps worth stating, not solving now
 
@@ -684,15 +838,41 @@ across every phase. Last, because documenting a still-moving target is wasted ef
 - **Every agent installs its own copy of a package** — the install-delegation decision removes
   double-installation on the *install-validation* path (one agent does it once), but execution-time
   installation still has no cache shared across agents. Deferred; a shared cache volume or server-side
-  proxying is a later phase's concern, not a blocker to a working system.
+  proxying is a later phase's concern, not a blocker to a working system. *(As shipped this is
+  sharper than stated: an agent never installs at execution time at all, so a run dispatched to an
+  agent that lacks the package — or evicted it — fails with exit code `-1`.)*
+
+Left open by the phases as shipped (operator-facing detail in
+[`docs/articles/server/limitations.md`](docs/articles/server/limitations.md)):
+
+- **Auth/authz, and TLS** — the deferred decision above still stands; nothing here is safe beyond a
+  trusted network.
+- **Configuration entries are global** — every run receives every entry; per-pipeline scoping needs
+  a schema change.
+- **Agent selection is arbitrary** — any connected agent; `Agents.Tags` is recorded but unused, and
+  selection is unaware of which agent has which package installed.
+- **One work item at a time per agent** — `AgentRegistration` handles its `Subscribe` stream
+  sequentially, so a long run delays installs behind it (which time out after five minutes).
+- **Agents do not reconnect in-process** — a dropped `Subscribe` stream ends the agent process; the
+  container restart policy brings it back as a new registration.
+- **In-memory Server state** — connections, pending installs and `RunStatusStore` history are lost on
+  restart, and the history is never evicted while the process runs.
+- **No per-run liveness** — `PipelineExecutionService.Heartbeat` records nothing, so a hung process on
+  a healthy agent stays `Running`.
+- **`ResourceMonitor` is not wired into `ReportExecutionStatus`** — `AgentResourceSamples` stays empty.
+- **`ListAgents`, `UninstallPackage`, `UpdatePackage` are unimplemented** — still `UNIMPLEMENTED`
+  stubs. `UpdatePackage`'s intended semantics are in the first bullet of this section.
+- **Cache eviction does not tell the Server** — and nothing reinstalls an evicted version on demand.
 
 ## Verification (whole subsystem)
 
 1. `dotnet build --configuration Release` clean across all new projects, `TreatWarningsAsErrors=true`.
-2. Fast TUnit suite (`--treenode-filter "/*/*/*/*[Category!=Docker]"`) green.
+2. Fast TUnit suite (`--treenode-filter "/**[(Category!=Docker)&(Category!=Packaging)]"`) green —
+   `ci.yml`'s Test job.
 3. Packaging suite (`[Category("Packaging")]`) and Docker-tagged suite green locally with Docker
-   running.
-4. `docker compose -f docker/docker-compose.yml up --build`: all four containers healthy.
+   running — `ci.yml`'s `databases` job, on `main` and release tags.
+4. `docker compose -f docker/docker-compose.yml up --build`: all four containers healthy —
+   `docker.yml`.
 5. End-to-end manual smoke test: install a real sample package via `grpcurl`, execute it, watch
    `StreamRunProgress`, confirm `Runs`/`StageResults` in Postgres match the sample's own expected
    `PipelineResult` (cross-checked against `tests/EtlPipelines.Samples.Tests`).
