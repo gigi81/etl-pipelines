@@ -464,8 +464,8 @@ solution builds. **Verification:** `dotnet build --configuration Release` clean.
 
 **As shipped (#6):** as planned — the protos above, with every message fleshed out and commented in
 `protos/v1/`, and every RPC initially answering `UNIMPLEMENTED` through one shared helper
-(`ServiceScaffolding`). Later phases replaced those stubs one by one; `ListAgents`,
-`UninstallPackage` and `UpdatePackage` still return `UNIMPLEMENTED` today (see "Other gaps").
+(`ServiceScaffolding`). Later work replaced those stubs one by one; `UninstallPackage` and
+`UpdatePackage` still return `UNIMPLEMENTED` today (see "Other gaps").
 
 ## Phase 3 — `EtlPipelines.Server.Database`
 
@@ -858,11 +858,11 @@ Left open by the phases as shipped (operator-facing detail in
 - **Agents do not reconnect in-process** — a dropped `Subscribe` stream ends the agent process; the
   container restart policy brings it back as a new registration.
 - **In-memory Server state** — connections, pending installs and `RunStatusStore` history are lost on
-  restart, and the history is never evicted while the process runs.
+  restart. (A finished run's history is evicted after an hour, and `StreamRunProgress` then answers
+  from `Runs`/`StageResults`.)
 - **No per-run liveness** — `PipelineExecutionService.Heartbeat` records nothing, so a hung process on
   a healthy agent stays `Running`.
-- **`ResourceMonitor` is not wired into `ReportExecutionStatus`** — `AgentResourceSamples` stays empty.
-- **`ListAgents`, `UninstallPackage`, `UpdatePackage` are unimplemented** — still `UNIMPLEMENTED`
+- **`UninstallPackage`, `UpdatePackage` are unimplemented** — still `UNIMPLEMENTED`
   stubs. `UpdatePackage`'s intended semantics are in the first bullet of this section.
 - **Cache eviction does not tell the Server** — and nothing reinstalls an evicted version on demand.
 

@@ -147,7 +147,14 @@ public sealed class AgentRegistration(
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
             var exitCode = await PipelineProcessRunner
-                .RunAsync(shimPath, work.PipelineName, work.SessionId, work.ServerUrl, cancellationToken)
+                .RunAsync(
+                    shimPath,
+                    work.PipelineName,
+                    work.SessionId,
+                    work.ServerUrl,
+                    options.Value.ResourceSampleInterval,
+                    (sample, token) => ReportResourceSampleAsync(agentId, work.SessionId, sample, token),
+                    cancellationToken)
                 .ConfigureAwait(false);
 
             await client.ReportExecutionStatusAsync(
@@ -187,6 +194,28 @@ public sealed class AgentRegistration(
             {
                 logger.LogWarning(reportException, "Failed to report execution failure for session {SessionId}", work.SessionId);
             }
+        }
+    }
+
+    private async Task ReportResourceSampleAsync(string agentId, string sessionId, ResourceSample sample, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await client.ReportExecutionStatusAsync(
+                new ReportExecutionStatusRequest
+                {
+                    AgentId = agentId,
+                    SessionId = sessionId,
+                    Status = ReportExecutionStatusRequest.Types.Status.ResourceSample,
+                    CpuPercent = sample.CpuPercent,
+                    WorkingSetBytes = sample.WorkingSetBytes,
+                },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // A lost sample is only a gap in a chart - never a reason to fail the run itself.
+            logger.LogDebug(exception, "Failed to report a resource sample for session {SessionId}", sessionId);
         }
     }
 }

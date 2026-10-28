@@ -67,6 +67,11 @@ public static class ServerApplication
 
         builder.Services.AddGrpc();
 
+        // So grpcurl and similar tools can discover the services without the .proto files. No
+        // authentication anywhere yet (SERVER.md's "Auth/authz: deferred entirely"), so this
+        // exposes nothing the services themselves don't already.
+        builder.Services.AddGrpcReflection();
+
         // Falls back to a syntactically valid but unreachable connection string rather than null/
         // empty when unconfigured - a plain `dotnet run` with no appsettings.Development.json
         // fails clearly the first time something actually queries, instead of failing confusingly
@@ -127,6 +132,7 @@ public static class ServerApplication
         app.MapGrpcService<PipelineExecutionServiceImpl>();
         app.MapGrpcService<AgentServiceImpl>();
         app.MapGrpcService<ManagementServiceImpl>();
+        app.MapGrpcReflectionService();
 
         // gRPC clients don't hit this, but a bare `curl` against the port otherwise gets an
         // unhelpful 404 - the same courtesy the official grpc-dotnet templates extend.

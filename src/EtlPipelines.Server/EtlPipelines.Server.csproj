@@ -8,6 +8,7 @@
   -->
   <ItemGroup>
     <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Grpc.AspNetCore.Server.Reflection" />
     <!--
       Phase 4: NuGet.Protocol/NuGet.Versioning browse the one bagetter feed for
       ListAvailablePackages/ListUpdates - metadata only, never a download. Microsoft.AspNetCore.

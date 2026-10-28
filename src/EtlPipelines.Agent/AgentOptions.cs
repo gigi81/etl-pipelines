@@ -26,6 +26,12 @@ public sealed class AgentOptions
     /// </summary>
     public long CacheSizeCapBytes { get; set; } = 5L * 1024 * 1024 * 1024;
 
+    /// <summary>
+    /// How often a running pipeline process's CPU and working set are sampled and reported to the
+    /// Server (<c>AgentResourceSamples</c>). 15 seconds by default.
+    /// </summary>
+    public TimeSpan ResourceSampleInterval { get; set; } = TimeSpan.FromSeconds(15);
+
     /// <summary>How often <see cref="CacheEvictor"/> checks <see cref="CacheDirectory"/> against <see cref="CacheSizeCapBytes"/>.</summary>
     public TimeSpan CacheEvictionInterval { get; set; } = TimeSpan.FromMinutes(30);
 }

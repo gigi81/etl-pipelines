@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using CliWrap;
 using CliWrap.Buffered;
 
@@ -7,9 +8,8 @@ namespace EtlPipelines.Agent;
 /// Runs an installed pipeline package's shim - <c>list</c> to discover its pipeline names,
 /// <c>run &lt;name&gt; --session-id ... --server-url ...</c> to execute one. Phase 5 only ever
 /// calls <see cref="ListPipelineNamesAsync"/> (right after <see cref="PackageInstaller"/>
-/// installs a package, to report its pipeline names back); <see cref="RunAsync"/> exists now
-/// because SERVER.md names both as one type's job, but nothing dispatches an
-/// <c>ExecutePipeline</c> work item to call it until Phase 6.
+/// installs a package, to report its pipeline names back); <see cref="RunAsync"/> is what an
+/// <c>ExecutePipeline</c> work item calls (Phase 6).
 /// </summary>
 public static class PipelineProcessRunner
 {
@@ -39,25 +39,76 @@ public static class PipelineProcessRunner
     /// pipeline that fails - or crashes outright, never getting the chance to report anything
     /// itself - should still leave its own diagnostics somewhere an operator watching this
     /// agent's own console can actually see, rather than silently discarded (CliWrap's own
-    /// default target for an unconfigured pipe).
+    /// default target for an unconfigured pipe). While the process runs it is sampled with
+    /// <see cref="ResourceMonitor"/> every <paramref name="sampleInterval"/>, each sample handed to
+    /// <paramref name="onResourceSample"/>; sampling stops when the process exits.
     /// </summary>
-    public static async Task<int> RunAsync(string shimPath, string pipelineName, string sessionId, string serverUrl, CancellationToken cancellationToken)
+    public static async Task<int> RunAsync(
+        string shimPath,
+        string pipelineName,
+        string sessionId,
+        string serverUrl,
+        TimeSpan sampleInterval,
+        Func<ResourceSample, CancellationToken, Task> onResourceSample,
+        CancellationToken cancellationToken)
     {
+        CommandTask<CommandResult> commandTask;
         try
         {
-            var result = await Cli.Wrap(shimPath)
+            commandTask = Cli.Wrap(shimPath)
                 .WithArguments(["run", pipelineName, "--session-id", sessionId, "--server-url", serverUrl])
                 .WithStandardOutputPipe(PipeTarget.ToStream(Console.OpenStandardOutput()))
                 .WithStandardErrorPipe(PipeTarget.ToStream(Console.OpenStandardError()))
                 .WithValidation(CommandResultValidation.None)
-                .ExecuteAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            return result.ExitCode;
+                .ExecuteAsync(cancellationToken);
         }
         catch (System.ComponentModel.Win32Exception exception)
         {
             throw new InvalidOperationException($"'{shimPath}' could not be started.", exception);
+        }
+
+        using var samplingCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var samplingTask = SampleAsync(commandTask.ProcessId, sampleInterval, onResourceSample, samplingCancellation.Token);
+
+        try
+        {
+            var result = await commandTask.ConfigureAwait(false);
+            return result.ExitCode;
+        }
+        finally
+        {
+            await samplingCancellation.CancelAsync().ConfigureAwait(false);
+            await samplingTask.ConfigureAwait(false);
+        }
+    }
+
+    private static async Task SampleAsync(
+        int processId, TimeSpan interval, Func<ResourceSample, CancellationToken, Task> onResourceSample, CancellationToken cancellationToken)
+    {
+        Process process;
+        try
+        {
+            process = Process.GetProcessById(processId);
+        }
+        catch (ArgumentException)
+        {
+            // Already exited before sampling could attach - nothing to sample.
+            return;
+        }
+
+        using (process)
+        {
+            try
+            {
+                await foreach (var sample in ResourceMonitor.SampleAsync(process, interval, cancellationToken).ConfigureAwait(false))
+                {
+                    await onResourceSample(sample, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // The process exited (or the agent is stopping) - sampling simply ends.
+            }
         }
     }
 

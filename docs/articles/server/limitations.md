@@ -52,16 +52,13 @@ a Server restart:
 - pending `InstallPackage` calls fail;
 - agents reconnect as described above.
 
-Progress history is also never evicted while the process runs, so it grows with the number of runs
-since the last restart.
+A finished run's in-memory progress history is evicted an hour after it completes; after that,
+`StreamRunProgress` answers from the database instead.
 
 ## Missing API surface
 
-- `ManagementService.ListAgents`, `UninstallPackage` and `UpdatePackage` return `UNIMPLEMENTED`. To
-  see agents, query the `Agents` table. To update, install the newer version explicitly.
-- `ReportExecutionStatus` accepts `RESOURCE_SAMPLE` (CPU and memory for a run), but the agent does not
-  send samples yet. The `ResourceMonitor` that would produce them exists but is not wired in.
-- gRPC server reflection is not enabled.
+- `ManagementService.UninstallPackage` and `UpdatePackage` return `UNIMPLEMENTED`. To update,
+  install the newer version explicitly.
 
 ## Caches
 

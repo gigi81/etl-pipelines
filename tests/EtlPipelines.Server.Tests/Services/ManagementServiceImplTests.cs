@@ -126,17 +126,90 @@ public class ManagementServiceImplTests
     }
 
     [Test]
-    public async Task ListAgents_is_still_the_Phase_2_stub()
+    public async Task StreamRunProgress_answers_from_the_database_for_a_finished_run_the_store_no_longer_tracks()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        var pipelineId = await SeedInstalledPipelineAsync(context, "csv-to-database");
+        var runId = Guid.NewGuid();
+        context.Runs.Add(new Run
+        {
+            Id = runId, PipelineId = pipelineId, Status = "Failed", RequestedAt = DateTime.UtcNow, CompletedAt = DateTime.UtcNow,
+            ExitCode = 2, RowsRead = 10, RowsWritten = 7, RowsFailed = 3,
+        });
+        context.StageResults.Add(new StageResult { Id = Guid.NewGuid(), RunId = runId, Sequence = 1, Name = "load", RowsIn = 10, RowsOut = 7, RowsFailed = 3, ErrorCode = "E1" });
+        context.StageResults.Add(new StageResult { Id = Guid.NewGuid(), RunId = runId, Sequence = 0, Name = "extract", RowsIn = 10, RowsOut = 10 });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var service = Create(context);
+        var responseStream = new RecordingServerStreamWriter<RunProgressEvent>();
+
+        //act
+        await service.StreamRunProgress(new StreamRunProgressRequest { RunId = runId.ToString() }, responseStream, TestServerCallContext());
+
+        //assert
+        responseStream.Written.Should().HaveCount(3);
+        responseStream.Written[0].StageCompleted.Name.Should().Be("extract");
+        responseStream.Written[1].StageCompleted.Name.Should().Be("load");
+        responseStream.Written[1].StageCompleted.ErrorCode.Should().Be("E1");
+        var completed = responseStream.Written[2].RunCompleted;
+        completed.Status.Should().Be(RunCompleted.Types.Status.Failed);
+        completed.ExitCode.Should().Be(2);
+        completed.RowsWritten.Should().Be(7);
+        completed.RowsFailed.Should().Be(3);
+    }
+
+    [Test]
+    public async Task StreamRunProgress_fails_with_NotFound_for_a_run_id_that_does_not_exist()
     {
         //arrange
         var service = await CreateAsync();
 
         //act
-        var act = () => service.ListAgents(new Empty(), TestServerCallContext());
+        var act = () => service.StreamRunProgress(
+            new StreamRunProgressRequest { RunId = Guid.NewGuid().ToString() },
+            new RecordingServerStreamWriter<RunProgressEvent>(),
+            TestServerCallContext());
 
         //assert
         var exception = await act.Should().ThrowAsync<RpcException>();
-        exception.Which.StatusCode.Should().Be(StatusCode.Unimplemented);
+        exception.Which.StatusCode.Should().Be(StatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task ListAgents_returns_every_registered_agent_with_its_status()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        var onlineId = Guid.NewGuid();
+        var heartbeat = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        context.Agents.Add(new Database.Entities.Agent
+        {
+            Id = onlineId, MachineName = "agent-01", Tags = ["linux", "gpu"], Version = "1.2.3", Status = "Online", LastHeartbeatAt = heartbeat,
+        });
+        context.Agents.Add(new Database.Entities.Agent
+        {
+            Id = Guid.NewGuid(), MachineName = "agent-02", Tags = [], Version = "1.2.3", Status = "Offline", LastHeartbeatAt = heartbeat,
+        });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var service = Create(context);
+
+        //act
+        var response = await service.ListAgents(new Empty(), TestServerCallContext());
+
+        //assert
+        response.Agents.Should().HaveCount(2);
+        var online = response.Agents[0];
+        online.AgentId.Should().Be(onlineId.ToString());
+        online.MachineName.Should().Be("agent-01");
+        online.Tags.Should().Equal("linux", "gpu");
+        online.Version.Should().Be("1.2.3");
+        online.Status.Should().Be(AgentInfo.Types.Status.Online);
+        online.LastHeartbeatAt.ToDateTime().Should().Be(heartbeat);
+        response.Agents[1].Status.Should().Be(AgentInfo.Types.Status.Offline);
     }
 
     [Test]
@@ -197,6 +270,7 @@ public class ManagementServiceImplTests
         var registry = connections ?? new AgentConnectionRegistry();
 
         return new ManagementServiceImpl(
+            context,
             new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()),
             new SecretsStore(context, dataProtectionProvider ?? Mock.Of<IDataProtectionProvider>()),
             registry,

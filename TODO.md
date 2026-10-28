@@ -48,17 +48,18 @@ these is in [docs/articles/server/limitations.md](docs/articles/server/limitatio
 - [ ] **Survive a Server restart.** Connected agents, pending installs and `RunStatusStore` history
   are in memory only. After a restart, `StreamRunProgress` can't replay earlier stages of in-flight
   runs, and pending `InstallPackage` calls fail.
-- [ ] **Evict `RunStatusStore` history.** It grows with every run for the lifetime of the process.
+- [x] **Evict `RunStatusStore` history.** Finished runs are evicted after an hour; `StreamRunProgress`
+  then answers from `Runs`/`StageResults`.
 
 ## Missing API surface
 
-- [ ] **`ManagementService.ListAgents`**: still `UNIMPLEMENTED`. The data is in the `Agents` table.
+- [x] **`ManagementService.ListAgents`**: reads the `Agents` table.
 - [ ] **`ManagementService.UninstallPackage`**: still `UNIMPLEMENTED`.
 - [ ] **`ManagementService.UpdatePackage`**: still `UNIMPLEMENTED`. The intended behaviour per
   SERVER.md: resolve the latest stable version on the feed, and leave in-flight runs on the old one.
-- [ ] **Wire `ResourceMonitor` in.** It exists in the Agent, and the Server already stores
-  `RESOURCE_SAMPLE` reports in `AgentResourceSamples`, but the agent never starts sampling.
-- [ ] **gRPC server reflection**, so `grpcurl` works without the `.proto` files.
+- [x] **Wire `ResourceMonitor` in.** The agent samples each pipeline process every
+  `Agent:ResourceSampleInterval` and reports `RESOURCE_SAMPLE`.
+- [x] **gRPC server reflection**, so `grpcurl` works without the `.proto` files.
 
 ## Caches
 

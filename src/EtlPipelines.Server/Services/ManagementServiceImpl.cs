@@ -1,9 +1,12 @@
 using EtlPipelines.Management.V1;
 using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Catalog;
+using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Runs;
 using EtlPipelines.Server.Secrets;
 using Grpc.Core;
+using Microsoft.EntityFrameworkCore;
+using Timestamp = Google.Protobuf.WellKnownTypes.Timestamp;
 
 namespace EtlPipelines.Server.Services;
 
@@ -21,12 +24,14 @@ namespace EtlPipelines.Server.Services;
 /// <see cref="ExecutePipeline"/> (dispatched via <see cref="RunDispatcher"/>, returning the new
 /// run's id immediately rather than waiting for it to finish - see that RPC's own proto comment)
 /// and <see cref="StreamRunProgress"/> (backed by <see cref="RunStatusStore"/>, published to by
-/// <see cref="PipelineExecutionServiceImpl"/> as the launched process reports in). Everything else
-/// here is still Phase 2's <see cref="ServiceScaffolding.Unimplemented"/> stub -
-/// <see cref="UninstallPackage"/>, <see cref="UpdatePackage"/> and <see cref="ListAgents"/> are
-/// none of them this phase's concern either.
+/// <see cref="PipelineExecutionServiceImpl"/> as the launched process reports in, and falling back
+/// to <c>Runs</c>/<c>StageResults</c> once a finished run's history has been evicted from it).
+/// <see cref="ListAgents"/> reads the <c>Agents</c> table directly. <see cref="UninstallPackage"/>
+/// and <see cref="UpdatePackage"/> are still Phase 2's <see cref="ServiceScaffolding.Unimplemented"/>
+/// stubs.
 /// </remarks>
 public sealed class ManagementServiceImpl(
+    ServerDbContext dbContext,
     PackageCatalogService catalogService,
     SecretsStore secretsStore,
     AgentConnectionRegistry connections,
@@ -162,6 +167,57 @@ public sealed class ManagementServiceImpl(
             throw new RpcException(new Status(StatusCode.InvalidArgument, $"'{request.RunId}' is not a valid run id."));
         }
 
+        // Not in the store: either a finished run whose history was already evicted, or a run id
+        // nothing ever dispatched. Runs/StageResults hold everything the store would have
+        // replayed for a finished run, so answer from there rather than subscribing to a run that
+        // will never publish again.
+        if (!statusStore.IsTracked(runId))
+        {
+            var run = await dbContext.Runs
+                .AsNoTracking()
+                .Include(r => r.StageResults)
+                .SingleOrDefaultAsync(r => r.Id == runId, context.CancellationToken)
+                .ConfigureAwait(false)
+                ?? throw new RpcException(new Status(StatusCode.NotFound, $"No run with id '{runId}' exists."));
+
+            var terminalStatus = ToRunCompletedStatus(run.Status);
+            if (terminalStatus is not null)
+            {
+                foreach (var stage in run.StageResults.OrderBy(stage => stage.Sequence))
+                {
+                    await responseStream.WriteAsync(new RunProgressEvent
+                    {
+                        RunId = request.RunId,
+                        StageCompleted = new StageCompleted
+                        {
+                            Sequence = stage.Sequence,
+                            Name = stage.Name,
+                            RowsIn = stage.RowsIn,
+                            RowsOut = stage.RowsOut,
+                            RowsFailed = stage.RowsFailed,
+                            ElapsedMs = stage.ElapsedMs,
+                            ErrorCode = stage.ErrorCode ?? string.Empty,
+                            ErrorDescription = stage.ErrorDescription ?? string.Empty,
+                        },
+                    }).ConfigureAwait(false);
+                }
+
+                await responseStream.WriteAsync(new RunProgressEvent
+                {
+                    RunId = request.RunId,
+                    RunCompleted = new RunCompleted
+                    {
+                        Status = terminalStatus.Value,
+                        ExitCode = run.ExitCode ?? 0,
+                        RowsRead = run.RowsRead ?? 0,
+                        RowsWritten = run.RowsWritten ?? 0,
+                        RowsFailed = run.RowsFailed ?? 0,
+                    },
+                }).ConfigureAwait(false);
+                return;
+            }
+        }
+
         var reader = statusStore.Subscribe(runId);
 
         await foreach (var progressEvent in reader.ReadAllAsync(context.CancellationToken).ConfigureAwait(false))
@@ -171,8 +227,32 @@ public sealed class ManagementServiceImpl(
     }
 
     /// <inheritdoc />
-    public override Task<ListAgentsResponse> ListAgents(Empty request, ServerCallContext context) =>
-        throw ServiceScaffolding.Unimplemented();
+    public override async Task<ListAgentsResponse> ListAgents(Empty request, ServerCallContext context)
+    {
+        var agents = await dbContext.Agents
+            .AsNoTracking()
+            .OrderBy(agent => agent.MachineName)
+            .ThenBy(agent => agent.LastHeartbeatAt)
+            .ToListAsync(context.CancellationToken)
+            .ConfigureAwait(false);
+
+        var response = new ListAgentsResponse();
+        response.Agents.AddRange(agents.Select(agent => new AgentInfo
+        {
+            AgentId = agent.Id.ToString(),
+            MachineName = agent.MachineName,
+            Tags = { agent.Tags },
+            Version = agent.Version,
+            Status = agent.Status switch
+            {
+                "Online" => AgentInfo.Types.Status.Online,
+                "Offline" => AgentInfo.Types.Status.Offline,
+                _ => AgentInfo.Types.Status.Unspecified,
+            },
+            LastHeartbeatAt = Timestamp.FromDateTime(DateTime.SpecifyKind(agent.LastHeartbeatAt, DateTimeKind.Utc)),
+        }));
+        return response;
+    }
 
     /// <inheritdoc />
     public override async Task<Ack> SetConfigurationEntry(SetConfigurationEntryRequest request, ServerCallContext context)
@@ -180,4 +260,13 @@ public sealed class ManagementServiceImpl(
         await secretsStore.SetAsync(request.Key, request.Value, context.CancellationToken).ConfigureAwait(false);
         return new Ack();
     }
+
+    /// <summary>Maps a terminal <c>Runs.Status</c> onto <see cref="RunCompleted.Types.Status"/>; <see langword="null"/> while the run is still in flight.</summary>
+    private static RunCompleted.Types.Status? ToRunCompletedStatus(string status) => status switch
+    {
+        "Succeeded" => RunCompleted.Types.Status.Succeeded,
+        "Failed" => RunCompleted.Types.Status.Failed,
+        "AgentLost" => RunCompleted.Types.Status.AgentLost,
+        _ => null,
+    };
 }

@@ -26,6 +26,7 @@ The defaults in each project's `appsettings.json` are the ones the compose netwo
 | `Agent:Tags` | `[]` | Free-form tags the agent registers with. They are recorded but not yet used to choose an agent. |
 | `Agent:CacheSizeCapBytes` | `5368709120` (5 GiB) | Once the cache is larger than this, the least recently used package versions are deleted until it fits. |
 | `Agent:CacheEvictionInterval` | `00:30:00` | How often the cache is checked against its cap. |
+| `Agent:ResourceSampleInterval` | `00:00:15` | How often a running pipeline process's CPU and working set are sampled and reported to the Server. |
 
 ## Pipeline configuration entries
 

@@ -56,7 +56,8 @@ deployment that never changes under you.
 ## Talking to the Server
 
 The Server speaks **gRPC over cleartext HTTP/2** (h2c) on port 5000. There is no TLS and no HTTP/1.1
-fallback. Server reflection is not enabled, so clients need the `.proto` files from `protos/`.
+fallback. Server reflection is enabled, so a client can discover the services without the `.proto`
+files; the examples below pass them anyway, which also works.
 
 The compose file does not publish port 5000 to the host. Either run a client inside the compose
 network:
