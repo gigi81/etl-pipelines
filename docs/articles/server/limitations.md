@@ -20,14 +20,14 @@ Run the stack only on a network you trust.
 
 ## Scheduling and agents
 
-- **Agents are picked arbitrarily.** `InstallPackage` and `ExecutePipeline` each go to *any*
-  connected agent. `Agent:Tags` are recorded but not used for selection, and neither load nor what an
-  agent already has installed is taken into account.
-- **Installs are per agent.** A package is installed on the one agent that received the
-  `InstallPackage` work item. If a later run is dispatched to an agent that does not have it, the run
-  fails with exit code `-1`. Agent replicas that share one `agent-cache` volume (as
-  `docker compose up --scale agent=N` does) see each other's installs. Agents on separate machines do
-  not. Until agent selection is aware of installs, run one agent per cache.
+- **Agent selection only looks at installs.** `ExecutePipeline` prefers a connected agent the Server
+  knows has the package version (it installed it, or ran it, since connecting); otherwise any connected
+  agent takes it. `InstallPackage` goes to any connected agent. `Agent:Tags` are recorded but not used,
+  and load is not taken into account.
+- **Installs are per agent.** An agent that receives a run for a package version it does not have
+  installs it from the feed before running it, so the first run on a new agent takes longer. Agent
+  replicas that share one `agent-cache` volume (as `docker compose up --scale agent=N` does) see each
+  other's installs. Agents on separate machines do not.
 - **One work item at a time per agent.** An agent handles its `Subscribe` stream sequentially, so a
   long run holds up every install and run queued behind it on that agent. An `InstallPackage` stuck
   behind a run longer than five minutes times out.
@@ -52,21 +52,18 @@ a Server restart:
 - pending `InstallPackage` calls fail;
 - agents reconnect as described above.
 
-Progress history is also never evicted while the process runs, so it grows with the number of runs
-since the last restart.
+A finished run's in-memory progress history is evicted an hour after it completes; after that,
+`StreamRunProgress` answers from the database instead.
 
 ## Missing API surface
 
-- `ManagementService.ListAgents`, `UninstallPackage` and `UpdatePackage` return `UNIMPLEMENTED`. To
-  see agents, query the `Agents` table. To update, install the newer version explicitly.
-- `ReportExecutionStatus` accepts `RESOURCE_SAMPLE` (CPU and memory for a run), but the agent does not
-  send samples yet. The `ResourceMonitor` that would produce them exists but is not wired in.
-- gRPC server reflection is not enabled.
+Nothing is missing from `ManagementService` any more. `UninstallPackage` does not delete anything
+from agents' caches; their own size cap evicts unused versions eventually.
 
 ## Caches
 
-- Evicting a version from an agent's cache does not tell the Server, and a run dispatched against an
-  evicted version fails instead of reinstalling it. Install it again to recover.
+- Evicting a version from an agent's cache does not tell the Server, which may still prefer that agent
+  for the version. The run still succeeds; the agent reinstalls the version first.
 - There is no cache shared across agents, so every agent machine downloads and installs its own copy
   of each package.
 

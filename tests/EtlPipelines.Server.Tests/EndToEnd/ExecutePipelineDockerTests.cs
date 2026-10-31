@@ -41,7 +41,20 @@ public class ExecutePipelineDockerTests(PostgreSqlFixture postgres, BagetterFixt
     // project.
     [Test]
     [NotInParallel("NuGetFeeds")]
-    public async Task ExecutePipeline_runs_the_installed_sample_end_to_end_and_settles_Runs_and_StageResults()
+    public Task ExecutePipeline_runs_the_installed_sample_end_to_end_and_settles_Runs_and_StageResults() =>
+        RunInstalledSampleEndToEndAsync(evictBeforeRunning: false);
+
+    /// <summary>
+    /// The same run, but with the installed copy deleted from the agent's cache first - what
+    /// <c>CacheEvictor</c> does to a least-recently-used version. The work item's feed URLs are
+    /// what let the agent reinstall it instead of failing the run with exit code -1.
+    /// </summary>
+    [Test]
+    [NotInParallel("NuGetFeeds")]
+    public Task ExecutePipeline_reinstalls_a_version_evicted_from_the_agent_s_cache_and_runs_it() =>
+        RunInstalledSampleEndToEndAsync(evictBeforeRunning: true);
+
+    private async Task RunInstalledSampleEndToEndAsync(bool evictBeforeRunning)
     {
         //arrange
         await SchemaDeployer.EnsureDeployedAsync(postgres.ConnectionString);
@@ -54,6 +67,11 @@ public class ExecutePipelineDockerTests(PostgreSqlFixture postgres, BagetterFixt
         // bound it for real) rather than this test having to guess one ahead of time.
         await using var server = EtlPipelines.Server.ServerApplication.Build([
             "--Server:Port", "0",
+            // Both the Server's and the Agent's appsettings.json are copied into this test's
+            // output, and whichever lands last wins. The Server's sets PublicUrl to the
+            // docker-compose hostname "server", which a pipeline process launched here cannot
+            // resolve - empty makes ResolvePublicUrl use Kestrel's real bound address instead.
+            "--Server:PublicUrl", "",
             "--ConnectionStrings:Server", postgres.ConnectionString,
             "--NuGetFeed:Url", bagetter.FeedUrl,
         ]);
@@ -79,6 +97,11 @@ public class ExecutePipelineDockerTests(PostgreSqlFixture postgres, BagetterFixt
 
             var installed = await client.ListInstalledPipelinesAsync(new Empty());
             var pipelineId = installed.Pipelines.Single(p => p.PackageId == PackageId && p.Name == PipelineName).PipelineId;
+
+            if (evictBeforeRunning)
+            {
+                Directory.Delete(Path.Combine(agentCacheDirectory, PackageId, version), recursive: true);
+            }
 
             //act
             var executeResponse = await client.ExecutePipelineAsync(new ExecutePipelineRequest { PipelineId = pipelineId });

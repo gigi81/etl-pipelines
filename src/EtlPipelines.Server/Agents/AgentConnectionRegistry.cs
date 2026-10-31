@@ -27,11 +27,39 @@ public sealed class AgentConnectionRegistry
     private readonly ConcurrentDictionary<string, Channel<WorkItem>> _connections = new();
     private readonly ConcurrentDictionary<string, PendingInstall> _pendingInstalls = new();
 
+    // Package versions each connected agent is known to have in its cache: installed there through
+    // InstallPackage, or sent there to run (which installs on demand if it was missing). Only a
+    // preference for RunDispatcher - an agent can still have evicted a version listed here, and
+    // installs it again when a run arrives - so losing this on a restart costs nothing but one
+    // reinstall.
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<(string PackageId, string Version), byte>> _knownInstalls = new();
+
     /// <summary>Registers <paramref name="agentId"/> as connected, with <paramref name="channel"/> as its outbound work-item queue.</summary>
     public void Connect(string agentId, Channel<WorkItem> channel) => _connections[agentId] = channel;
 
     /// <summary>Removes <paramref name="agentId"/> - its <c>Subscribe</c> call has ended (client disconnect, cancellation, or fault).</summary>
-    public void Disconnect(string agentId) => _connections.TryRemove(agentId, out _);
+    public void Disconnect(string agentId)
+    {
+        _connections.TryRemove(agentId, out _);
+        _knownInstalls.TryRemove(agentId, out _);
+    }
+
+    /// <summary>Records that <paramref name="agentId"/> has <paramref name="packageId"/> <paramref name="version"/> in its cache.</summary>
+    public void MarkInstalled(string agentId, string packageId, string version) =>
+        _knownInstalls.GetOrAdd(agentId, static _ => new())[(packageId, version)] = 0;
+
+    /// <summary>
+    /// A connected agent to run <paramref name="packageId"/> <paramref name="version"/> on:
+    /// one known to have it installed if there is one, otherwise any connected agent (which
+    /// installs it on demand when the run arrives).
+    /// </summary>
+    public bool TryGetConnectedAgentIdFor(string packageId, string version, [NotNullWhen(true)] out string? agentId)
+    {
+        agentId = _connections.Keys.FirstOrDefault(id =>
+            _knownInstalls.TryGetValue(id, out var installs) && installs.ContainsKey((packageId, version)));
+
+        return agentId is not null || TryGetAnyConnectedAgentId(out agentId);
+    }
 
     /// <summary>
     /// Any one connected agent's id - selection is deliberately this simple (whichever happens to

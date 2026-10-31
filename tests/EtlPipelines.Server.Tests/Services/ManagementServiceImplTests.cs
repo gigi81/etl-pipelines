@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using Moq.Protected;
+using NuGet.Versioning;
 
 namespace EtlPipelines.Server.Tests.Services;
 
@@ -105,6 +106,136 @@ public class ManagementServiceImplTests
     }
 
     [Test]
+    public async Task ExecutePipeline_prefers_the_agent_known_to_have_the_version_and_sends_the_feed_urls()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        var pipelineId = await SeedInstalledPipelineAsync(context, "csv-to-database");
+        context.NuGetFeeds.Add(new NuGetFeed { Id = Guid.NewGuid(), Url = "http://nuget:8080/v3/index.json", Ordinal = 0 });
+
+        var withoutIt = await SeedAgentAsync(context);
+        var withIt = await SeedAgentAsync(context);
+        var connections = new AgentConnectionRegistry();
+        var withoutItChannel = Channel.CreateUnbounded<WorkItem>();
+        var withItChannel = Channel.CreateUnbounded<WorkItem>();
+        connections.Connect(withoutIt, withoutItChannel);
+        connections.Connect(withIt, withItChannel);
+        connections.MarkInstalled(withIt, "EtlPipelines.Samples.CsvToDatabase", "1.0.0");
+
+        var service = Create(context, connections: connections);
+
+        //act
+        await service.ExecutePipeline(new ExecutePipelineRequest { PipelineId = pipelineId.ToString() }, TestServerCallContext());
+
+        //assert
+        withoutItChannel.Reader.TryRead(out _).Should().BeFalse();
+        withItChannel.Reader.TryRead(out var workItem).Should().BeTrue();
+        workItem!.ExecutePipeline.FeedUrls.Should().Equal("http://nuget:8080/v3/index.json");
+    }
+
+    [Test]
+    public async Task UninstallPackage_hides_the_package_s_pipelines_and_stops_them_running()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        var pipelineId = await SeedInstalledPipelineAsync(context, "csv-to-database");
+        var connections = new AgentConnectionRegistry();
+        connections.Connect(await SeedAgentAsync(context), Channel.CreateUnbounded<WorkItem>());
+        var service = Create(context, connections: connections);
+
+        //act
+        await service.UninstallPackage(new UninstallPackageRequest { PackageId = "EtlPipelines.Samples.CsvToDatabase" }, TestServerCallContext());
+
+        //assert
+        (await service.ListInstalledPipelines(new Empty(), TestServerCallContext())).Pipelines.Should().BeEmpty();
+        var execute = () => service.ExecutePipeline(new ExecutePipelineRequest { PipelineId = pipelineId.ToString() }, TestServerCallContext());
+        (await execute.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        context.ChangeTracker.Clear();
+        (await context.PackageVersions.SingleAsync()).Status.Should().Be(PackageVersionStatus.Uninstalled);
+    }
+
+    [Test]
+    public async Task UninstallPackage_fails_with_NotFound_for_a_package_that_is_not_installed()
+    {
+        //arrange
+        var service = await CreateAsync();
+
+        //act
+        var act = () => service.UninstallPackage(new UninstallPackageRequest { PackageId = "Nope" }, TestServerCallContext());
+
+        //assert
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task UpdatePackage_fails_with_FailedPrecondition_for_a_package_that_is_not_installed()
+    {
+        //arrange
+        var service = await CreateAsync();
+
+        //act
+        var act = () => service.UpdatePackage(new UpdatePackageRequest { PackageId = "Nope" }, TestServerCallContext());
+
+        //assert
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+    }
+
+    [Test]
+    public async Task UpdatePackage_already_on_the_latest_version_retires_older_ones_without_an_agent()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        await SeedInstalledPipelineAsync(context, "csv-to-database", version: "1.0.0");
+        await SeedInstalledPipelineAsync(context, "csv-to-database", version: "2.0.0");
+        context.NuGetFeeds.Add(new NuGetFeed { Id = Guid.NewGuid(), Url = "http://nuget:8080/v3/index.json", Ordinal = 0 });
+        await context.SaveChangesAsync();
+        var service = Create(context, feedClient: FeedReportingLatest("2.0.0"));
+
+        //act
+        var response = await service.UpdatePackage(new UpdatePackageRequest { PackageId = "EtlPipelines.Samples.CsvToDatabase" }, TestServerCallContext());
+
+        //assert
+        response.Version.Should().Be("2.0.0");
+        response.PipelineNames.Should().Equal("csv-to-database");
+        var listed = (await service.ListInstalledPipelines(new Empty(), TestServerCallContext())).Pipelines;
+        listed.Should().ContainSingle().Which.PackageVersion.Should().Be("2.0.0");
+    }
+
+    [Test]
+    public async Task UpdatePackage_installs_the_latest_version_on_an_agent_then_supersedes_the_old_one()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        await SeedInstalledPipelineAsync(context, "csv-to-database", version: "1.0.0");
+        context.NuGetFeeds.Add(new NuGetFeed { Id = Guid.NewGuid(), Url = "http://nuget:8080/v3/index.json", Ordinal = 0 });
+        await context.SaveChangesAsync();
+
+        var agentId = await SeedAgentAsync(context);
+        var connections = new AgentConnectionRegistry();
+        var channel = Channel.CreateUnbounded<WorkItem>();
+        connections.Connect(agentId, channel);
+
+        var service = Create(context, connections: connections, feedClient: FeedReportingLatest("2.0.0"));
+        var agentService = new AgentServiceImpl(context, connections, new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()), new RunStatusStore());
+
+        //act - the agent's side: take the install work item and report it installed
+        var update = service.UpdatePackage(new UpdatePackageRequest { PackageId = "EtlPipelines.Samples.CsvToDatabase" }, TestServerCallContext());
+        var workItem = await channel.Reader.ReadAsync();
+        await agentService.ReportInstallResult(
+            new ReportInstallResultRequest { AgentId = agentId, WorkItemId = workItem.WorkItemId, Succeeded = true, PipelineNames = { "csv-to-database" } },
+            TestServerCallContext());
+        var response = await update;
+
+        //assert
+        workItem.InstallPackage.Version.Should().Be("2.0.0");
+        response.Version.Should().Be("2.0.0");
+        var listed = (await service.ListInstalledPipelines(new Empty(), TestServerCallContext())).Pipelines;
+        listed.Should().ContainSingle().Which.PackageVersion.Should().Be("2.0.0");
+        context.ChangeTracker.Clear();
+        (await context.PackageVersions.SingleAsync(v => v.Version == "1.0.0")).Status.Should().Be(PackageVersionStatus.Superseded);
+    }
+
+    [Test]
     public async Task StreamRunProgress_replays_history_then_completes_after_RunCompleted()
     {
         //arrange
@@ -126,17 +257,90 @@ public class ManagementServiceImplTests
     }
 
     [Test]
-    public async Task ListAgents_is_still_the_Phase_2_stub()
+    public async Task StreamRunProgress_answers_from_the_database_for_a_finished_run_the_store_no_longer_tracks()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        var pipelineId = await SeedInstalledPipelineAsync(context, "csv-to-database");
+        var runId = Guid.NewGuid();
+        context.Runs.Add(new Run
+        {
+            Id = runId, PipelineId = pipelineId, Status = "Failed", RequestedAt = DateTime.UtcNow, CompletedAt = DateTime.UtcNow,
+            ExitCode = 2, RowsRead = 10, RowsWritten = 7, RowsFailed = 3,
+        });
+        context.StageResults.Add(new StageResult { Id = Guid.NewGuid(), RunId = runId, Sequence = 1, Name = "load", RowsIn = 10, RowsOut = 7, RowsFailed = 3, ErrorCode = "E1" });
+        context.StageResults.Add(new StageResult { Id = Guid.NewGuid(), RunId = runId, Sequence = 0, Name = "extract", RowsIn = 10, RowsOut = 10 });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var service = Create(context);
+        var responseStream = new RecordingServerStreamWriter<RunProgressEvent>();
+
+        //act
+        await service.StreamRunProgress(new StreamRunProgressRequest { RunId = runId.ToString() }, responseStream, TestServerCallContext());
+
+        //assert
+        responseStream.Written.Should().HaveCount(3);
+        responseStream.Written[0].StageCompleted.Name.Should().Be("extract");
+        responseStream.Written[1].StageCompleted.Name.Should().Be("load");
+        responseStream.Written[1].StageCompleted.ErrorCode.Should().Be("E1");
+        var completed = responseStream.Written[2].RunCompleted;
+        completed.Status.Should().Be(RunCompleted.Types.Status.Failed);
+        completed.ExitCode.Should().Be(2);
+        completed.RowsWritten.Should().Be(7);
+        completed.RowsFailed.Should().Be(3);
+    }
+
+    [Test]
+    public async Task StreamRunProgress_fails_with_NotFound_for_a_run_id_that_does_not_exist()
     {
         //arrange
         var service = await CreateAsync();
 
         //act
-        var act = () => service.ListAgents(new Empty(), TestServerCallContext());
+        var act = () => service.StreamRunProgress(
+            new StreamRunProgressRequest { RunId = Guid.NewGuid().ToString() },
+            new RecordingServerStreamWriter<RunProgressEvent>(),
+            TestServerCallContext());
 
         //assert
         var exception = await act.Should().ThrowAsync<RpcException>();
-        exception.Which.StatusCode.Should().Be(StatusCode.Unimplemented);
+        exception.Which.StatusCode.Should().Be(StatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task ListAgents_returns_every_registered_agent_with_its_status()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        var onlineId = Guid.NewGuid();
+        var heartbeat = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        context.Agents.Add(new Database.Entities.Agent
+        {
+            Id = onlineId, MachineName = "agent-01", Tags = ["linux", "gpu"], Version = "1.2.3", Status = "Online", LastHeartbeatAt = heartbeat,
+        });
+        context.Agents.Add(new Database.Entities.Agent
+        {
+            Id = Guid.NewGuid(), MachineName = "agent-02", Tags = [], Version = "1.2.3", Status = "Offline", LastHeartbeatAt = heartbeat,
+        });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var service = Create(context);
+
+        //act
+        var response = await service.ListAgents(new Empty(), TestServerCallContext());
+
+        //assert
+        response.Agents.Should().HaveCount(2);
+        var online = response.Agents[0];
+        online.AgentId.Should().Be(onlineId.ToString());
+        online.MachineName.Should().Be("agent-01");
+        online.Tags.Should().Equal("linux", "gpu");
+        online.Version.Should().Be("1.2.3");
+        online.Status.Should().Be(AgentInfo.Types.Status.Online);
+        online.LastHeartbeatAt.ToDateTime().Should().Be(heartbeat);
+        response.Agents[1].Status.Should().Be(AgentInfo.Types.Status.Offline);
     }
 
     [Test]
@@ -192,12 +396,14 @@ public class ManagementServiceImplTests
         ServerDbContext context,
         AgentConnectionRegistry? connections = null,
         IDataProtectionProvider? dataProtectionProvider = null,
-        RunStatusStore? statusStore = null)
+        RunStatusStore? statusStore = null,
+        INuGetFeedClient? feedClient = null)
     {
         var registry = connections ?? new AgentConnectionRegistry();
 
         return new ManagementServiceImpl(
-            new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()),
+            context,
+            new PackageCatalogService(context, feedClient ?? Mock.Of<INuGetFeedClient>()),
             new SecretsStore(context, dataProtectionProvider ?? Mock.Of<IDataProtectionProvider>()),
             registry,
             new RunDispatcher(context, registry, "http://localhost:5000"),
@@ -205,19 +411,47 @@ public class ManagementServiceImplTests
     }
 
     /// <summary>Seeds one installed pipeline (package + version + pipeline row) and returns its id.</summary>
-    private static async Task<Guid> SeedInstalledPipelineAsync(ServerDbContext context, string pipelineName)
+    private static async Task<Guid> SeedInstalledPipelineAsync(ServerDbContext context, string pipelineName, string version = "1.0.0")
     {
-        var packageId = Guid.NewGuid();
+        var package = await context.Packages.SingleOrDefaultAsync(p => p.NugetPackageId == "EtlPipelines.Samples.CsvToDatabase");
+        var packageId = package?.Id ?? Guid.NewGuid();
         var versionId = Guid.NewGuid();
         var pipelineId = Guid.NewGuid();
 
-        context.Packages.Add(new Package { Id = packageId, NugetPackageId = "EtlPipelines.Samples.CsvToDatabase", CreatedAt = DateTime.UtcNow });
-        context.PackageVersions.Add(new PackageVersion { Id = versionId, PackageId = packageId, Version = "1.0.0", InstalledAt = DateTime.UtcNow, Status = "Installed" });
+        if (package is null)
+        {
+            context.Packages.Add(new Package { Id = packageId, NugetPackageId = "EtlPipelines.Samples.CsvToDatabase", CreatedAt = DateTime.UtcNow });
+        }
+
+        context.PackageVersions.Add(new PackageVersion { Id = versionId, PackageId = packageId, Version = version, InstalledAt = DateTime.UtcNow, Status = "Installed" });
         context.Pipelines.Add(new Pipeline { Id = pipelineId, PackageVersionId = versionId, Name = pipelineName, CreatedAt = DateTime.UtcNow });
         await context.SaveChangesAsync();
         context.ChangeTracker.Clear();
 
         return pipelineId;
+    }
+
+    /// <summary>Seeds one online agent row and returns its id.</summary>
+    private static async Task<string> SeedAgentAsync(ServerDbContext context)
+    {
+        var id = Guid.NewGuid();
+        context.Agents.Add(new Database.Entities.Agent
+        {
+            Id = id, MachineName = "agent", Tags = [], Version = "1.0.0", Status = "Online", LastHeartbeatAt = DateTime.UtcNow,
+        });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+        return id.ToString();
+    }
+
+    /// <summary>A feed client whose latest stable version of every package is <paramref name="version"/>.</summary>
+    private static INuGetFeedClient FeedReportingLatest(string version)
+    {
+        var feedClient = new Mock<INuGetFeedClient>();
+        feedClient
+            .Setup(client => client.GetLatestVersionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(NuGetVersion.Parse(version));
+        return feedClient.Object;
     }
 
     /// <summary>

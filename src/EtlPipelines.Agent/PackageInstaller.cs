@@ -112,14 +112,24 @@ public sealed class PackageInstaller(IOptions<AgentOptions> options)
     /// <exception cref="InvalidOperationException">
     /// <paramref name="packageId"/> <paramref name="version"/> is not installed in this agent's cache.
     /// </exception>
-    public string GetInstalledShimPath(string packageId, string version)
+    public string GetInstalledShimPath(string packageId, string version) =>
+        TryGetInstalledShimPath(packageId, version)
+        ?? throw new InvalidOperationException(
+            $"'{packageId}' {version} is not installed in this agent's cache ({Path.Combine(options.Value.CacheDirectory, packageId, version)}) - install it before executing a pipeline from it.");
+
+    /// <summary>
+    /// <see cref="GetInstalledShimPath"/>, but null rather than throwing when
+    /// <paramref name="packageId"/> <paramref name="version"/> is not in this agent's cache - never
+    /// installed here, evicted by <see cref="CacheEvictor"/>, or left without a shim by an install
+    /// that failed part-way.
+    /// </summary>
+    public string? TryGetInstalledShimPath(string packageId, string version)
     {
         var installDirectory = Path.Combine(options.Value.CacheDirectory, packageId, version);
 
-        if (!Directory.Exists(installDirectory))
+        if (!Directory.Exists(installDirectory) || FindShimOrDefault(installDirectory) is not { } shimPath)
         {
-            throw new InvalidOperationException(
-                $"'{packageId}' {version} is not installed in this agent's cache ({installDirectory}) - install it before executing a pipeline from it.");
+            return null;
         }
 
         // About to run - the same "just used" signal InstallAsync gives CacheEvictor, so a
@@ -127,7 +137,7 @@ public sealed class PackageInstaller(IOptions<AgentOptions> options)
         // candidate for as long as that stays true.
         CacheEvictor.Touch(installDirectory);
 
-        return FindShim(installDirectory);
+        return shimPath;
     }
 
     /// <summary>
@@ -137,8 +147,11 @@ public sealed class PackageInstaller(IOptions<AgentOptions> options)
     /// extension) is a platform/SDK-version detail not worth hardcoding a guess about.
     /// </summary>
     private static string FindShim(string installDirectory) =>
-        Directory.EnumerateFiles(installDirectory).SingleOrDefault(path => !Path.GetFileName(path).StartsWith('.'))
+        FindShimOrDefault(installDirectory)
         ?? throw new InvalidOperationException($"dotnet tool install did not leave a shim directly under {installDirectory}.");
+
+    private static string? FindShimOrDefault(string installDirectory) =>
+        Directory.EnumerateFiles(installDirectory).SingleOrDefault(path => !Path.GetFileName(path).StartsWith('.'));
 
     /// <summary>A minimal NuGet.Config granting exactly <paramref name="feedUrls"/>, each marked <c>allowInsecureConnections</c>.</summary>
     private static string BuildNuGetConfigXml(IEnumerable<string> feedUrls)

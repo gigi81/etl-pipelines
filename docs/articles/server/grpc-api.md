@@ -2,9 +2,9 @@
 
 The `.proto` files in `protos/v1/` are the source of truth. Each field is commented there, and those
 comments are worth reading alongside this page. Everything is served on one cleartext HTTP/2
-endpoint (port 5000 by default), with no TLS and no authentication. Server reflection is off, so
-point clients at the proto files, for example
-`grpcurl -plaintext -import-path protos -proto v1/management.proto ...`.
+endpoint (port 5000 by default), with no TLS and no authentication. Server reflection is on, so
+`grpcurl -plaintext localhost:5000 list` works without the proto files; passing them
+(`-import-path protos -proto v1/management.proto`) still works too.
 
 ## ManagementService
 
@@ -18,11 +18,11 @@ and tooling surface.
 | `ListInstalledPipelines()` | ✅ | Every pipeline from every successfully installed package version, with the `pipeline_id` that `ExecutePipeline` takes. |
 | `ListUpdates()` | ✅ | Each installed package for which the feed has a newer stable version than the one most recently installed. |
 | `ExecutePipeline(pipeline_id)` | ✅ | Creates a run, dispatches it to a connected agent, and returns its `run_id` at once, without waiting for the run to finish. |
-| `StreamRunProgress(run_id)` | ✅ | A server stream of `StageCompleted` events, then one `RunCompleted`, after which the stream ends. Events published before you subscribed are replayed first, so subscribing late loses nothing (as long as the Server has not restarted since the run began). |
+| `StreamRunProgress(run_id)` | ✅ | A server stream of `StageCompleted` events, then one `RunCompleted`, after which the stream ends. Events published before you subscribed are replayed first, so subscribing late loses nothing. A finished run is answered from `Runs` and `StageResults` once its in-memory history has been evicted (an hour after it completed), and returns `NOT_FOUND` for a `run_id` that does not exist. |
 | `SetConfigurationEntry(key, value)` | ✅ | Creates or replaces one encrypted configuration entry. See [Configuration](configuration.md#pipeline-configuration-entries). |
-| `ListAgents()` | ⛔ | Returns `UNIMPLEMENTED`. |
-| `UninstallPackage(package_id)` | ⛔ | Returns `UNIMPLEMENTED`. |
-| `UpdatePackage(package_id)` | ⛔ | Returns `UNIMPLEMENTED`. Until it exists, call `InstallPackage` with the newer version. |
+| `ListAgents()` | ✅ | Every agent that has ever registered, with its tags, version, `ONLINE`/`OFFLINE` status and last heartbeat. A restarted agent registers again under a new id, so its old registration stays listed as `OFFLINE`. |
+| `UninstallPackage(package_id)` | ✅ | Every installed version of the package stops being listed by `ListInstalledPipelines` and can no longer be executed (`FAILED_PRECONDITION`). Runs already in flight finish; agents' copies are left to cache eviction. `NOT_FOUND` if no version is installed. `InstallPackage` brings a version back. |
+| `UpdatePackage(package_id)` | ✅ | Installs the feed's latest stable version on a connected agent, then retires every older installed version, so the package's pipelines are listed and run at the new version only. Runs already in flight are not interrupted. Already on the latest version, it only retires the older ones and needs no agent. `FAILED_PRECONDITION` if the package is not installed. |
 
 ### Errors
 
@@ -57,7 +57,7 @@ call it.
 | `Heartbeat(agent_id)` | Updates `Agents.LastHeartbeatAt`. Agents call it every 10 seconds, and it is what the liveness sweep watches. |
 | `Subscribe(agent_id)` | A long-lived server stream of `WorkItem`s, each either an `InstallPackageWorkItem` or an `ExecutePipelineWorkItem`. The agent counts as connected, and can be dispatched to, for as long as this stream is open. |
 | `ReportInstallResult(work_item_id, succeeded, pipeline_names, error)` | Resolves a pending `InstallPackage`. |
-| `ReportExecutionStatus(session_id, status, exit_code, ...)` | `STARTED` when the process launches and `EXITED` with its exit code when it ends. The Server also accepts `RESOURCE_SAMPLE` (CPU and working set), although the agent does not send it yet. |
+| `ReportExecutionStatus(session_id, status, exit_code, ...)` | `STARTED` when the process launches and `EXITED` with its exit code when it ends. While the process runs, the agent also sends `RESOURCE_SAMPLE` (CPU and working set) every `Agent:ResourceSampleInterval`, stored in `AgentResourceSamples`. |
 
 ## PipelineExecutionService
 

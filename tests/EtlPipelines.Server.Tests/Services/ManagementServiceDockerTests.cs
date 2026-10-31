@@ -194,6 +194,7 @@ public class ManagementServiceDockerTests(PostgreSqlFixture fixture)
         var registry = connections ?? new AgentConnectionRegistry();
 
         return new ManagementServiceImpl(
+            context,
             new PackageCatalogService(context, feedClient ?? Mock.Of<INuGetFeedClient>()),
             new SecretsStore(context, dataProtectionProvider ?? Mock.Of<IDataProtectionProvider>()),
             registry,

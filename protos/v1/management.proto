@@ -79,10 +79,15 @@ message InstallPackageResponse {
   repeated string pipeline_names = 3;
 }
 
+// Every version of the package stops being listed or executable. Runs already in flight finish
+// on the copy their agent already has; agents' caches are left to their own LRU eviction.
 message UninstallPackageRequest {
   string package_id = 1;
 }
 
+// Installs the latest stable version the feed reports, then retires every older installed version
+// of the package, so its pipelines are listed and executed at the new version only. Runs already
+// in flight are not interrupted. The package must already be installed (use InstallPackage first).
 message UpdatePackageRequest {
   string package_id = 1;
 }

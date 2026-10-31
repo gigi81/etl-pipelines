@@ -5,9 +5,9 @@ namespace EtlPipelines.Agent;
 
 /// <summary>
 /// Samples a running process's CPU/memory on a timer - <c>Process.TotalProcessorTime</c>/
-/// <c>WorkingSet64</c>, no new dependency. Phase 6/8 is what wires these samples into
-/// <c>ReportExecutionStatus</c>; this phase only builds and unit-tests the sampling itself -
-/// nothing calls this class yet.
+/// <c>WorkingSet64</c>, no new dependency. <see cref="PipelineProcessRunner.RunAsync"/> samples
+/// every launched pipeline process with it, and <c>AgentRegistration</c> reports each sample to
+/// the Server as a <c>RESOURCE_SAMPLE</c> <c>ReportExecutionStatus</c>.
 /// </summary>
 public static class ResourceMonitor
 {

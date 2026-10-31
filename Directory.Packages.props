@@ -23,6 +23,7 @@
     -->
     <PackageVersion Include="Google.Protobuf" Version="3.36.0" />
     <PackageVersion Include="Grpc.AspNetCore" Version="2.83.0" />
+    <PackageVersion Include="Grpc.AspNetCore.Server.Reflection" Version="2.83.0" />
     <PackageVersion Include="Grpc.Core.Api" Version="2.83.0" />
     <PackageVersion Include="Grpc.Net.Client" Version="2.83.0" />
     <PackageVersion Include="Grpc.Net.ClientFactory" Version="2.83.0" />
@@ -91,6 +92,13 @@
     <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.7.0.110445" />
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <PackageVersion Include="System.Linq.Async" Version="6.0.1" />
+    <!--
+      Transitive-only, pinned for GHSA-846f-f764-76mx: Microsoft.Data.SqlClient (9.0.13),
+      Oracle.ManagedDataAccess.Core and NuGet.Packaging (both 8.0.1) bring in vulnerable versions,
+      and TreatWarningsAsErrors turns the NU1902/NU1903 audit warnings into restore errors.
+      Drop this once those packages depend on a patched version themselves.
+    -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
     <PackageVersion Include="TestableIO.System.IO.Abstractions" Version="22.2.0" />
     <PackageVersion Include="TestableIO.System.IO.Abstractions.Wrappers" Version="22.2.0" />
     <PackageVersion Include="TestableIO.System.IO.Abstractions.TestingHelpers" Version="22.2.0" />

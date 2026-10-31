@@ -46,9 +46,8 @@ is over `Agent:CacheSizeCapBytes` (5 GiB by default), deletes the least recently
 directory. A directory that cannot be deleted, for example because a running process has a file
 open, is skipped and tried again next time.
 
-Eviction does not tell the Server. A version evicted from an agent is still listed as installed, and
-a run dispatched to that agent fails with exit code `-1` ("not installed in this agent's cache").
-Install the version again to put it back. See [Known limitations](limitations.md).
+Eviction does not tell the Server, and does not need to: a run dispatched to an agent that evicted
+its version reinstalls it from the feed first, then runs. See [Known limitations](limitations.md).
 
 ## The Server's cache and the key ring
 

@@ -93,6 +93,31 @@ public class PackageInstallerTests
     }
 
     [Test]
+    public async Task TryGetInstalledShimPath_is_null_for_a_never_installed_or_half_installed_version()
+    {
+        //arrange - a version directory with no shim in it is what an install that failed part-way leaves
+        var work = Directory.CreateTempSubdirectory("EtlPipelines.Agent.Tests.");
+
+        try
+        {
+            var installer = new PackageInstaller(Options.Create(new AgentOptions { CacheDirectory = work.FullName }));
+            Directory.CreateDirectory(Path.Combine(work.FullName, "EtlPipelines.Samples.HalfInstalled", "1.0.0", ".store"));
+
+            //act
+            var neverInstalled = installer.TryGetInstalledShimPath("EtlPipelines.Samples.NeverInstalled", "1.0.0");
+            var halfInstalled = installer.TryGetInstalledShimPath("EtlPipelines.Samples.HalfInstalled", "1.0.0");
+
+            //assert
+            neverInstalled.Should().BeNull();
+            halfInstalled.Should().BeNull();
+        }
+        finally
+        {
+            Directory.Delete(work.FullName, recursive: true);
+        }
+    }
+
+    [Test]
     public async Task GetInstalledShimPath_throws_for_a_package_this_agent_never_installed()
     {
         //arrange
