@@ -1,25 +1,13 @@
-import { Alert, Anchor, Badge, Group, Loader, Paper, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { Alert, Anchor, Badge, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { IconAlertCircle, IconPlugConnectedX } from '@tabler/icons-react';
 import { Link, useParams } from 'react-router-dom';
 import { useNow, useRunStream } from '../api/hooks';
+import { Stat } from '../components/Stat';
 import { ResourceCharts } from '../components/ResourceCharts';
 import { RunProgress } from '../components/RunProgress';
 import { StageFlow } from '../components/StageFlow';
 import { StatusBadge } from '../components/StatusBadge';
 import { formatDateTime, formatDuration, formatNumber, isActive, runDurationMs } from '../lib/format';
-
-function Stat({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) {
-  return (
-    <Paper withBorder p="md" radius="md">
-      <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-        {label}
-      </Text>
-      <Text size="xl" fw={600} c={color}>
-        {value}
-      </Text>
-    </Paper>
-  );
-}
 
 export function RunDetailPage() {
   const { runId = '' } = useParams();

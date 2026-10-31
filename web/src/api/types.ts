@@ -1,4 +1,4 @@
-// Mirrors the records in src/EtlPipelines.Server/Api/ApiModels.cs (camelCase on the wire).
+// Mirrors the records in the DTO records in src/EtlPipelines.Server/Api/ (camelCase on the wire).
 
 export type RunStatus = 'Queued' | 'Dispatched' | 'Running' | 'Succeeded' | 'Failed' | 'AgentLost';
 

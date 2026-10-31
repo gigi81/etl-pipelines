@@ -19,6 +19,6 @@ serves `dist/` itself. It talks to the Server's REST API (`/api`); see
 
 | | |
 |---|---|
-| `src/api/` | Types mirroring `ApiModels.cs`, the fetch client, and the react-query / EventSource hooks. |
+| `src/api/` | Types mirroring the DTO records in `src/EtlPipelines.Server/Api/`, the fetch client, and the react-query / EventSource hooks. |
 | `src/pages/` | Pipelines, Runs, Run (live), Agents. |
 | `src/components/` | The stage flow, charts, status badge, run table. |
