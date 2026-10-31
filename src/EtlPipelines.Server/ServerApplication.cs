@@ -1,4 +1,5 @@
 using EtlPipelines.Server.Agents;
+using EtlPipelines.Server.Api;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Runs;
@@ -12,7 +13,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EtlPipelines.Server;
 
-/// <summary>Builds the gRPC host that <c>Program.cs</c> runs.</summary>
+/// <summary>Builds the gRPC host (plus the REST API and WebUI) that <c>Program.cs</c> runs.</summary>
 /// <remarks>
 /// Split out from <c>Program.cs</c> deliberately: <see cref="EtlPipelines.Server.Tests"/> calls
 /// <see cref="Build"/> directly to build the exact same <see cref="WebApplication"/> a real run
@@ -63,6 +64,14 @@ public static class ServerApplication
         {
             options.ConfigureEndpointDefaults(listenOptions => listenOptions.Protocols = HttpProtocols.Http2);
             options.ListenAnyIP(port, listenOptions => listenOptions.Protocols = HttpProtocols.Http2);
+
+            // The REST API and WebUI for browsers, which cannot speak the cleartext HTTP/2 the
+            // gRPC endpoint above is dedicated to. Listed second on purpose: ResolvePublicUrl takes
+            // the first bound address, which must stay the gRPC one. Server:HttpPort follows
+            // Server:Port when that asks for an OS-assigned port (0), so tests that do never
+            // contend for a fixed one.
+            var httpPort = builder.Configuration.GetValue("Server:HttpPort", port == 0 ? 0 : 5080);
+            options.ListenAnyIP(httpPort, listenOptions => listenOptions.Protocols = HttpProtocols.Http1);
         });
 
         builder.Services.AddGrpc();
@@ -129,15 +138,36 @@ public static class ServerApplication
 
         var app = builder.Build();
 
+        // The WebUI (web/), built into wwwroot by Dockerfile.server. Absent in a bare `dotnet run`
+        // and in tests - the UI is then served by `bun run dev` (which proxies /api here).
+        var hasWebUi = app.Environment.WebRootFileProvider.GetFileInfo("index.html").Exists;
+        if (hasWebUi)
+        {
+            app.UseStaticFiles();
+        }
+
         app.MapGrpcService<PipelineExecutionServiceImpl>();
         app.MapGrpcService<AgentServiceImpl>();
         app.MapGrpcService<ManagementServiceImpl>();
         app.MapGrpcReflectionService();
+        app.MapEtlApi();
 
-        // gRPC clients don't hit this, but a bare `curl` against the port otherwise gets an
-        // unhelpful 404 - the same courtesy the official grpc-dotnet templates extend.
-        app.MapGet("/", () =>
-            "EtlPipelines.Server hosts gRPC services only - use a gRPC client to reach them.");
+        if (hasWebUi)
+        {
+            // Client-side routes (/, /runs/<id>, /agents, ...) all belong to the single-page app.
+            // This also answers `/` on the gRPC port, which is what the container's HEALTHCHECK
+            // probes (any 200 will do).
+            app.MapFallbackToFile("index.html");
+        }
+        else
+        {
+            // gRPC clients don't hit this, but a bare `curl` against the port otherwise gets an
+            // unhelpful 404 - the same courtesy the official grpc-dotnet templates extend. (Not
+            // mapped alongside the WebUI: routing would pick it before the static-file middleware
+            // ever got to serve index.html for `/`.)
+            app.MapGet("/", () =>
+                "EtlPipelines.Server hosts gRPC services and a REST API only - use a gRPC client, or the WebUI, to reach them.");
+        }
 
         return app;
     }

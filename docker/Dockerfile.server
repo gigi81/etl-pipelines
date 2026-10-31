@@ -1,10 +1,21 @@
 # Phase 7 (SERVER.md "Docker Compose hardening and image build"): a real published image,
 # replacing the plain SDK-image-plus-bind-mount `dotnet run` docker-compose.yml used through
-# Phase 6. Two stages: build (the SDK - everything this repo's many interdependent
+# Phase 6. Three stages: web (bun, the WebUI), build (the SDK - everything this repo's many interdependent
 # ProjectReferences need to restore/publish) and a slim runtime stage that ships only the
 # published app plus dbdeploy, installed here the exact same real dotnet tool way an operator
 # installs it by hand (SERVER.md's "Database schema management" decision: never `dotnet ef
 # migrations`), not baked in as a PackageReference.
+
+# The WebUI (web/), built with bun and served by the Server itself from wwwroot/ - one image, one
+# process, no separate web server. The lockfile is copied first so a source-only change reuses the
+# cached `bun install` layer.
+FROM oven/bun:1 AS web
+WORKDIR /web
+COPY web/package.json web/bun.lock ./
+RUN bun install --frozen-lockfile
+COPY web/ .
+RUN bun run build
+
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY . .
@@ -31,12 +42,16 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/publish .
+COPY --from=web /web/dist ./wwwroot
 COPY --from=build /root/.dotnet/tools /root/.dotnet/tools
 COPY db ./db
 ENV PATH="/root/.dotnet/tools:${PATH}"
 
 COPY docker/entrypoint.server.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+
+# 5000 is gRPC (h2c) for agents and pipeline processes; 5080 is the REST API and WebUI for browsers.
+EXPOSE 5000 5080
 
 # Same address curl already proves reachable over h2c (Server:Port's own default, unchanged by
 # this compose file) - see entrypoint.server.sh and the remark above.

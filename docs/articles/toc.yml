@@ -14,6 +14,8 @@
       href: server/pipeline-packages.md
     - name: gRPC API
       href: server/grpc-api.md
+    - name: WebUI and REST API
+      href: server/webui.md
     - name: Operations and reliability
       href: server/operations.md
     - name: Known limitations

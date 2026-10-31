@@ -1,0 +1,307 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Threading.Channels;
+using EtlPipelines.AgentExecution.V1;
+using EtlPipelines.Server.Api;
+using Microsoft.EntityFrameworkCore;
+
+namespace EtlPipelines.Server.Tests.Api;
+
+/// <summary>The REST endpoints the WebUI (<c>web/</c>) is built on.</summary>
+[Category("Server")]
+public class ApiEndpointsTests
+{
+    [Test]
+    public async Task Pipelines_lists_every_installed_pipeline_with_its_last_run_and_how_many_are_running()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var busy = await host.SeedPipelineAsync("busy", "Pkg.Busy", "2.0.0");
+        await host.SeedPipelineAsync("idle");
+        await host.SeedRunAsync(busy, "Succeeded", requestedAt: DateTime.UtcNow.AddMinutes(-10));
+        await host.SeedRunAsync(busy, "Running", requestedAt: DateTime.UtcNow.AddMinutes(-1));
+
+        //act
+        var pipelines = await host.GetAsync<List<PipelineDto>>("/api/pipelines");
+
+        //assert
+        pipelines.Select(p => p.Name).Should().Equal("busy", "idle");
+        pipelines[0].PackageId.Should().Be("Pkg.Busy");
+        pipelines[0].PackageVersion.Should().Be("2.0.0");
+        pipelines[0].ActiveRuns.Should().Be(1);
+        pipelines[0].LastRun!.Status.Should().Be("Running");
+        pipelines[1].ActiveRuns.Should().Be(0);
+        pipelines[1].LastRun.Should().BeNull();
+    }
+
+    [Test]
+    public async Task Triggering_a_run_creates_it_and_sends_it_to_a_connected_agent()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("csv-to-db");
+        var agentId = await host.SeedAgentAsync();
+        var channel = Channel.CreateUnbounded<WorkItem>();
+        host.Connections.Connect(agentId.ToString(), channel);
+
+        //act
+        var response = await host.Client.PostAsync($"/api/pipelines/{pipelineId}/runs", content: null);
+
+        //assert
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var body = (await response.Content.ReadFromJsonAsync<TriggerRunResponse>(ApiTestHost.Json))!;
+        response.Headers.Location!.ToString().Should().Be($"/api/runs/{body.RunId}");
+
+        await using var context = host.NewContext();
+        var run = await context.Runs.SingleAsync(r => r.Id == body.RunId);
+        run.PipelineId.Should().Be(pipelineId);
+        run.AgentId.Should().Be(agentId);
+        run.Status.Should().Be("Dispatched");
+
+        channel.Reader.TryRead(out var workItem).Should().BeTrue();
+        workItem!.ExecutePipeline.SessionId.Should().Be(body.RunId.ToString());
+        workItem.ExecutePipeline.PipelineName.Should().Be("csv-to-db");
+    }
+
+    [Test]
+    public async Task Triggering_an_unknown_pipeline_is_a_404()
+    {
+        await using var host = await ApiTestHost.StartAsync();
+
+        var response = await host.Client.PostAsync($"/api/pipelines/{Guid.NewGuid()}/runs", content: null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task Triggering_a_run_with_no_agent_connected_is_a_409_that_says_why()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("csv-to-db");
+
+        //act
+        var response = await host.Client.PostAsync($"/api/pipelines/{pipelineId}/runs", content: null);
+
+        //assert
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("detail").GetString().Should().Contain("none is connected");
+    }
+
+    [Test]
+    public async Task Runs_can_be_filtered_to_the_ones_in_flight_or_the_finished_ones_newest_first()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("p");
+        var oldFinished = await host.SeedRunAsync(pipelineId, "Failed", requestedAt: DateTime.UtcNow.AddHours(-2));
+        var newFinished = await host.SeedRunAsync(pipelineId, "Succeeded", requestedAt: DateTime.UtcNow.AddHours(-1));
+        var running = await host.SeedRunAsync(pipelineId, "Running");
+        var queued = await host.SeedRunAsync(pipelineId, "Queued", requestedAt: DateTime.UtcNow.AddSeconds(-5));
+
+        //act
+        var active = await host.GetAsync<List<RunSummaryDto>>("/api/runs?active=true");
+        var finished = await host.GetAsync<List<RunSummaryDto>>("/api/runs?active=false");
+        var all = await host.GetAsync<List<RunSummaryDto>>("/api/runs?limit=2");
+
+        //assert
+        active.Select(r => r.Id).Should().Equal(running, queued);
+        finished.Select(r => r.Id).Should().Equal(newFinished, oldFinished);
+        all.Should().HaveCount(2);
+    }
+
+    [Test]
+    public async Task A_running_run_is_expected_to_go_through_the_stages_of_the_last_successful_one()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("p");
+        await host.SeedRunAsync(
+            pipelineId, "Succeeded", requestedAt: DateTime.UtcNow.AddHours(-1),
+            stages: [("read", false), ("transform", false), ("load", false)]);
+        var running = await host.SeedRunAsync(pipelineId, "Running", stages: [("read", false)]);
+
+        //act
+        var detail = await host.GetAsync<RunDetailDto>($"/api/runs/{running}");
+        var listed = (await host.GetAsync<List<RunSummaryDto>>("/api/runs?active=true")).Single();
+
+        //assert
+        detail.Stages.Select(s => s.Name).Should().Equal("read");
+        detail.ExpectedStages.Should().Equal("read", "transform", "load");
+        detail.Run.StagesCompleted.Should().Be(1);
+        detail.Run.StagesExpected.Should().Be(3);
+        listed.StagesCompleted.Should().Be(1);
+        listed.StagesExpected.Should().Be(3);
+    }
+
+    [Test]
+    public async Task A_pipeline_that_never_succeeded_has_no_expected_stages()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("p");
+        await host.SeedRunAsync(pipelineId, "Failed", requestedAt: DateTime.UtcNow.AddHours(-1), stages: [("read", true)]);
+        var running = await host.SeedRunAsync(pipelineId, "Running");
+
+        //act
+        var detail = await host.GetAsync<RunDetailDto>($"/api/runs/{running}");
+
+        //assert
+        detail.ExpectedStages.Should().BeEmpty();
+        detail.Run.StagesExpected.Should().BeNull();
+    }
+
+    [Test]
+    public async Task Run_detail_carries_stage_errors_and_the_resource_samples_oldest_first()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("p");
+        var agentId = await host.SeedAgentAsync();
+        var runId = await host.SeedRunAsync(pipelineId, "Failed", agentId, stages: [("read", false), ("load", true)]);
+
+        await using (var context = host.NewContext())
+        {
+            var now = DateTime.UtcNow;
+            foreach (var (offset, cpu) in new[] { (-20, 10.0), (-10, 50.0), (-30, 5.0) })
+            {
+                context.AgentResourceSamples.Add(new Database.Entities.AgentResourceSample
+                {
+                    Id = Guid.NewGuid(), RunId = runId, AgentId = agentId, SampledAt = now.AddSeconds(offset), CpuPercent = cpu, WorkingSetBytes = 1024,
+                });
+            }
+
+            await context.SaveChangesAsync();
+        }
+
+        //act
+        var detail = await host.GetAsync<RunDetailDto>($"/api/runs/{runId}");
+
+        //assert
+        detail.Run.AgentName.Should().Be("agent-01");
+        detail.Stages[1].ErrorCode.Should().Be("E1");
+        detail.Stages[1].ErrorDescription.Should().Be("boom");
+        detail.ResourceSamples.Select(s => s.CpuPercent).Should().Equal(5.0, 10.0, 50.0);
+    }
+
+    [Test]
+    public async Task An_unknown_run_is_a_404_both_as_detail_and_as_a_stream()
+    {
+        await using var host = await ApiTestHost.StartAsync();
+
+        (await host.Client.GetAsync($"/api/runs/{Guid.NewGuid()}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await host.Client.GetAsync($"/api/runs/{Guid.NewGuid()}/stream")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task An_unknown_api_path_is_a_404()
+    {
+        await using var host = await ApiTestHost.StartAsync();
+
+        (await host.Client.GetAsync("/api/nothing-here")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task Agents_report_their_host_details_uptime_and_the_runs_they_are_working_on()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("p");
+        var online = await host.SeedAgentAsync("a-online", startedAt: DateTime.UtcNow.AddHours(-2));
+        await host.SeedAgentAsync("b-offline", status: "Offline", startedAt: DateTime.UtcNow.AddHours(-2));
+        var running = await host.SeedRunAsync(pipelineId, "Running", online);
+        await host.SeedRunAsync(pipelineId, "Succeeded", online);
+
+        //act
+        var agents = await host.GetAsync<List<AgentDto>>("/api/agents");
+
+        //assert
+        agents.Select(a => a.MachineName).Should().Equal("a-online", "b-offline");
+
+        var first = agents[0];
+        first.Status.Should().Be("Online");
+        first.OsDescription.Should().Be("Ubuntu 24.04");
+        first.OsArchitecture.Should().Be("X64");
+        first.IpAddresses.Should().Equal("10.0.0.7");
+        first.ProcessorCount.Should().Be(8);
+        first.Tags.Should().Equal("linux");
+        first.UptimeSeconds.Should().BeInRange(2 * 3600 - 5, 2 * 3600 + 60);
+        first.ActiveRuns.Select(r => r.Id).Should().Equal(running);
+
+        agents[1].UptimeSeconds.Should().BeNull("an offline agent has no uptime");
+    }
+
+    [Test]
+    public async Task The_live_stream_sends_the_run_right_away_and_again_as_it_changes_until_it_finishes()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("p");
+        var runId = await host.SeedRunAsync(pipelineId, "Running");
+
+        using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var response = await host.Client.GetAsync(
+            $"/api/runs/{runId}/stream", HttpCompletionOption.ResponseHeadersRead, cancel.Token);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/event-stream");
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancel.Token);
+        using var reader = new StreamReader(stream);
+
+        //act
+        var first = await ReadEventAsync(reader);
+
+        await using (var context = host.NewContext())
+        {
+            context.StageResults.Add(new Database.Entities.StageResult
+            {
+                Id = Guid.NewGuid(), RunId = runId, Sequence = 0, Name = "read", RowsIn = 0, RowsOut = 5, RowsFailed = 0, ElapsedMs = 10,
+            });
+            await context.SaveChangesAsync();
+        }
+
+        var afterStage = await ReadEventAsync(reader);
+
+        await using (var context = host.NewContext())
+        {
+            var run = await context.Runs.SingleAsync(r => r.Id == runId);
+            run.Status = "Succeeded";
+            run.CompletedAt = DateTime.UtcNow;
+            await context.SaveChangesAsync();
+        }
+
+        var last = await ReadEventAsync(reader);
+        var afterLast = await reader.ReadLineAsync(cancel.Token);
+        while (afterLast is not null && afterLast.Length == 0)
+        {
+            afterLast = await reader.ReadLineAsync(cancel.Token);
+        }
+
+        //assert
+        first.Run.Status.Should().Be("Running");
+        first.Stages.Should().BeEmpty();
+        afterStage.Stages.Select(s => s.Name).Should().Equal("read");
+        last.Run.Status.Should().Be("Succeeded");
+        afterLast.Should().BeNull("the stream ends once the run has finished");
+    }
+
+    /// <summary>Reads one server-sent event and parses its data as the run detail.</summary>
+    private static async Task<RunDetailDto> ReadEventAsync(StreamReader reader)
+    {
+        string? data = null;
+        while (await reader.ReadLineAsync() is { } line)
+        {
+            if (line.StartsWith("data:", StringComparison.Ordinal))
+            {
+                data = line["data:".Length..].Trim();
+            }
+            else if (line.Length == 0 && data is not null)
+            {
+                return JsonSerializer.Deserialize<RunDetailDto>(data, ApiTestHost.Json)!;
+            }
+        }
+
+        throw new InvalidOperationException("The stream ended before an event arrived.");
+    }
+}

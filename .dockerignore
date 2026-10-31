@@ -7,3 +7,6 @@
 **/obj/
 **/TestResults/
 packages/
+# The WebUI is built inside Dockerfile.server (bun install + build), never from a host's own copy.
+web/node_modules/
+web/dist/

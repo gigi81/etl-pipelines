@@ -309,6 +309,51 @@ public class ManagementServiceImplTests
     }
 
     [Test]
+    public async Task ListAgents_returns_the_host_details_an_agent_reported_when_it_registered()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        var agentService = new AgentServiceImpl(
+            context, new AgentConnectionRegistry(), new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()), new RunStatusStore());
+        var started = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+        var registration = new RegisterAgentRequest
+        {
+            MachineName = "agent-01",
+            Version = "1.0.0",
+            OsDescription = "Ubuntu 24.04",
+            OsArchitecture = "X64",
+            ProcessorCount = 8,
+            StartedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(started),
+        };
+        registration.IpAddresses.Add("10.0.0.7");
+        await agentService.RegisterAgent(registration, TestServerCallContext());
+
+        // An agent that predates the host details registers without them.
+        await agentService.RegisterAgent(new RegisterAgentRequest { MachineName = "agent-00", Version = "0.9.0" }, TestServerCallContext());
+        context.ChangeTracker.Clear();
+
+        var service = Create(context);
+
+        //act
+        var response = await service.ListAgents(new Empty(), TestServerCallContext());
+
+        //assert
+        var old = response.Agents[0];
+        old.MachineName.Should().Be("agent-00");
+        old.OsDescription.Should().BeEmpty();
+        old.IpAddresses.Should().BeEmpty();
+        old.ProcessorCount.Should().Be(0);
+        old.StartedAt.Should().BeNull();
+
+        var described = response.Agents[1];
+        described.OsDescription.Should().Be("Ubuntu 24.04");
+        described.OsArchitecture.Should().Be("X64");
+        described.IpAddresses.Should().Equal("10.0.0.7");
+        described.ProcessorCount.Should().Be(8);
+        described.StartedAt.ToDateTime().Should().Be(started);
+    }
+
+    [Test]
     public async Task ListAgents_returns_every_registered_agent_with_its_status()
     {
         //arrange

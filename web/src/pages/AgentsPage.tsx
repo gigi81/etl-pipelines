@@ -1,0 +1,124 @@
+import { Alert, Anchor, Badge, Card, Code, Divider, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { IconAlertCircle, IconCpu, IconNetwork, IconServer } from '@tabler/icons-react';
+import { Link } from 'react-router-dom';
+import { useAgents, useNow } from '../api/hooks';
+import type { Agent } from '../api/types';
+import { RunProgress } from '../components/RunProgress';
+import { StatusBadge } from '../components/StatusBadge';
+import { formatDateTime, formatDuration, formatRelative } from '../lib/format';
+
+function Detail({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <Group gap="xs" wrap="nowrap" align="flex-start">
+      <Text size="sm" c="dimmed" w={88} style={{ flexShrink: 0 }}>
+        {label}
+      </Text>
+      <Text size="sm" component="div" style={{ wordBreak: 'break-word' }}>
+        {children}
+      </Text>
+    </Group>
+  );
+}
+
+function AgentCard({ agent }: { agent: Agent }) {
+  const now = useNow(5000);
+  const online = agent.status === 'Online';
+
+  return (
+    <Card withBorder padding="lg" radius="md">
+      <Stack gap="sm">
+        <Group justify="space-between" wrap="nowrap">
+          <Group gap="xs" wrap="nowrap">
+            <IconServer size={20} />
+            <Text fw={600} size="lg" truncate>
+              {agent.machineName}
+            </Text>
+          </Group>
+          <Badge color={online ? 'green' : 'gray'} variant={online ? 'filled' : 'light'}>
+            {agent.status}
+          </Badge>
+        </Group>
+
+        <Stack gap={4}>
+          <Detail label="OS">
+            {agent.osDescription ?? '-'}
+            {agent.osArchitecture ? ` (${agent.osArchitecture})` : ''}
+          </Detail>
+          <Detail label="IP">
+            <Group gap={6}>
+              <IconNetwork size={14} />
+              {agent.ipAddresses.length ? agent.ipAddresses.map((ip) => <Code key={ip}>{ip}</Code>) : '-'}
+            </Group>
+          </Detail>
+          <Detail label="CPUs">
+            <Group gap={6}>
+              <IconCpu size={14} />
+              {agent.processorCount ?? '-'}
+            </Group>
+          </Detail>
+          <Detail label="Uptime">
+            {agent.uptimeSeconds !== null ? formatDuration(agent.uptimeSeconds * 1000) : '-'}
+          </Detail>
+          <Detail label="Heartbeat">
+            <span title={formatDateTime(agent.lastHeartbeatAt)}>{formatRelative(agent.lastHeartbeatAt, now)}</span>
+          </Detail>
+          <Detail label="Version">{agent.version}</Detail>
+          {agent.tags.length > 0 && (
+            <Detail label="Tags">
+              <Group gap={4}>
+                {agent.tags.map((tag) => (
+                  <Badge key={tag} size="sm" variant="outline">
+                    {tag}
+                  </Badge>
+                ))}
+              </Group>
+            </Detail>
+          )}
+        </Stack>
+
+        <Divider label={`Running jobs (${agent.activeRuns.length})`} labelPosition="left" />
+        {agent.activeRuns.length === 0 ? (
+          <Text size="sm" c="dimmed">
+            Idle.
+          </Text>
+        ) : (
+          <Stack gap="xs">
+            {agent.activeRuns.map((run) => (
+              <Group key={run.id} justify="space-between" wrap="nowrap">
+                <div style={{ minWidth: 0 }}>
+                  <Anchor component={Link} to={`/runs/${run.id}`} size="sm" fw={500}>
+                    {run.pipelineName}
+                  </Anchor>
+                  <div>
+                    <StatusBadge status={run.status} />
+                  </div>
+                </div>
+                <RunProgress run={run} />
+              </Group>
+            ))}
+          </Stack>
+        )}
+      </Stack>
+    </Card>
+  );
+}
+
+export function AgentsPage() {
+  const { data: agents, error, isLoading } = useAgents();
+
+  return (
+    <Stack>
+      <Title order={2}>Agents</Title>
+      {isLoading && <Loader />}
+      {error && (
+        <Alert color="red" icon={<IconAlertCircle />} title="Could not load the agents">
+          {error.message}
+        </Alert>
+      )}
+      {agents?.length === 0 && <Text c="dimmed">No agent has registered with this server yet.</Text>}
+      <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }}>
+        {agents?.map((agent) => <AgentCard key={agent.id} agent={agent} />)}
+      </SimpleGrid>
+    </Stack>
+  );
+}

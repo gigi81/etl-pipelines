@@ -42,6 +42,11 @@ public sealed class AgentServiceImpl(
             Version = request.Version,
             Status = "Online",
             LastHeartbeatAt = DateTime.UtcNow,
+            OsDescription = string.IsNullOrEmpty(request.OsDescription) ? null : request.OsDescription,
+            OsArchitecture = string.IsNullOrEmpty(request.OsArchitecture) ? null : request.OsArchitecture,
+            IpAddresses = request.IpAddresses.ToList(),
+            ProcessorCount = request.ProcessorCount > 0 ? request.ProcessorCount : null,
+            StartedAt = request.StartedAt?.ToDateTime(),
         };
 
         dbContext.Agents.Add(agent);

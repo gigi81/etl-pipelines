@@ -249,6 +249,13 @@ public sealed class ManagementServiceImpl(
         var response = new ListAgentsResponse();
         response.Agents.AddRange(agents.Select(agent => new AgentInfo
         {
+            OsDescription = agent.OsDescription ?? string.Empty,
+            OsArchitecture = agent.OsArchitecture ?? string.Empty,
+            IpAddresses = { agent.IpAddresses ?? [] },
+            ProcessorCount = agent.ProcessorCount ?? 0,
+            StartedAt = agent.StartedAt is { } startedAt
+                ? Timestamp.FromDateTime(DateTime.SpecifyKind(startedAt, DateTimeKind.Utc))
+                : null,
             AgentId = agent.Id.ToString(),
             MachineName = agent.MachineName,
             Tags = { agent.Tags },
