@@ -3,6 +3,7 @@ using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
+using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Services;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
@@ -23,7 +24,8 @@ namespace EtlPipelines.Server.Runs;
 /// necessarily the same address the agent itself connects to for <c>AgentService</c> (see that
 /// field's own proto comment), though in this phase's single-endpoint topology it always is.
 /// </param>
-public sealed class RunDispatcher(ServerDbContext dbContext, AgentConnectionRegistry connections, string serverUrl)
+public sealed class RunDispatcher(
+    ServerDbContext dbContext, AgentConnectionRegistry connections, LiveState liveState, string serverUrl)
 {
     /// <summary>
     /// Dispatches <paramref name="pipelineId"/> to a connected agent and returns the new run's id.
@@ -82,6 +84,9 @@ public sealed class RunDispatcher(ServerDbContext dbContext, AgentConnectionRegi
 
         dbContext.Runs.Add(run);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // Before the agent can hear about it, so whatever it reports back finds the run already there.
+        await liveState.RunCreatedAsync(dbContext, run.Id, cancellationToken).ConfigureAwait(false);
 
         var workItem = new ExecutePipelineWorkItem
         {

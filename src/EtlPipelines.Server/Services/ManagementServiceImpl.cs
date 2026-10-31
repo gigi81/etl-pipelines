@@ -2,6 +2,7 @@ using EtlPipelines.Management.V1;
 using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
+using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Runs;
 using EtlPipelines.Server.Secrets;
 using Google.Protobuf;
@@ -38,7 +39,8 @@ public sealed class ManagementServiceImpl(
     SecretsStore secretsStore,
     AgentConnectionRegistry connections,
     RunDispatcher runDispatcher,
-    RunStatusStore statusStore)
+    RunStatusStore statusStore,
+    LiveState liveState)
     : ManagementService.ManagementServiceBase
 {
     // How long InstallPackage waits for the dispatched agent to report back before giving up -
@@ -119,6 +121,7 @@ public sealed class ManagementServiceImpl(
             throw new RpcException(new Status(StatusCode.NotFound, $"No version of '{request.PackageId}' is installed."));
         }
 
+        liveState.PipelinesChanged();
         return new Ack();
     }
 
@@ -148,6 +151,8 @@ public sealed class ManagementServiceImpl(
         await catalogService
             .SupersedeOtherVersionsAsync(request.PackageId, installed.Version, context.CancellationToken)
             .ConfigureAwait(false);
+
+        liveState.PipelinesChanged();
 
         var response = new UpdatePackageResponse
         {

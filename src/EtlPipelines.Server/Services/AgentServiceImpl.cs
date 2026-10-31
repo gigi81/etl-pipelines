@@ -3,8 +3,10 @@ using EtlPipelines.AgentExecution.V1;
 using EtlPipelines.Management.V1;
 using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Catalog;
+using EtlPipelines.Server.Contracts;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
+using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Runs;
 using Google.Protobuf;
 using Grpc.Core;
@@ -29,7 +31,11 @@ namespace EtlPipelines.Server.Services;
 /// itself.
 /// </remarks>
 public sealed class AgentServiceImpl(
-    ServerDbContext dbContext, AgentConnectionRegistry connections, PackageCatalogService catalogService, RunStatusStore statusStore)
+    ServerDbContext dbContext,
+    AgentConnectionRegistry connections,
+    PackageCatalogService catalogService,
+    RunStatusStore statusStore,
+    LiveState liveState)
     : AgentService.AgentServiceBase
 {
     /// <inheritdoc />
@@ -48,6 +54,7 @@ public sealed class AgentServiceImpl(
 
         dbContext.Agents.Add(agent);
         await dbContext.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
+        await liveState.AgentRegisteredAsync(dbContext, agent, context.CancellationToken).ConfigureAwait(false);
 
         return new RegisterAgentResponse { AgentId = agent.Id.ToString() };
     }
@@ -69,6 +76,7 @@ public sealed class AgentServiceImpl(
             agent.LastHeartbeatAt = DateTime.UtcNow;
             agent.Status = "Online";
             await dbContext.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
+            await liveState.AgentHeartbeatAsync(dbContext, agentId, agent.LastHeartbeatAt, context.CancellationToken).ConfigureAwait(false);
         }
 
         return new AgentExecution.V1.Ack();
@@ -115,6 +123,9 @@ public sealed class AgentServiceImpl(
             if (request.Succeeded)
             {
                 connections.MarkInstalled(request.AgentId, pending.PackageId, pending.Version);
+
+                // New pipelines may have appeared - tell whoever is showing the list.
+                liveState.PipelinesChanged();
             }
         }
 
@@ -149,6 +160,9 @@ public sealed class AgentServiceImpl(
             return new AgentExecution.V1.Ack();
         }
 
+        var runChanged = false;
+        ResourceSampleDto? sample = null;
+
         switch (request.Status)
         {
             case ReportExecutionStatusRequest.Types.Status.Started:
@@ -158,6 +172,7 @@ public sealed class AgentServiceImpl(
                     run.Status = "Running";
                 }
 
+                runChanged = true;
                 break;
 
             case ReportExecutionStatusRequest.Types.Status.Exited:
@@ -185,24 +200,38 @@ public sealed class AgentServiceImpl(
                         Status = succeeded ? RunCompleted.Types.Status.Succeeded : RunCompleted.Types.Status.Failed,
                         ExitCode = request.ExitCode,
                     });
+                    runChanged = true;
                 }
 
                 break;
 
             case ReportExecutionStatusRequest.Types.Status.ResourceSample:
+                var sampledAt = DateTime.UtcNow;
                 dbContext.AgentResourceSamples.Add(new AgentResourceSample
                 {
                     Id = Guid.NewGuid(),
                     RunId = run.Id,
                     AgentId = Guid.Parse(request.AgentId),
-                    SampledAt = DateTime.UtcNow,
+                    SampledAt = sampledAt,
                     CpuPercent = request.CpuPercent,
                     WorkingSetBytes = request.WorkingSetBytes,
                 });
+                sample = new ResourceSampleDto(sampledAt, request.CpuPercent, request.WorkingSetBytes);
                 break;
         }
 
         await dbContext.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
+
+        if (runChanged)
+        {
+            await liveState.RunChangedAsync(dbContext, run, context.CancellationToken).ConfigureAwait(false);
+        }
+
+        if (sample is not null)
+        {
+            await liveState.ResourceSampledAsync(dbContext, run.Id, sample, context.CancellationToken).ConfigureAwait(false);
+        }
+
         return new AgentExecution.V1.Ack();
     }
 }

@@ -24,6 +24,7 @@ flowchart LR
 | Component | Project | Role |
 |---|---|---|
 | **Server** | `src/EtlPipelines.Server` | An ASP.NET Core gRPC host. It keeps the package and pipeline catalog, the encrypted configuration store, and the run history, and it dispatches work to agents. It never downloads or runs a package itself. |
+| **Live state** | `LiveState` in `src/EtlPipelines.Server/Live` | The server's view of agents and runs held in memory, rebuilt from the database, with a feed of changes pushed to the WebUI. See [WebUI](webui.md#how-updates-reach-the-browser). |
 | **Server contracts** | `src/EtlPipelines.Server.Contracts` | The records the REST API returns (`/api`, used by the WebUI), with no dependency on the Server itself. The gRPC messages are not here: they are generated from `protos/v1` into `EtlPipelines.Protos`. |
 | **Server database** | `src/EtlPipelines.Server.Database` | The EF Core mapping over the Postgres schema. [dbdeploy](https://github.com/gigi81/dbdeploy) scripts under `db/` own the schema, not EF Core migrations. |
 | **Agent** | `src/EtlPipelines.Agent` | A generic-host worker. It registers with the Server, keeps a `Subscribe` stream open for work, installs packages with `dotnet tool install`, and launches pipeline runs as child processes. |

@@ -4,6 +4,7 @@ import { IconMoon, IconPlayerPlay, IconServer, IconSun, IconTopologyStar3 } from
 import { Suspense, lazy } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useRuns } from './api/hooks';
+import { useLiveUpdates } from './api/useLiveUpdates';
 import { AgentsPage } from './pages/AgentsPage';
 import { PipelinesPage } from './pages/PipelinesPage';
 import { RunsPage } from './pages/RunsPage';
@@ -17,6 +18,7 @@ export function App() {
   const { setColorScheme } = useMantineColorScheme();
   const scheme = useComputedColorScheme('light');
   const running = useRuns({ active: true });
+  const live = useLiveUpdates();
 
   const links = [
     { to: '/pipelines', label: 'Pipelines', icon: <IconTopologyStar3 size={18} />, match: '/pipelines' },
@@ -38,13 +40,22 @@ export function App() {
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
             <Title order={3}>ETL Pipelines</Title>
           </Group>
-          <ActionIcon
-            variant="default"
-            aria-label="Toggle color scheme"
-            onClick={() => setColorScheme(scheme === 'dark' ? 'light' : 'dark')}
-          >
-            {scheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
-          </ActionIcon>
+          <Group gap="sm">
+            <Badge
+              variant="dot"
+              color={live ? 'green' : 'yellow'}
+              title={live ? 'Changes are pushed from the server as they happen' : 'Reconnecting - what you see may be out of date'}
+            >
+              {live ? 'Live' : 'Reconnecting'}
+            </Badge>
+            <ActionIcon
+              variant="default"
+              aria-label="Toggle color scheme"
+              onClick={() => setColorScheme(scheme === 'dark' ? 'light' : 'dark')}
+            >
+              {scheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
+            </ActionIcon>
+          </Group>
         </Group>
       </AppShell.Header>
 

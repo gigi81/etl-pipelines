@@ -2,6 +2,7 @@ using EtlPipelines.Management.V1;
 using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
+using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Runs;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -98,6 +99,40 @@ public class AgentLivenessMonitorTests
     }
 
     [Test]
+    public async Task The_live_state_is_told_an_agent_went_offline_and_its_run_was_lost()
+    {
+        //arrange
+        var now = DateTimeOffset.UtcNow;
+        var scopeFactory = await CreateScopeFactoryAsync();
+        var agentId = Guid.NewGuid();
+        var runId = Guid.NewGuid();
+        await SeedAsync(scopeFactory, context =>
+        {
+            context.Agents.Add(MakeAgent(agentId, now.UtcDateTime - Timeout - TimeSpan.FromSeconds(1)));
+            context.Runs.Add(MakeRun(context, runId, agentId, "Running"));
+        });
+
+        var live = new LiveState(TimeProvider.System, NullLogger<LiveState>.Instance);
+        await using (var scope = scopeFactory.CreateAsyncScope())
+        {
+            await live.EnsureLoadedAsync(scope.ServiceProvider.GetRequiredService<ServerDbContext>(), CancellationToken.None);
+        }
+
+        live.TryGetAgent(agentId)!.Status.Should().Be("Online");
+        using var changes = live.Subscribe();
+
+        //act
+        await CreateMonitor(scopeFactory, new FakeTimeProvider(now), new RunStatusStore(), live).SweepAsync(CancellationToken.None);
+
+        //assert
+        live.TryGetAgent(agentId)!.Status.Should().Be("Offline");
+        live.TryGetAgent(agentId)!.ActiveRuns.Should().BeEmpty();
+        live.TryGetRunSummary(runId)!.Status.Should().Be("AgentLost");
+        (await changes.NextAsync(TimeSpan.FromSeconds(1), CancellationToken.None)).Should().Contain(
+            [new LiveChange(LiveChangeKind.Run, runId), new LiveChange(LiveChangeKind.Agent, agentId)]);
+    }
+
+    [Test]
     public async Task A_Run_already_terminal_is_left_alone_even_if_its_agent_timed_out()
     {
         //arrange
@@ -145,9 +180,10 @@ public class AgentLivenessMonitorTests
         return new Run { Id = runId, PipelineId = pipelineId, AgentId = agentId, Status = status, RequestedAt = DateTime.UtcNow };
     }
 
-    private static AgentLivenessMonitor CreateMonitor(IServiceScopeFactory scopeFactory, TimeProvider clock, RunStatusStore statusStore) =>
+    private static AgentLivenessMonitor CreateMonitor(
+        IServiceScopeFactory scopeFactory, TimeProvider clock, RunStatusStore statusStore, LiveState? liveState = null) =>
         new(scopeFactory, Microsoft.Extensions.Options.Options.Create(new AgentLivenessOptions { Timeout = Timeout, PollInterval = TimeSpan.FromSeconds(10) }),
-            statusStore, clock, NullLogger<AgentLivenessMonitor>.Instance);
+            statusStore, liveState ?? new LiveState(TimeProvider.System, NullLogger<LiveState>.Instance), clock, NullLogger<AgentLivenessMonitor>.Instance);
 
     private static async Task SeedAsync(IServiceScopeFactory scopeFactory, Action<ServerDbContext> seed)
     {

@@ -10,13 +10,44 @@ with the [Docker Compose stack](deployment.md) up, open <http://localhost:5080>.
 | Page | |
 |---|---|
 | **Pipelines** | Every installed pipeline with its package and version, how many runs of it are in flight, how its last run went, and a **Run now** button. Starting a run sends it to an agent, exactly as `ManagementService.ExecutePipeline` does, and opens the run's page. If nothing can take it, such as no agent being connected, the reason is shown. |
-| **Runs** | Two tabs: the runs in flight, with a progress bar, and the finished ones, newest first. The *Running* tab refreshes every two seconds. |
+| **Runs** | Two tabs: the runs in flight, with a progress bar, and the finished ones, newest first. It changes as runs start, progress and finish, with no refresh. |
 | **Run** | One run, live. The steps are drawn left to right as a flow: each completed stage shows the rows it took in and passed on, the rows that failed, and its elapsed time. The stages still to come are drawn too, from the stages of the pipeline's last successful run, with the running one highlighted. Below are CPU and memory charts, sampled by the agent running the process. A failed run shows the failing stage's error code and description. |
 | **Agents** | Every agent that has registered: its status, OS and architecture, IP addresses, CPU count, uptime, last heartbeat, version and tags, and the runs it is working on right now. |
 
-The run page updates by itself: the browser holds a server-sent-events stream open
-(`/api/runs/{id}/stream`) and the Server pushes the run's full state whenever a stage completes, a
-resource sample arrives or the status changes. The stream ends when the run does.
+Nothing in the UI polls. The Server pushes every change to the browser as it happens, and a small
+**Live** badge in the header shows the connection is up. If it drops (a Server restart, say), the
+badge says *Reconnecting*, the browser retries by itself, and everything is fetched again once it is
+back, so nothing that happened in between is missed.
+
+## How updates reach the browser
+
+The Server keeps what the UI shows **in memory** (`LiveState`): every agent, and every run that is in
+flight or finished within the last hour, with its stages and resource samples. The database is still
+the durable record. Each gRPC call that changes a run or an agent writes the database first, as it
+always did, and then updates `LiveState`, which notifies whoever is listening. So reading the API
+costs no database query for anything in flight, and there is no timer that looks for changes.
+
+If the Server restarts, `LiveState` is rebuilt from the database the first time it is used: the
+agents, the runs in flight and the recently finished ones, with their stages and samples, come back
+as they were. It is rebuilt the same way if an update to it ever fails, which never fails the call
+that caused it. Runs older than an hour are not held; the *History* tab and the run page read those
+from the database when asked.
+
+A listener is told *that* something changed and reads the latest state when it gets to it, so a burst
+of changes to one run (a stage, a sample, a status) is delivered once, and a slow browser never builds
+up a backlog. A listener is removed when its browser tab closes.
+
+Two streams carry the changes, as [server-sent events](https://developer.mozilla.org/docs/Web/API/Server-sent_events):
+
+| Stream | Events |
+|---|---|
+| `GET /api/events`, one per open tab | `ready` (sent at once; the stream is listening, so refetch), `run` (a run's summary: status, stages completed, rows), `agent` (an agent, with the runs it is working on; sent on every heartbeat too, which keeps "last heartbeat" current), `pipelines` (a package was installed, updated or uninstalled; refetch the list), and `ping` (a keep-alive every 15 seconds of silence). The UI patches the lists it already has from `run` and `agent` events, and refetches only when a run finishes, a run starts, or on `pipelines`. |
+| `GET /api/runs/{id}/stream`, one per open run page | `run`: the run's full detail (stages, expected stages, resource samples) right away and again on every change, until the run has finished; `ping`. |
+
+The gRPC `StreamRunProgress` is still served by its own in-memory store, `RunStatusStore`.
+
+What still touches the database on a timer is not the UI: agents heartbeat every 10 seconds, and the
+Server's liveness sweep (`AgentLivenessMonitor`) checks every 10 seconds for agents that stopped.
 
 A pipeline that has never succeeded has no stages to compare against, so its first run only shows the
 stages as they complete. The same goes for the progress bar, which then has no total to fill towards.
@@ -35,6 +66,7 @@ second port, `Server:HttpPort` (5080), over HTTP/1.1, and exposes the same data 
 | `GET /api/runs?active=&pipelineId=&limit=` | Runs, newest first. `active=true` keeps those in flight, `active=false` the finished ones. `limit` is 1 to 200, 50 by default. |
 | `GET /api/runs/{id}` | One run with its completed `stages`, the `expectedStages` names, and the latest `resourceSamples`. |
 | `GET /api/runs/{id}/stream` | The same payload as server-sent events (`event: run`), once on connect and again on every change. |
+| `GET /api/events` | The change feed for the lists, as server-sent events. See [How updates reach the browser](#how-updates-reach-the-browser). |
 | `GET /api/agents` | Agents with their host details, `uptimeSeconds` (online agents only) and `activeRuns`. |
 
 The response shapes are plain records in `src/EtlPipelines.Server.Contracts`; `web/src/api/types.ts`

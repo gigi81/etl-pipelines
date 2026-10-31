@@ -11,7 +11,9 @@ import { BrowserRouter } from 'react-router-dom';
 import { App } from './App';
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true } },
+  // Nothing goes stale by itself: the server pushes every change (see useLiveUpdates), and the lists
+  // are refetched explicitly whenever that connection (re)starts.
+  defaultOptions: { queries: { retry: 1, staleTime: Infinity } },
 });
 
 createRoot(document.getElementById('root')!).render(

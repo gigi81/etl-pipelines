@@ -4,23 +4,20 @@ import { api, runStreamUrl } from './client';
 import type { RunDetail } from './types';
 import { isActive } from '../lib/format';
 
-/** How often the list pages refresh. Runs change faster than agents or pipelines. */
-const RUNS_REFRESH_MS = 2000;
-const SLOW_REFRESH_MS = 5000;
-
+// The lists below are fetched once and then kept current by `useLiveUpdates` (the server pushes
+// every change), so none of them polls.
 export const usePipelines = () =>
-  useQuery({ queryKey: ['pipelines'], queryFn: api.pipelines, refetchInterval: SLOW_REFRESH_MS });
+  useQuery({ queryKey: ['pipelines'], queryFn: api.pipelines });
 
 export const useRuns = (query: { active?: boolean; pipelineId?: string; limit?: number }) =>
   useQuery({
     queryKey: ['runs', query],
     queryFn: () => api.runs(query),
-    refetchInterval: RUNS_REFRESH_MS,
     placeholderData: keepPreviousData,
   });
 
 export const useAgents = () =>
-  useQuery({ queryKey: ['agents'], queryFn: api.agents, refetchInterval: SLOW_REFRESH_MS });
+  useQuery({ queryKey: ['agents'], queryFn: api.agents });
 
 export function useTriggerRun() {
   const queryClient = useQueryClient();

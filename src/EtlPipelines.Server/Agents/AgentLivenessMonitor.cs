@@ -1,5 +1,6 @@
 using EtlPipelines.Management.V1;
 using EtlPipelines.Server.Database;
+using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Runs;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -27,6 +28,7 @@ public sealed class AgentLivenessMonitor(
     IServiceScopeFactory scopeFactory,
     IOptions<AgentLivenessOptions> options,
     RunStatusStore statusStore,
+    LiveState liveState,
     TimeProvider timeProvider,
     ILogger<AgentLivenessMonitor> logger) : BackgroundService
 {
@@ -104,6 +106,12 @@ public sealed class AgentLivenessMonitor(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        await liveState.AgentsOfflineAsync(dbContext, staleAgents.Select(agent => agent.Id), cancellationToken).ConfigureAwait(false);
+        foreach (var run in lostRuns)
+        {
+            await liveState.RunChangedAsync(dbContext, run, cancellationToken).ConfigureAwait(false);
+        }
 
         foreach (var run in lostRuns)
         {

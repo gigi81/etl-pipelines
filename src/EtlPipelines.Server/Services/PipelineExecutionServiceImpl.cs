@@ -1,7 +1,9 @@
 using EtlPipelines.Management.V1;
 using EtlPipelines.PipelineExecution.V1;
 using EtlPipelines.Server.Database;
+using EtlPipelines.Server.Contracts;
 using EtlPipelines.Server.Database.Entities;
+using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Runs;
 using EtlPipelines.Server.Secrets;
 using Grpc.Core;
@@ -20,7 +22,8 @@ namespace EtlPipelines.Server.Services;
 /// resolves it against <see cref="ServerDbContext.Runs"/> and fails with
 /// <see cref="StatusCode.NotFound"/> for one this server has no row for.
 /// </remarks>
-public sealed class PipelineExecutionServiceImpl(ServerDbContext dbContext, SecretsStore secretsStore, RunStatusStore statusStore)
+public sealed class PipelineExecutionServiceImpl(
+    ServerDbContext dbContext, SecretsStore secretsStore, RunStatusStore statusStore, LiveState liveState)
     : PipelineExecutionService.PipelineExecutionServiceBase
 {
     /// <inheritdoc />
@@ -38,6 +41,7 @@ public sealed class PipelineExecutionServiceImpl(ServerDbContext dbContext, Secr
             run.Status = "Running";
             run.StartedAt ??= DateTime.UtcNow;
             await dbContext.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
+            await liveState.RunChangedAsync(dbContext, run, context.CancellationToken).ConfigureAwait(false);
         }
 
         var entries = await secretsStore.GetAllAsync(context.CancellationToken).ConfigureAwait(false);
@@ -74,6 +78,13 @@ public sealed class PipelineExecutionServiceImpl(ServerDbContext dbContext, Secr
         });
         await dbContext.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
 
+        await liveState.StageCompletedAsync(
+            dbContext,
+            run.Id,
+            new StageDto(
+                request.Sequence, request.Name, request.RowsIn, request.RowsOut, request.RowsFailed, request.ElapsedMs, errorCode, errorDescription),
+            context.CancellationToken).ConfigureAwait(false);
+
         statusStore.PublishStageCompleted(run.Id, new StageCompleted
         {
             Sequence = request.Sequence,
@@ -102,6 +113,7 @@ public sealed class PipelineExecutionServiceImpl(ServerDbContext dbContext, Secr
         run.RowsWritten = request.RowsWritten;
         run.RowsFailed = request.RowsFailed;
         await dbContext.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
+        await liveState.RunChangedAsync(dbContext, run, context.CancellationToken).ConfigureAwait(false);
 
         statusStore.PublishRunCompleted(run.Id, new RunCompleted
         {

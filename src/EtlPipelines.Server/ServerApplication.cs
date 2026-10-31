@@ -2,6 +2,7 @@ using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Api;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
+using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Runs;
 using EtlPipelines.Server.Secrets;
 using EtlPipelines.Server.Services;
@@ -110,6 +111,11 @@ public static class ServerApplication
         // subscribers outlive any one gRPC call.
         builder.Services.AddSingleton<RunStatusStore>();
 
+        // What the WebUI shows - agents, runs in flight and recently finished, and a feed of changes
+        // to push to it - held in memory, with the database as the durable copy it is rebuilt from.
+        // A singleton for the same reason as the two above.
+        builder.Services.AddSingleton<LiveState>();
+
         // Real wall-clock time in production; AgentLivenessMonitorTests substitutes a fake one
         // directly (it does not go through DI) to drive the timeout decision without a real
         // elapsed wait.
@@ -134,6 +140,7 @@ public static class ServerApplication
         builder.Services.AddScoped(provider => new RunDispatcher(
             provider.GetRequiredService<ServerDbContext>(),
             provider.GetRequiredService<AgentConnectionRegistry>(),
+            provider.GetRequiredService<LiveState>(),
             ResolvePublicUrl(provider)));
 
         var app = builder.Build();

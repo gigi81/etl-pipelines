@@ -2,12 +2,14 @@ using EtlPipelines.Management.V1;
 using EtlPipelines.PipelineExecution.V1;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
+using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Runs;
 using EtlPipelines.Server.Secrets;
 using EtlPipelines.Server.Services;
 using Grpc.Core;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Moq.Protected;
 
@@ -145,6 +147,40 @@ public class PipelineExecutionServiceImplTests
     }
 
     [Test]
+    public async Task Reports_from_the_pipeline_process_update_the_live_state_and_notify_listeners()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        var runId = await SeedRunAsync(context, "Dispatched");
+        var live = new LiveState(TimeProvider.System, NullLogger<LiveState>.Instance);
+        var service = Create(context, liveState: live);
+        await live.EnsureLoadedAsync(context, CancellationToken.None);
+        using var changes = live.Subscribe(change => change.Id == runId);
+
+        //act + assert - it starts: the first thing it does is pull its configuration
+        await service.GetConfiguration(new GetConfigurationRequest { SessionId = runId.ToString() }, TestServerCallContext());
+        live.TryGetRunSummary(runId)!.Status.Should().Be("Running");
+        (await changes.NextAsync(TimeSpan.FromSeconds(1), CancellationToken.None)).Should().NotBeEmpty();
+
+        // a stage completes
+        await service.ReportStageResult(new ReportStageResultRequest { SessionId = runId.ToString(), Sequence = 0, Name = "seed", RowsIn = 1, RowsOut = 1 }, TestServerCallContext());
+        live.TryGetRun(runId)!.Stages.Select(s => s.Name).Should().Equal("seed");
+        (await changes.NextAsync(TimeSpan.FromSeconds(1), CancellationToken.None)).Should().NotBeEmpty();
+
+        // and it ends
+        await service.ReportRunResult(new ReportRunResultRequest
+        {
+            SessionId = runId.ToString(), Outcome = ReportRunResultRequest.Types.Outcome.Failed, ExitCode = 3, RowsRead = 7,
+        }, TestServerCallContext());
+        var finished = live.TryGetRunSummary(runId)!;
+        finished.Status.Should().Be("Failed");
+        finished.ExitCode.Should().Be(3);
+        finished.RowsRead.Should().Be(7);
+        finished.CompletedAtUtc.Should().NotBeNull();
+        (await changes.NextAsync(TimeSpan.FromSeconds(1), CancellationToken.None)).Should().NotBeEmpty();
+    }
+
+    [Test]
     public async Task Heartbeat_fails_with_NotFound_for_an_unknown_session()
     {
         //arrange
@@ -159,14 +195,15 @@ public class PipelineExecutionServiceImplTests
     }
 
     private static PipelineExecutionServiceImpl Create(
-        ServerDbContext context, SecretsStore? secretsStore = null, RunStatusStore? statusStore = null) =>
+        ServerDbContext context, SecretsStore? secretsStore = null, RunStatusStore? statusStore = null, LiveState? liveState = null) =>
         new(
             context,
             // A loose mock returning null from CreateProtector is fine for every test here that
             // uses this default - none of them ever populate ConfigurationEntries, so
             // SecretsStore.GetAllAsync never actually touches the protector.
             secretsStore ?? new SecretsStore(context, Mock.Of<IDataProtectionProvider>()),
-            statusStore ?? new RunStatusStore());
+            statusStore ?? new RunStatusStore(),
+            liveState ?? new LiveState(TimeProvider.System, NullLogger<LiveState>.Instance));
 
     /// <summary>Seeds a full package/version/pipeline/run chain and returns the run's id (the session id).</summary>
     private static async Task<Guid> SeedRunAsync(ServerDbContext context, string status)

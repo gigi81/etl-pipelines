@@ -63,6 +63,10 @@ these is in [docs/articles/server/limitations.md](docs/articles/server/limitatio
   progress and CPU/memory charts, and agents with their OS, IP and uptime. It talks to a REST API
   (`/api`) on a second, HTTP/1.1 port, since browsers cannot call the gRPC services. See
   [docs/articles/server/webui.md](docs/articles/server/webui.md).
+- [ ] **One in-memory run store.** `LiveState` (WebUI) and `RunStatusStore` (gRPC `StreamRunProgress`) both hold
+  per-run progress in memory. `StreamRunProgress` could be served from `LiveState`, and `RunStatusStore` dropped.
+- [ ] **Liveness sweep from memory.** `AgentLivenessMonitor` still queries the database every 10 seconds;
+  `LiveState` already knows every agent's last heartbeat.
 - [ ] **WebUI: manage packages and configuration.** It is read-only apart from starting runs. Installing,
   updating and uninstalling packages, and setting configuration entries, are still gRPC-only.
 - [ ] **WebUI: a stage-by-stage view for a run that has not reported yet.** Stages are only known once

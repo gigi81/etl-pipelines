@@ -5,6 +5,7 @@ using EtlPipelines.Server.Api;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
+using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Runs;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -14,6 +15,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace EtlPipelines.Server.Tests.Api;
@@ -32,18 +34,22 @@ internal sealed class ApiTestHost : IAsyncDisposable
     private readonly string _connectionString;
     private readonly WebApplication _app;
 
-    private ApiTestHost(WebApplication app, SqliteConnection keepAlive, string connectionString, HttpClient client, AgentConnectionRegistry connections)
+    private ApiTestHost(WebApplication app, SqliteConnection keepAlive, string connectionString, HttpClient client, AgentConnectionRegistry connections, LiveState live)
     {
         _app = app;
         _keepAlive = keepAlive;
         _connectionString = connectionString;
         Client = client;
         Connections = connections;
+        Live = live;
     }
 
     public HttpClient Client { get; }
 
     public AgentConnectionRegistry Connections { get; }
+
+    /// <summary>The server's in-memory state, which is what the API reads.</summary>
+    public LiveState Live { get; }
 
     public static async Task<ApiTestHost> StartAsync()
     {
@@ -56,13 +62,15 @@ internal sealed class ApiTestHost : IAsyncDisposable
         builder.Logging.ClearProviders();
 
         var connections = new AgentConnectionRegistry();
+        var live = new LiveState(TimeProvider.System, NullLogger<LiveState>.Instance);
         builder.Services.AddDbContext<ServerDbContext>(options => options.UseSqlite(connectionString));
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton(connections);
+        builder.Services.AddSingleton(live);
         builder.Services.AddSingleton(new Mock<INuGetFeedClient>().Object);
         builder.Services.AddScoped<PackageCatalogService>();
         builder.Services.AddScoped(provider => new RunDispatcher(
-            provider.GetRequiredService<ServerDbContext>(), connections, "http://server.test"));
+            provider.GetRequiredService<ServerDbContext>(), connections, live, "http://server.test"));
 
         var app = builder.Build();
         app.MapEtlApi();
@@ -76,7 +84,7 @@ internal sealed class ApiTestHost : IAsyncDisposable
         var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
         var client = new HttpClient { BaseAddress = new Uri(address), Timeout = TimeSpan.FromSeconds(30) };
 
-        return new ApiTestHost(app, keepAlive, connectionString, client, connections);
+        return new ApiTestHost(app, keepAlive, connectionString, client, connections, live);
     }
 
     /// <summary>A fresh context on the same database the API reads.</summary>

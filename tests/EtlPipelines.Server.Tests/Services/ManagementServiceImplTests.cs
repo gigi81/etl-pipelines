@@ -5,12 +5,14 @@ using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
+using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Runs;
 using EtlPipelines.Server.Secrets;
 using EtlPipelines.Server.Services;
 using Grpc.Core;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Moq.Protected;
 using NuGet.Versioning;
@@ -216,7 +218,7 @@ public class ManagementServiceImplTests
         connections.Connect(agentId, channel);
 
         var service = Create(context, connections: connections, feedClient: FeedReportingLatest("2.0.0"));
-        var agentService = new AgentServiceImpl(context, connections, new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()), new RunStatusStore());
+        var agentService = new AgentServiceImpl(context, connections, new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()), new RunStatusStore(), new LiveState(TimeProvider.System, NullLogger<LiveState>.Instance));
 
         //act - the agent's side: take the install work item and report it installed
         var update = service.UpdatePackage(new UpdatePackageRequest { PackageId = "EtlPipelines.Samples.CsvToDatabase" }, TestServerCallContext());
@@ -314,7 +316,7 @@ public class ManagementServiceImplTests
         //arrange
         var context = SqliteServerDbContext.Create();
         var agentService = new AgentServiceImpl(
-            context, new AgentConnectionRegistry(), new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()), new RunStatusStore());
+            context, new AgentConnectionRegistry(), new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()), new RunStatusStore(), new LiveState(TimeProvider.System, NullLogger<LiveState>.Instance));
         var registration = new RegisterAgentRequest
         {
             MachineName = "agent-01",
@@ -448,17 +450,20 @@ public class ManagementServiceImplTests
         AgentConnectionRegistry? connections = null,
         IDataProtectionProvider? dataProtectionProvider = null,
         RunStatusStore? statusStore = null,
-        INuGetFeedClient? feedClient = null)
+        INuGetFeedClient? feedClient = null,
+        LiveState? liveState = null)
     {
         var registry = connections ?? new AgentConnectionRegistry();
+        liveState ??= new LiveState(TimeProvider.System, NullLogger<LiveState>.Instance);
 
         return new ManagementServiceImpl(
             context,
             new PackageCatalogService(context, feedClient ?? Mock.Of<INuGetFeedClient>()),
             new SecretsStore(context, dataProtectionProvider ?? Mock.Of<IDataProtectionProvider>()),
             registry,
-            new RunDispatcher(context, registry, "http://localhost:5000"),
-            statusStore ?? new RunStatusStore());
+            new RunDispatcher(context, registry, liveState, "http://localhost:5000"),
+            statusStore ?? new RunStatusStore(),
+            liveState);
     }
 
     /// <summary>Seeds one installed pipeline (package + version + pipeline row) and returns its id.</summary>
