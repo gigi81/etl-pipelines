@@ -53,11 +53,15 @@ public class ApiEndpointsTests
         var body = (await response.Content.ReadFromJsonAsync<TriggerRunResponse>(ApiTestHost.Json))!;
         response.Headers.Location!.ToString().Should().Be($"/api/runs/{body.RunId}");
 
-        await using var context = host.NewContext();
-        var run = await context.Runs.SingleAsync(r => r.Id == body.RunId);
+        // The run exists in memory, which is what the API reads - and is not in the database yet.
+        var run = host.Live.TryGetRunSummary(body.RunId)!;
         run.PipelineId.Should().Be(pipelineId);
         run.AgentId.Should().Be(agentId);
         run.Status.Should().Be("Dispatched");
+        await using (var context = host.NewContext())
+        {
+            (await context.Runs.CountAsync()).Should().Be(0);
+        }
 
         channel.Reader.TryRead(out var workItem).Should().BeTrue();
         workItem!.ExecutePipeline.SessionId.Should().Be(body.RunId.ToString());
@@ -176,6 +180,8 @@ public class ApiEndpointsTests
             await context.SaveChangesAsync();
         }
 
+        await host.ReloadAsync();
+
         //act
         var detail = await host.GetAsync<RunDetailDto>($"/api/runs/{runId}");
 
@@ -202,6 +208,8 @@ public class ApiEndpointsTests
             });
             await context.SaveChangesAsync();
         }
+
+        await host.ReloadAsync();
 
         //act
         var run = await host.Client.GetStringAsync($"/api/runs/{runId}");

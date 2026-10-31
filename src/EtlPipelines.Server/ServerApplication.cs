@@ -106,15 +106,15 @@ public static class ServerApplication
         // any one gRPC call.
         builder.Services.AddSingleton<AgentConnectionRegistry>();
 
-        // Process-wide run-progress fan-out (Phase 6) - a singleton for the same reason as
-        // AgentConnectionRegistry above: a run's history and its live StreamRunProgress
-        // subscribers outlive any one gRPC call.
-        builder.Services.AddSingleton<RunStatusStore>();
-
-        // What the WebUI shows - agents, runs in flight and recently finished, and a feed of changes
-        // to push to it - held in memory, with the database as the durable copy it is rebuilt from.
-        // A singleton for the same reason as the two above.
+        // The one store of agents and runs: what the WebUI shows and what StreamRunProgress streams,
+        // held in memory, with a feed of changes pushed to both. A singleton for the same reason as
+        // AgentConnectionRegistry above: a run's state and its live subscribers outlive any one gRPC
+        // call. Memory is where everything in flight is read and changed; LiveStateSync loads it from
+        // the database on startup and writes what happens to it back, a few seconds behind, in batches.
+        builder.Services.Configure<LiveStateOptions>(builder.Configuration.GetSection(LiveStateOptions.SectionName));
         builder.Services.AddSingleton<LiveState>();
+        builder.Services.AddSingleton<LiveStateSync>();
+        builder.Services.AddHostedService(provider => provider.GetRequiredService<LiveStateSync>());
 
         // Real wall-clock time in production; AgentLivenessMonitorTests substitutes a fake one
         // directly (it does not go through DI) to drive the timeout decision without a real

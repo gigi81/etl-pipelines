@@ -21,17 +21,11 @@ back, so nothing that happened in between is missed.
 
 ## How updates reach the browser
 
-The Server keeps what the UI shows **in memory** (`LiveState`): every agent, and every run that is in
-flight or finished within the last hour, with its stages and resource samples. The database is still
-the durable record. Each gRPC call that changes a run or an agent writes the database first, as it
-always did, and then updates `LiveState`, which notifies whoever is listening. So reading the API
-costs no database query for anything in flight, and there is no timer that looks for changes.
-
-If the Server restarts, `LiveState` is rebuilt from the database the first time it is used: the
-agents, the runs in flight and the recently finished ones, with their stages and samples, come back
-as they were. It is rebuilt the same way if an update to it ever fails, which never fails the call
-that caused it. Runs older than an hour are not held; the *History* tab and the run page read those
-from the database when asked.
+The Server keeps what the UI shows **in memory** (`LiveState`): it is the one store of agents and runs,
+which every gRPC call changes and the API reads, and the database is written behind it a few seconds
+later - see [Live state and the database](operations.md#live-state-and-the-database). Reading the API
+therefore costs no database query for anything in flight, and nothing polls: a change is applied to
+memory, and the listeners are told.
 
 A listener is told *that* something changed and reads the latest state when it gets to it, so a burst
 of changes to one run (a stage, a sample, a status) is delivered once, and a slow browser never builds
@@ -44,10 +38,10 @@ Two streams carry the changes, as [server-sent events](https://developer.mozilla
 | `GET /api/events`, one per open tab | `ready` (sent at once; the stream is listening, so refetch), `run` (a run's summary: status, stages completed, rows), `agent` (an agent, with the runs it is working on; sent on every heartbeat too, which keeps "last heartbeat" current), `pipelines` (a package was installed, updated or uninstalled; refetch the list), and `ping` (a keep-alive every 15 seconds of silence). The UI patches the lists it already has from `run` and `agent` events, and refetches only when a run finishes, a run starts, or on `pipelines`. |
 | `GET /api/runs/{id}/stream`, one per open run page | `run`: the run's full detail (stages, expected stages, resource samples) right away and again on every change, until the run has finished; `ping`. |
 
-The gRPC `StreamRunProgress` is still served by its own in-memory store, `RunStatusStore`.
+The gRPC `StreamRunProgress` is served from the same store and the same change notices.
 
-What still touches the database on a timer is not the UI: agents heartbeat every 10 seconds, and the
-Server's liveness sweep (`AgentLivenessMonitor`) checks every 10 seconds for agents that stopped.
+The database is touched on a timer only to write what happened (every `LiveState:SyncInterval`, and
+only if something did): not by the UI, and not by the liveness sweep, which reads memory.
 
 A pipeline that has never succeeded has no stages to compare against, so its first run only shows the
 stages as they complete. The same goes for the progress bar, which then has no total to fill towards.

@@ -51,7 +51,7 @@ public static class ApiEndpoints
                 pipeline.Name,
                 pipeline.PackageId,
                 pipeline.PackageVersion,
-                await live.ActiveRunCountAsync(db, pipeline.PipelineId, cancellationToken).ConfigureAwait(false),
+                await live.ActiveRunCountAsync(pipeline.PipelineId, cancellationToken).ConfigureAwait(false),
                 await live.LastRunAsync(db, pipeline.PipelineId, cancellationToken).ConfigureAwait(false)));
         }
 
@@ -85,13 +85,10 @@ public static class ApiEndpoints
     {
         limit = Math.Clamp(limit, 1, 200);
 
-        // Runs in flight are the live state's; history (and the unfiltered list) is the database's,
-        // read when asked for.
-        IReadOnlyList<RunSummaryDto> runs = active is true
-            ? (await live.ActiveRunsAsync(db, pipelineId, cancellationToken).ConfigureAwait(false)).Take(limit).ToList()
-            : await RunQueries.ListAsync(db, active, pipelineId, limit, cancellationToken).ConfigureAwait(false);
-
-        return TypedResults.Ok(runs);
+        // Runs in flight come from memory alone. Finished ones are memory's recent ones merged with the
+        // database's older ones, read when asked for - the database can be a few seconds behind, so a
+        // run that has only just finished is only in memory.
+        return TypedResults.Ok(await live.ListRunsAsync(db, active, pipelineId, limit, cancellationToken).ConfigureAwait(false));
     }
 
     private static async Task<Results<Ok<RunDetailDto>, NotFound>> GetRunAsync(
@@ -101,9 +98,8 @@ public static class ApiEndpoints
         return detail is null ? TypedResults.NotFound() : TypedResults.Ok(detail);
     }
 
-    private static async Task<Ok<IReadOnlyList<AgentDto>>> ListAgentsAsync(
-        ServerDbContext db, LiveState live, CancellationToken cancellationToken) =>
-        TypedResults.Ok(await live.ListAgentsAsync(db, cancellationToken).ConfigureAwait(false));
+    private static async Task<Ok<IReadOnlyList<AgentDto>>> ListAgentsAsync(LiveState live, CancellationToken cancellationToken) =>
+        TypedResults.Ok(await live.ListAgentsAsync(cancellationToken).ConfigureAwait(false));
 
     /// <summary>
     /// Follows one run as server-sent events: its full detail right away, then again each time a

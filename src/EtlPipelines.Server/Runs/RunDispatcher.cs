@@ -2,7 +2,6 @@ using EtlPipelines.AgentExecution.V1;
 using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
-using EtlPipelines.Server.Database.Entities;
 using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Services;
 using Grpc.Core;
@@ -11,8 +10,8 @@ using Microsoft.EntityFrameworkCore;
 namespace EtlPipelines.Server.Runs;
 
 /// <summary>
-/// Turns <c>ManagementService.ExecutePipeline</c> into a real dispatch: creates the <c>Runs</c>
-/// row and pushes an <c>ExecutePipeline</c> work item onto a connected agent's <c>Subscribe</c>
+/// Turns <c>ManagementService.ExecutePipeline</c> into a real dispatch: creates the run (in
+/// <see cref="LiveState"/>) and pushes an <c>ExecutePipeline</c> work item onto a connected agent's <c>Subscribe</c>
 /// stream (SERVER.md Phase 6). Fire-and-forget from this class's own point of view -
 /// <c>ExecutePipelineResponse</c> hands the run id back immediately rather than waiting for the
 /// run to finish (see that RPC's own proto comment), unlike
@@ -73,24 +72,17 @@ public sealed class RunDispatcher(
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var run = new Run
-        {
-            Id = Guid.NewGuid(),
-            PipelineId = pipeline.Id,
-            AgentId = Guid.Parse(agentId),
-            Status = "Dispatched",
-            RequestedAt = DateTime.UtcNow,
-        };
-
-        dbContext.Runs.Add(run);
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        // Before the agent can hear about it, so whatever it reports back finds the run already there.
-        await liveState.RunCreatedAsync(dbContext, run.Id, cancellationToken).ConfigureAwait(false);
+        // The run exists from here on in memory, which is where everything that follows (the agent
+        // reporting back, the UI) looks for it; the database gets it a few seconds later, from
+        // LiveStateSync. Created before the agent can hear about it, so whatever it reports back
+        // finds the run already there.
+        var expectedStages = await liveState.ExpectedStagesAsync(dbContext, pipeline.Id, cancellationToken).ConfigureAwait(false);
+        var runId = await liveState.CreateRunAsync(
+            pipeline.Id, pipeline.Name, packageId, version, Guid.Parse(agentId), expectedStages, cancellationToken).ConfigureAwait(false);
 
         var workItem = new ExecutePipelineWorkItem
         {
-            SessionId = run.Id.ToString(),
+            SessionId = runId.ToString(),
             PackageId = packageId,
             PackageVersion = version,
             PipelineName = pipeline.Name,
@@ -103,6 +95,6 @@ public sealed class RunDispatcher(
         // Either it already had it, or it installs it before running.
         connections.MarkInstalled(agentId, packageId, version);
 
-        return run.Id;
+        return runId;
     }
 }

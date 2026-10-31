@@ -24,7 +24,7 @@ flowchart LR
 | Component | Project | Role |
 |---|---|---|
 | **Server** | `src/EtlPipelines.Server` | An ASP.NET Core gRPC host. It keeps the package and pipeline catalog, the encrypted configuration store, and the run history, and it dispatches work to agents. It never downloads or runs a package itself. |
-| **Live state** | `LiveState` in `src/EtlPipelines.Server/Live` | The server's view of agents and runs held in memory, rebuilt from the database, with a feed of changes pushed to the WebUI. See [WebUI](webui.md#how-updates-reach-the-browser). |
+| **Live state** | `LiveState` in `src/EtlPipelines.Server/Live` | The one store of agents and runs, held in memory: every change is an event applied to it and queued, and `LiveStateSync` writes the queue to the database in batches a few seconds behind. Feeds `StreamRunProgress` and the WebUI. See [Live state and the database](operations.md#live-state-and-the-database). |
 | **Server contracts** | `src/EtlPipelines.Server.Contracts` | The records the REST API returns (`/api`, used by the WebUI), with no dependency on the Server itself. The gRPC messages are not here: they are generated from `protos/v1` into `EtlPipelines.Protos`. |
 | **Server database** | `src/EtlPipelines.Server.Database` | The EF Core mapping over the Postgres schema. [dbdeploy](https://github.com/gigi81/dbdeploy) scripts under `db/` own the schema, not EF Core migrations. |
 | **Agent** | `src/EtlPipelines.Agent` | A generic-host worker. It registers with the Server, keeps a `Subscribe` stream open for work, installs packages with `dotnet tool install`, and launches pipeline runs as child processes. |
@@ -77,8 +77,9 @@ Server.
    - The first thing it does is call `GetConfiguration`. The run's configuration entries, decrypted,
      are loaded into `IConfiguration`, so `ConnectionStrings:*` and `Sftp:*` sections resolve as if
      they had come from `appsettings.json`.
-   - As each stage finishes, `ReportStageResult` records a `StageResults` row. When the run
-     finishes, `ReportRunResult` settles the run's status and row counts.
+   - As each stage finishes, `ReportStageResult` records the stage. When the run
+     finishes, `ReportRunResult` settles the run's status and row counts. Both go into the in-memory
+     state, and reach the database a few seconds later.
 4. When the process exits, the agent reports `EXITED` with the exit code. If the process died before
    it could report its own result, this is what moves the run out of `Running`.
 5. `ManagementService.StreamRunProgress` replays the stages that have already finished, streams the
@@ -92,7 +93,8 @@ A run's status goes `Queued` → `Dispatched` → `Running` → `Succeeded` or `
 
 | State | Where | Durable? |
 |---|---|---|
-| Catalog, runs, stage results, agents, encrypted configuration | Postgres (`postgres-data` volume) | Yes |
+| Catalog, encrypted configuration | Postgres (`postgres-data` volume) | Yes |
+| Agents, runs, stage results, resource samples | Server memory first (`LiveState`), written to Postgres every `LiveState:SyncInterval` | Yes, a few seconds behind. A hard crash loses at most that interval; a clean stop loses nothing. |
 | Data Protection key ring | `server-cache` volume (`KeyRing:Path`) | Yes. Losing it makes every stored configuration value unrecoverable. |
 | Installed tool packages | `agent-cache` volume, per agent | A cache. Evicted least-recently-used first once over its size cap. |
-| Connected agents, pending installs, live run progress | Server memory | No. Lost when the Server restarts. |
+| Connected agents' work queues, pending installs | Server memory | No. Lost when the Server restarts; agents reconnect. |

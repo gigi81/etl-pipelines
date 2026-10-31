@@ -194,6 +194,7 @@ public class ManagementServiceDockerTests(PostgreSqlFixture fixture)
         AgentConnectionRegistry? connections = null)
     {
         var registry = connections ?? new AgentConnectionRegistry();
+        // These tests only use the catalog and the secrets, which are the database's, never runs or agents.
         var liveState = new LiveState(TimeProvider.System, NullLogger<LiveState>.Instance);
 
         return new ManagementServiceImpl(
@@ -202,7 +203,6 @@ public class ManagementServiceDockerTests(PostgreSqlFixture fixture)
             new SecretsStore(context, dataProtectionProvider ?? Mock.Of<IDataProtectionProvider>()),
             registry,
             new RunDispatcher(context, registry, liveState, "http://localhost:5000"),
-            new RunStatusStore(),
             liveState);
     }
 

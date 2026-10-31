@@ -123,6 +123,10 @@ public class ExecutePipelineDockerTests(PostgreSqlFixture postgres, BagetterFixt
             runCompleted.Status.Should().Be(RunCompleted.Types.Status.Succeeded);
             runCompleted.RowsWritten.Should().Be(EtlPipelines.Samples.CsvToDatabase.Pipeline.ExpectedRows);
 
+            // The Server writes the database behind (LiveStateSync, every few seconds); write what is
+            // waiting now, so what is read below is what the run did, not what had been synced so far.
+            await server.Services.GetRequiredService<EtlPipelines.Server.Live.LiveStateSync>().FlushAsync(CancellationToken.None);
+
             var runId = Guid.Parse(executeResponse.RunId);
             var options = new DbContextOptionsBuilder<ServerDbContext>().UseNpgsql(postgres.ConnectionString).Options;
             await using var dbContext = new ServerDbContext(options);

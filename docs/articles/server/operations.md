@@ -1,5 +1,44 @@
 # Operations and reliability
 
+## Live state and the database
+
+The Server holds what is happening - every agent, and every run that is in flight or finished within
+the last hour, with its stages and resource samples - in memory (`LiveState`). It is the **only** store:
+the gRPC services, `StreamRunProgress`, the REST API and the WebUI all read and change it. The
+database is the durable copy, written behind.
+
+**Every change is an event.** An agent registering, a heartbeat, a run created, started, completing a
+stage, sampled, or finished: each is an immutable event, stamped with the time it happened. A change is
+applied to the in-memory state and appended to an ordered outbox in one step, under one lock, so the
+state and what will be written cannot disagree. (No gRPC call waits for, or can be failed by, the
+database.)
+
+**The outbox is written in batches.** Every `LiveState:SyncInterval` (5 seconds by default), if
+anything happened, the sync service (`LiveStateSync`) takes the outbox and replays its events, in
+order, into `Agents`, `Runs`, `StageResults` and `AgentResourceSamples`, in one transaction. Because it
+replays events instead of copying the latest state, nothing that happened between two syncs is lost: a
+run that is created, started, reports its stages and finishes inside one window still has its start
+time, every stage and every sample written, and its completion time is when it completed, not when it
+was synced. A heartbeat that an offline mark or a later heartbeat overtakes inside a window is
+the one thing not kept, as the row only holds the latest.
+
+**What a restart does.** On startup the state is loaded from the database before the Server accepts
+requests - the agents, and the runs in flight or finished within the last hour, with what had been
+written of their stages and samples - so runs carry on and keep reporting. A clean stop (`SIGTERM`)
+writes everything still waiting first, and loses nothing. A **hard crash loses what happened since the
+last sync**, at most `LiveState:SyncInterval` of events: some stages or samples, a status change, or a
+run created in that window (its agent's later reports for it are answered `NOT_FOUND`).
+
+**When the database is unwell.** A batch that cannot be written goes back to the front of the outbox
+and is tried again at the next sync; the Server keeps serving from memory meanwhile. If it fails three
+times running, its events are written one by one, so one event the database refuses is logged and
+dropped instead of holding up everything behind it. The outbox is not bounded: a long outage grows it.
+
+**Reading the tables directly.** The database is up to one sync interval behind memory, and does not
+hold agents' per-heartbeat history. Anything that must see the present state (the API, gRPC, the
+WebUI) reads memory; the *History* list merges the two. `LiveStateSync` has a public `FlushAsync` for
+anything that needs the database caught up now (the end-to-end tests call it).
+
 ## Agent liveness
 
 Each agent heartbeats every 10 seconds. A background sweep on the Server (`AgentLivenessMonitor`)
@@ -8,12 +47,13 @@ heartbeat is older than `AgentLiveness:Timeout` (30 seconds by default):
 
 - The agent is marked `Offline`.
 - Every run that agent still owns in `Queued`, `Dispatched` or `Running` is marked **`AgentLost`**, with
-  `CompletedAt` set. A `RunCompleted { status: AGENT_LOST }` event is published, so anyone watching
-  `StreamRunProgress` sees the run end instead of waiting forever.
+  `CompletedAt` set. Anyone watching the run (`StreamRunProgress`, the WebUI) is told it ended,
+  instead of waiting forever.
 
-The sweep checks each run against its agent's heartbeat directly, so a run left behind by an earlier
-sweep that failed partway through is still picked up by the next one. A failed sweep, such as a
-database blip, is logged and retried on the next tick.
+The sweep checks each run against its agent's heartbeat directly, so a run is caught however its agent
+came to be silent. It works on the [live state](#live-state-and-the-database), which knows every
+agent's last heartbeat the moment it arrives, so a sweep reads no database; what it changes is written
+there with everything else.
 
 An agent that shuts down cleanly closes its `Subscribe` stream and is no longer dispatched to right
 away. The heartbeat timeout covers the other case: a process or container that died without saying

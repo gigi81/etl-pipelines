@@ -1,13 +1,9 @@
-using EtlPipelines.Management.V1;
 using EtlPipelines.PipelineExecution.V1;
-using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Contracts;
-using EtlPipelines.Server.Database.Entities;
 using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Runs;
 using EtlPipelines.Server.Secrets;
 using Grpc.Core;
-using Microsoft.EntityFrameworkCore;
 
 namespace EtlPipelines.Server.Services;
 
@@ -17,32 +13,27 @@ namespace EtlPipelines.Server.Services;
 /// one <c>session_id</c>.
 /// </summary>
 /// <remarks>
-/// SERVER.md Phase 6: <c>session_id</c> is <c>Runs.Id</c> itself, minted by
-/// <see cref="RunDispatcher"/> before the work item that carries it is ever sent - every RPC here
-/// resolves it against <see cref="ServerDbContext.Runs"/> and fails with
-/// <see cref="StatusCode.NotFound"/> for one this server has no row for.
+/// <c>session_id</c> is the run's id itself, minted by <see cref="RunDispatcher"/> before the work
+/// item that carries it is ever sent. Every RPC here resolves it against <see cref="LiveState"/> -
+/// where every run in flight is held - and fails with <see cref="StatusCode.NotFound"/> for one the
+/// server does not know. What a process reports goes into <see cref="LiveState"/> and is written to
+/// the database a few seconds later by <see cref="LiveStateSync"/>; the database is not touched here
+/// (the configuration entries a run pulls are the one thing read from it).
 /// </remarks>
-public sealed class PipelineExecutionServiceImpl(
-    ServerDbContext dbContext, SecretsStore secretsStore, RunStatusStore statusStore, LiveState liveState)
+public sealed class PipelineExecutionServiceImpl(SecretsStore secretsStore, LiveState liveState)
     : PipelineExecutionService.PipelineExecutionServiceBase
 {
     /// <inheritdoc />
     public override async Task<GetConfigurationResponse> GetConfiguration(GetConfigurationRequest request, ServerCallContext context)
     {
-        var run = await FindRunAsync(request.SessionId, context.CancellationToken).ConfigureAwait(false);
+        var runId = await FindRunAsync(request.SessionId, context.CancellationToken).ConfigureAwait(false);
 
         // The first call this service sees for a run - pulling configuration is the very first
         // thing a launched pipeline process does (EtlPipelines.GrpcClient.GrpcConfigurationSource
-        // runs during host configuration, before anything else). Flipping Dispatched -> Running
-        // here, rather than waiting for the agent's own ReportExecutionStatus(STARTED), is what
-        // marks a run as actually under way even if that agent-side signal is slow or lost.
-        if (run.Status == "Dispatched")
-        {
-            run.Status = "Running";
-            run.StartedAt ??= DateTime.UtcNow;
-            await dbContext.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
-            await liveState.RunChangedAsync(dbContext, run, context.CancellationToken).ConfigureAwait(false);
-        }
+        // runs during host configuration, before anything else). Marking the run as started here,
+        // rather than waiting for the agent's own ReportExecutionStatus(STARTED), is what flips it
+        // to running even if that agent-side signal is slow or lost.
+        await liveState.StartRunAsync(runId, context.CancellationToken).ConfigureAwait(false);
 
         var entries = await secretsStore.GetAllAsync(context.CancellationToken).ConfigureAwait(false);
 
@@ -58,44 +49,16 @@ public sealed class PipelineExecutionServiceImpl(
     /// <inheritdoc />
     public override async Task<PipelineExecution.V1.Ack> ReportStageResult(ReportStageResultRequest request, ServerCallContext context)
     {
-        var run = await FindRunAsync(request.SessionId, context.CancellationToken).ConfigureAwait(false);
+        var runId = await FindRunAsync(request.SessionId, context.CancellationToken).ConfigureAwait(false);
 
         var errorCode = string.IsNullOrEmpty(request.ErrorCode) ? null : request.ErrorCode;
         var errorDescription = string.IsNullOrEmpty(request.ErrorDescription) ? null : request.ErrorDescription;
 
-        dbContext.StageResults.Add(new StageResult
-        {
-            Id = Guid.NewGuid(),
-            RunId = run.Id,
-            Sequence = request.Sequence,
-            Name = request.Name,
-            RowsIn = request.RowsIn,
-            RowsOut = request.RowsOut,
-            RowsFailed = request.RowsFailed,
-            ElapsedMs = request.ElapsedMs,
-            ErrorCode = errorCode,
-            ErrorDescription = errorDescription,
-        });
-        await dbContext.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
-
         await liveState.StageCompletedAsync(
-            dbContext,
-            run.Id,
+            runId,
             new StageDto(
                 request.Sequence, request.Name, request.RowsIn, request.RowsOut, request.RowsFailed, request.ElapsedMs, errorCode, errorDescription),
             context.CancellationToken).ConfigureAwait(false);
-
-        statusStore.PublishStageCompleted(run.Id, new StageCompleted
-        {
-            Sequence = request.Sequence,
-            Name = request.Name,
-            RowsIn = request.RowsIn,
-            RowsOut = request.RowsOut,
-            RowsFailed = request.RowsFailed,
-            ElapsedMs = request.ElapsedMs,
-            ErrorCode = errorCode ?? string.Empty,
-            ErrorDescription = errorDescription ?? string.Empty,
-        });
 
         return new PipelineExecution.V1.Ack();
     }
@@ -103,26 +66,11 @@ public sealed class PipelineExecutionServiceImpl(
     /// <inheritdoc />
     public override async Task<PipelineExecution.V1.Ack> ReportRunResult(ReportRunResultRequest request, ServerCallContext context)
     {
-        var run = await FindRunAsync(request.SessionId, context.CancellationToken).ConfigureAwait(false);
-        var succeeded = request.Outcome == ReportRunResultRequest.Types.Outcome.Succeeded;
+        var runId = await FindRunAsync(request.SessionId, context.CancellationToken).ConfigureAwait(false);
+        var status = request.Outcome == ReportRunResultRequest.Types.Outcome.Succeeded ? "Succeeded" : "Failed";
 
-        run.Status = succeeded ? "Succeeded" : "Failed";
-        run.CompletedAt = DateTime.UtcNow;
-        run.ExitCode = request.ExitCode;
-        run.RowsRead = request.RowsRead;
-        run.RowsWritten = request.RowsWritten;
-        run.RowsFailed = request.RowsFailed;
-        await dbContext.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
-        await liveState.RunChangedAsync(dbContext, run, context.CancellationToken).ConfigureAwait(false);
-
-        statusStore.PublishRunCompleted(run.Id, new RunCompleted
-        {
-            Status = succeeded ? RunCompleted.Types.Status.Succeeded : RunCompleted.Types.Status.Failed,
-            ExitCode = request.ExitCode,
-            RowsRead = request.RowsRead,
-            RowsWritten = request.RowsWritten,
-            RowsFailed = request.RowsFailed,
-        });
+        await liveState.FinishRunAsync(
+            runId, status, request.ExitCode, request.RowsRead, request.RowsWritten, request.RowsFailed, context.CancellationToken).ConfigureAwait(false);
 
         return new PipelineExecution.V1.Ack();
     }
@@ -131,28 +79,27 @@ public sealed class PipelineExecutionServiceImpl(
     public override async Task<PipelineExecution.V1.Ack> Heartbeat(HeartbeatRequest request, ServerCallContext context)
     {
         // Still nothing to update - SERVER.md Phase 8's own "Agent liveness" is scoped to exactly
-        // that, the agent's own heartbeat (Agents.LastHeartbeatAt, watched by
-        // Agents.AgentLivenessMonitor), not a per-run one here. A launched process that hangs
+        // that, the agent's own heartbeat, not a per-run one here. A launched process that hangs
         // (never exits, never calls ReportRunResult) while its own agent stays perfectly healthy
-        // is therefore still not caught by anything - a real liveness use for this RPC, and the
-        // schema column it would need, is deliberately left as a known, separate gap rather than
-        // folded into this phase. This call still exists to validate the session and give a
-        // launched process something well-defined to call either way.
+        // is therefore still not caught by anything - a real liveness use for this RPC is
+        // deliberately left as a known, separate gap. This call still exists to validate the
+        // session and give a launched process something well-defined to call either way.
         await FindRunAsync(request.SessionId, context.CancellationToken).ConfigureAwait(false);
         return new PipelineExecution.V1.Ack();
     }
 
-    private async Task<Run> FindRunAsync(string sessionId, CancellationToken cancellationToken)
+    /// <summary>The id of the run <paramref name="sessionId"/> names, which must be one the server holds.</summary>
+    private async Task<Guid> FindRunAsync(string sessionId, CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(sessionId, out var runId))
         {
             throw new RpcException(new Status(StatusCode.InvalidArgument, $"'{sessionId}' is not a valid session id."));
         }
 
-        var run = await dbContext.Runs
-            .SingleOrDefaultAsync(r => r.Id == runId, cancellationToken)
-            .ConfigureAwait(false);
-
-        return run ?? throw new RpcException(new Status(StatusCode.NotFound, $"No run '{sessionId}' is known to this server."));
+        // Held in memory for as long as it is in flight: no database read, and no waiting for one to
+        // have caught up with a run that was created a moment ago.
+        return await liveState.HoldsRunAsync(runId, cancellationToken).ConfigureAwait(false)
+            ? runId
+            : throw new RpcException(new Status(StatusCode.NotFound, $"No run '{sessionId}' is known to this server."));
     }
 }

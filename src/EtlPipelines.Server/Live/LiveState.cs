@@ -1,29 +1,39 @@
 using System.Collections.Concurrent;
 using EtlPipelines.Server.Contracts;
 using EtlPipelines.Server.Database;
-using EtlPipelines.Server.Database.Entities;
+using EtlPipelines.Server.Live.Events;
 using Microsoft.EntityFrameworkCore;
 
 namespace EtlPipelines.Server.Live;
 
 /// <summary>
-/// What the server knows right now, held in memory: every agent, and every run that is in flight or
-/// finished within the last <see cref="Retention"/> - with their stages and resource samples - plus a
-/// feed of what changed, for the WebUI to be pushed to.
+/// The server's one store of what is happening: every agent, and every run that is in flight or
+/// finished within the last <see cref="Retention"/> - with its stages and resource samples - held in
+/// memory, plus a feed of what changed, which is pushed to the WebUI and to <c>StreamRunProgress</c>
+/// callers.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The database stays the durable record. Every gRPC call that changes a run or an agent writes the
-/// database first, exactly as before, and then tells this class, so reading the API never queries the
-/// database for anything in flight and nothing polls it. What this holds is rebuilt from the
-/// database on first use (so after a restart) and again after any update that fails - an update
-/// is never allowed to fail the call that triggered it, it just marks the state for a reload.
-/// Runs older than <see cref="Retention"/> are not held; they are read from the database when asked
-/// for.
+/// <b>Memory is the source of truth for anything in flight.</b> A change is made by a command
+/// (<see cref="CreateRunAsync"/>, <see cref="StageCompletedAsync"/>, ...), which decides whether it
+/// applies and, if so, turns it into an immutable <see cref="LiveEvent"/>. The event is applied to the
+/// state and appended to an ordered outbox in one step, under one lock, so the state and what will
+/// be persisted cannot disagree.
 /// </para>
 /// <para>
-/// This is the REST/WebUI view. The gRPC <c>StreamRunProgress</c> is still served by
-/// <see cref="Runs.RunStatusStore"/>.
+/// <b>The database is written behind.</b> <see cref="LiveStateSync"/> takes the outbox every few
+/// seconds and replays its events, in order, into the tables in one batch. Because it replays events
+/// rather than copying the latest state, nothing that happened between two syncs is lost: a run that
+/// is created, started, reports stages and finishes inside one window still has all of it written.
+/// After a restart the state is read back from the database by <see cref="LoadAsync"/>; the events
+/// not yet written when the process died (at most one sync interval of them) are the only thing lost.
+/// Everything in flight is read from here, never from the database, which can be behind - callers wait
+/// for <see cref="LoadAsync"/> to finish first, so a request that arrives during startup sees the
+/// loaded state, not an empty one.
+/// </para>
+/// <para>
+/// Runs older than <see cref="Retention"/> are not held; the methods that can reach them take the
+/// database context and read it for those.
 /// </para>
 /// </remarks>
 public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logger)
@@ -31,15 +41,19 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
     /// <summary>How long a finished run is kept in memory.</summary>
     public static readonly TimeSpan Retention = TimeSpan.FromHours(1);
 
-    private readonly SemaphoreSlim _loadGate = new(1, 1);
+    private readonly object _gate = new();
+    private readonly EventOutbox _outbox = new();
+    private readonly TaskCompletionSource _loaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly object _subscriptionsGate = new();
     private readonly List<LiveSubscription> _subscriptions = [];
 
     private volatile ConcurrentDictionary<Guid, LiveRun> _runs = new();
     private volatile ConcurrentDictionary<Guid, LiveAgent> _agents = new();
-    private volatile bool _loaded;
 
-    /// <summary>How many subscriptions are listening - for tests.</summary>
+    /// <summary>How many events are waiting to be written to the database.</summary>
+    public int PendingEventCount => _outbox.Count;
+
+    /// <summary>How many subscriptions are listening.</summary>
     public int SubscriberCount
     {
         get
@@ -73,7 +87,7 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
         }
     }
 
-    private void Publish(LiveChange change)
+    private void Publish(IEnumerable<LiveChange> changes)
     {
         LiveSubscription[] subscribers;
         lock (_subscriptionsGate)
@@ -81,228 +95,26 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
             subscribers = [.. _subscriptions];
         }
 
-        foreach (var subscriber in subscribers)
+        foreach (var change in changes.Distinct())
         {
-            subscriber.Offer(change);
-        }
-    }
-
-    private void PublishRun(LiveRun run)
-    {
-        Publish(new LiveChange(LiveChangeKind.Run, run.Id));
-
-        // The run is part of its agent's "running now" list.
-        if (run.AgentId is { } agentId)
-        {
-            Publish(new LiveChange(LiveChangeKind.Agent, agentId));
+            foreach (var subscriber in subscribers)
+            {
+                subscriber.Offer(change);
+            }
         }
     }
 
     /// <summary>Tells listeners the set of installed pipelines changed.</summary>
-    public void PipelinesChanged() => Publish(new LiveChange(LiveChangeKind.Pipelines, Guid.Empty));
+    public void PipelinesChanged() => Publish([new LiveChange(LiveChangeKind.Pipelines, Guid.Empty)]);
 
-    // ---- updates (called after the database was written) --------------------------------
-
-    /// <summary>An agent was registered.</summary>
-    public Task AgentRegisteredAsync(ServerDbContext db, Agent agent, CancellationToken cancellationToken) =>
-        ApplyAsync(db, nameof(AgentRegisteredAsync), () =>
-        {
-            _agents[agent.Id] = LiveAgent.From(agent);
-            Publish(new LiveChange(LiveChangeKind.Agent, agent.Id));
-            return Task.CompletedTask;
-        }, cancellationToken);
-
-    /// <summary>An agent heartbeated, so it is online.</summary>
-    public Task AgentHeartbeatAsync(ServerDbContext db, Guid agentId, DateTime heartbeatAt, CancellationToken cancellationToken) =>
-        ApplyAsync(db, nameof(AgentHeartbeatAsync), () =>
-        {
-            if (_agents.TryGetValue(agentId, out var agent))
-            {
-                _agents[agentId] = agent with { Status = "Online", LastHeartbeatAtUtc = DateTime.SpecifyKind(heartbeatAt, DateTimeKind.Utc) };
-                Publish(new LiveChange(LiveChangeKind.Agent, agentId));
-            }
-
-            return Task.CompletedTask;
-        }, cancellationToken);
-
-    /// <summary>Agents stopped heartbeating and were marked offline.</summary>
-    public Task AgentsOfflineAsync(ServerDbContext db, IEnumerable<Guid> agentIds, CancellationToken cancellationToken) =>
-        ApplyAsync(db, nameof(AgentsOfflineAsync), () =>
-        {
-            foreach (var agentId in agentIds)
-            {
-                if (_agents.TryGetValue(agentId, out var agent))
-                {
-                    _agents[agentId] = agent with { Status = "Offline" };
-                    Publish(new LiveChange(LiveChangeKind.Agent, agentId));
-                }
-            }
-
-            return Task.CompletedTask;
-        }, cancellationToken);
-
-    /// <summary>A run was created (its row is in the database).</summary>
-    public Task RunCreatedAsync(ServerDbContext db, Guid runId, CancellationToken cancellationToken) =>
-        ApplyAsync(db, nameof(RunCreatedAsync), async () =>
-        {
-            var detail = await RunQueries.LoadDetailAsync(db, runId, cancellationToken).ConfigureAwait(false);
-            if (detail is not null)
-            {
-                var run = LiveRun.From(detail);
-                _runs[runId] = run;
-                PublishRun(run);
-            }
-        }, cancellationToken);
-
-    /// <summary>A run's status, times or row counts changed; <paramref name="run"/> is its saved row.</summary>
-    public Task RunChangedAsync(ServerDbContext db, Run run, CancellationToken cancellationToken) =>
-        ApplyAsync(db, nameof(RunChangedAsync), async () =>
-        {
-            var live = await GetOrLoadRunAsync(db, run.Id, cancellationToken).ConfigureAwait(false);
-            if (live is null)
-            {
-                return;
-            }
-
-            live.Apply(run, run.AgentId is { } agentId && _agents.TryGetValue(agentId, out var agent) ? agent.MachineName : null);
-            PublishRun(live);
-
-            if (!live.IsActive)
-            {
-                EvictExpired();
-            }
-        }, cancellationToken);
-
-    /// <summary>A run completed a stage (its row is in the database).</summary>
-    public Task StageCompletedAsync(ServerDbContext db, Guid runId, StageDto stage, CancellationToken cancellationToken) =>
-        ApplyAsync(db, nameof(StageCompletedAsync), async () =>
-        {
-            var live = await GetOrLoadRunAsync(db, runId, cancellationToken).ConfigureAwait(false);
-            if (live is not null)
-            {
-                live.AddStage(stage);
-                PublishRun(live);
-            }
-        }, cancellationToken);
-
-    /// <summary>An agent sampled the CPU and memory of a run's process (the sample is in the database).</summary>
-    public Task ResourceSampledAsync(ServerDbContext db, Guid runId, ResourceSampleDto sample, CancellationToken cancellationToken) =>
-        ApplyAsync(db, nameof(ResourceSampledAsync), async () =>
-        {
-            var live = await GetOrLoadRunAsync(db, runId, cancellationToken).ConfigureAwait(false);
-            if (live is not null)
-            {
-                live.AddSample(sample);
-                Publish(new LiveChange(LiveChangeKind.Run, runId));
-            }
-        }, cancellationToken);
-
-    // ---- reads -------------------------------------------------------------------------
-
-    /// <summary>The runs in flight, newest first, from memory.</summary>
-    public async Task<IReadOnlyList<RunSummaryDto>> ActiveRunsAsync(
-        ServerDbContext db, Guid? pipelineId, CancellationToken cancellationToken)
-    {
-        await EnsureLoadedAsync(db, cancellationToken).ConfigureAwait(false);
-        return ActiveRunSummaries(pipelineId);
-    }
-
-    /// <summary>One run with its stages and samples: from memory if it is held, otherwise from the database.</summary>
-    public async Task<RunDetailDto?> GetRunAsync(ServerDbContext db, Guid runId, CancellationToken cancellationToken)
-    {
-        await EnsureLoadedAsync(db, cancellationToken).ConfigureAwait(false);
-        return TryGetRun(runId) ?? await RunQueries.LoadDetailAsync(db, runId, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>One run's summary, if it is held in memory.</summary>
-    public RunSummaryDto? TryGetRunSummary(Guid runId) => _runs.TryGetValue(runId, out var run) ? run.ToSummary() : null;
-
-    /// <summary>One run with its stages and samples, if it is held in memory.</summary>
-    public RunDetailDto? TryGetRun(Guid runId) => _runs.TryGetValue(runId, out var run) ? run.ToDetail() : null;
-
-    /// <summary>How many runs of <paramref name="pipelineId"/> are in flight.</summary>
-    public async Task<int> ActiveRunCountAsync(ServerDbContext db, Guid pipelineId, CancellationToken cancellationToken)
-    {
-        await EnsureLoadedAsync(db, cancellationToken).ConfigureAwait(false);
-        return _runs.Values.Count(run => run.PipelineId == pipelineId && run.IsActive);
-    }
+    // ---- loading ------------------------------------------------------------------------
 
     /// <summary>
-    /// The latest run of <paramref name="pipelineId"/>: from memory when it has one in flight or
-    /// recent, otherwise from the database.
+    /// Replaces what is held with what the database has - every agent, and the runs in flight or
+    /// finished within <see cref="Retention"/>, with their stages and samples - and lets waiting
+    /// callers go. It also discards any event not yet written, so it is for startup (and tests).
     /// </summary>
-    public async Task<RunSummaryDto?> LastRunAsync(ServerDbContext db, Guid pipelineId, CancellationToken cancellationToken)
-    {
-        await EnsureLoadedAsync(db, cancellationToken).ConfigureAwait(false);
-
-        var held = _runs.Values
-            .Where(run => run.PipelineId == pipelineId)
-            .Select(run => run.ToSummary())
-            .OrderByDescending(run => run.RequestedAtUtc)
-            .FirstOrDefault();
-
-        return held ?? await RunQueries.LastRunAsync(db, pipelineId, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>Every agent, by machine name, from memory.</summary>
-    public async Task<IReadOnlyList<AgentDto>> ListAgentsAsync(ServerDbContext db, CancellationToken cancellationToken)
-    {
-        await EnsureLoadedAsync(db, cancellationToken).ConfigureAwait(false);
-
-        var now = timeProvider.GetUtcNow();
-        return _agents.Values
-            .OrderBy(agent => agent.MachineName, StringComparer.Ordinal)
-            .ThenBy(agent => agent.LastHeartbeatAtUtc)
-            .Select(agent => agent.ToDto(now, ActiveRunsOf(agent.Id)))
-            .ToList();
-    }
-
-    /// <summary>One agent, if it is held in memory.</summary>
-    public AgentDto? TryGetAgent(Guid agentId) =>
-        _agents.TryGetValue(agentId, out var agent) ? agent.ToDto(timeProvider.GetUtcNow(), ActiveRunsOf(agentId)) : null;
-
-    private List<RunSummaryDto> ActiveRunSummaries(Guid? pipelineId) =>
-        _runs.Values
-            .Where(run => run.IsActive && (pipelineId is null || run.PipelineId == pipelineId))
-            .Select(run => run.ToSummary())
-            .OrderByDescending(run => run.RequestedAtUtc)
-            .ToList();
-
-    private List<RunSummaryDto> ActiveRunsOf(Guid agentId) =>
-        _runs.Values
-            .Where(run => run.IsActive && run.AgentId == agentId)
-            .Select(run => run.ToSummary())
-            .OrderByDescending(run => run.RequestedAtUtc)
-            .ToList();
-
-    // ---- loading -----------------------------------------------------------------------
-
-    /// <summary>Loads the state from the database if it has not been loaded yet (or an update failed since).</summary>
-    public async Task EnsureLoadedAsync(ServerDbContext db, CancellationToken cancellationToken)
-    {
-        if (_loaded)
-        {
-            return;
-        }
-
-        await _loadGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            if (_loaded)
-            {
-                return;
-            }
-
-            await LoadAsync(db, cancellationToken).ConfigureAwait(false);
-            _loaded = true;
-        }
-        finally
-        {
-            _loadGate.Release();
-        }
-    }
-
-    private async Task LoadAsync(ServerDbContext db, CancellationToken cancellationToken)
+    public async Task LoadAsync(ServerDbContext db, CancellationToken cancellationToken)
     {
         var agents = new ConcurrentDictionary<Guid, LiveAgent>();
         foreach (var agent in await db.Agents.AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false))
@@ -327,51 +139,270 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
             }
         }
 
-        _agents = agents;
-        _runs = runs;
+        lock (_gate)
+        {
+            _agents = agents;
+            _runs = runs;
+            _outbox.Clear();
+        }
+
+        _loaded.TrySetResult();
         logger.LogInformation("Loaded {AgentCount} agent(s) and {RunCount} run(s) into the live state.", agents.Count, runs.Count);
     }
 
-    private async Task<LiveRun?> GetOrLoadRunAsync(ServerDbContext db, Guid runId, CancellationToken cancellationToken)
+    private Task WhenLoadedAsync(CancellationToken cancellationToken) =>
+        _loaded.Task.IsCompleted ? Task.CompletedTask : _loaded.Task.WaitAsync(cancellationToken);
+
+    // ---- commands -----------------------------------------------------------------------
+
+    /// <summary>An agent registers. Returns the id it is known by from now on.</summary>
+    public async Task<Guid> RegisterAgentAsync(
+        string machineName, IReadOnlyList<string> tags, string version, string? infoJson, CancellationToken cancellationToken)
     {
-        if (_runs.TryGetValue(runId, out var held))
-        {
-            return held;
-        }
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-        // Not held: it finished before the retention window, or the update is for a run created
-        // by something that never told this class. Read it - the database already has this update.
-        var detail = await RunQueries.LoadDetailAsync(db, runId, cancellationToken).ConfigureAwait(false);
-        if (detail is null)
-        {
-            return null;
-        }
+        var agentId = Guid.NewGuid();
+        Append(new AgentRegisteredEvent(agentId, machineName, tags, version, infoJson, Now()));
+        return agentId;
+    }
 
-        return _runs.GetOrAdd(runId, _ => LiveRun.From(detail));
+    /// <summary>An agent heartbeated. False when no such agent is known (it is left alone).</summary>
+    public async Task<bool> AgentHeartbeatAsync(Guid agentId, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        return Append(() => _agents.ContainsKey(agentId) ? [new AgentHeartbeatEvent(agentId, Now())] : []);
     }
 
     /// <summary>
-    /// Runs an update. It loads the state first if need be, and never throws: the call that
-    /// triggered it has already written the database, so a failure here only marks the state to be
-    /// rebuilt from the database the next time it is used.
+    /// Marks every agent that has not heartbeated within <paramref name="timeout"/> offline, and every
+    /// run still in flight on such an agent lost. A lost run is never retried: a partial load may not
+    /// be safe to repeat.
     /// </summary>
-    private async Task ApplyAsync(ServerDbContext db, string update, Func<Task> apply, CancellationToken cancellationToken)
+    public async Task<LiveSweepResult> SweepAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        try
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        var result = default(LiveSweepResult);
+        Append(() =>
         {
-            await EnsureLoadedAsync(db, cancellationToken).ConfigureAwait(false);
-            await apply().ConfigureAwait(false);
+            var now = Now();
+            var cutoff = now - timeout;
+            var events = new List<LiveEvent>();
+
+            var staleAgents = _agents.Values
+                .Where(agent => agent.Status == "Online" && agent.LastHeartbeatAtUtc < cutoff)
+                .Select(agent => agent.Id)
+                .ToList();
+            events.AddRange(staleAgents.Select(id => new AgentOfflineEvent(id, now)));
+
+            // Judged by the agent's own last heartbeat - not by whether this sweep is the one that
+            // flipped it offline - so a run is caught however its agent got there.
+            var lostRuns = _runs.Values
+                .Where(run => run.IsActive && run.AgentId is { } agentId && _agents.TryGetValue(agentId, out var agent) && agent.LastHeartbeatAtUtc < cutoff)
+                .Select(run => run.Id)
+                .ToList();
+            events.AddRange(lostRuns.Select(id => new RunFinishedEvent(id, "AgentLost", null, null, null, null, now)));
+
+            result = new LiveSweepResult(staleAgents.Count, lostRuns.Count);
+            return events;
+        });
+
+        return result;
+    }
+
+    /// <summary>A run is created and dispatched. Returns its id.</summary>
+    public async Task<Guid> CreateRunAsync(
+        Guid pipelineId,
+        string pipelineName,
+        string packageId,
+        string packageVersion,
+        Guid? agentId,
+        IReadOnlyList<string> expectedStages,
+        CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        var runId = Guid.NewGuid();
+        Append(new RunCreatedEvent(runId, pipelineId, pipelineName, packageId, packageVersion, agentId, expectedStages, Now()));
+        return runId;
+    }
+
+    /// <summary>
+    /// A run's process started. False when no such run is held; otherwise true, whether or not
+    /// anything changed (a run that is already running with a start time is left as it is).
+    /// </summary>
+    public async Task<bool> StartRunAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        var found = false;
+        Append(() =>
+        {
+            if (!_runs.TryGetValue(runId, out var run))
+            {
+                return [];
+            }
+
+            found = true;
+            return run.Status is "Queued" or "Dispatched" || run.StartedAtUtc is null ? [new RunStartedEvent(runId, Now())] : [];
+        });
+
+        return found;
+    }
+
+    /// <summary>A run completed a stage. False when no such run is held.</summary>
+    public async Task<bool> StageCompletedAsync(Guid runId, StageDto stage, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        return Append(() => _runs.ContainsKey(runId) ? [new StageCompletedEvent(runId, Guid.NewGuid(), stage, Now())] : []);
+    }
+
+    /// <summary>An agent sampled a run's process. False when no such run is held.</summary>
+    public async Task<bool> ResourceSampledAsync(
+        Guid runId, Guid agentId, double cpuPercent, long workingSetBytes, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        return Append(() => _runs.ContainsKey(runId)
+            ? [new ResourceSampledEvent(runId, agentId, Guid.NewGuid(), cpuPercent, workingSetBytes, Now())]
+            : []);
+    }
+
+    /// <summary>A run reported its own outcome. False when no such run is held.</summary>
+    public async Task<bool> FinishRunAsync(
+        Guid runId, string status, int exitCode, long rowsRead, long rowsWritten, long rowsFailed, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        return Append(() => _runs.ContainsKey(runId)
+            ? [new RunFinishedEvent(runId, status, exitCode, rowsRead, rowsWritten, rowsFailed, Now())]
+            : []);
+    }
+
+    /// <summary>
+    /// An agent saw a run's process exit. This is only a fallback for a process that died without
+    /// reporting its own outcome, so it ends the run only if it is still in flight - one that already
+    /// reported is left as it is. True if it ended the run.
+    /// </summary>
+    public async Task<bool> ProcessExitedAsync(Guid runId, int exitCode, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        return Append(() =>
+        {
+            if (!_runs.TryGetValue(runId, out var run) || !run.IsActive)
+            {
+                return [];
+            }
+
+            var status = exitCode == 0 ? "Succeeded" : "Failed";
+            return [new RunFinishedEvent(runId, status, exitCode, null, null, null, Now())];
+        });
+    }
+
+    private DateTime Now() => timeProvider.GetUtcNow().UtcDateTime;
+
+    /// <summary>Applies and queues one event.</summary>
+    private void Append(LiveEvent liveEvent) => Append(() => [liveEvent]);
+
+    /// <summary>
+    /// Decides what events a command amounts to, applies them and queues them, all under one lock - so
+    /// the decision, the state and the outbox cannot be interleaved with another command's - and then
+    /// tells listeners. True if there was anything to apply.
+    /// </summary>
+    private bool Append(Func<IReadOnlyList<LiveEvent>> decide)
+    {
+        var changes = new List<LiveChange>();
+        bool any;
+
+        lock (_gate)
+        {
+            var events = decide();
+            any = events.Count > 0;
+
+            foreach (var liveEvent in events)
+            {
+                Apply(liveEvent, changes);
+                _outbox.Add(liveEvent);
+            }
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+
+        Publish(changes);
+        return any;
+    }
+
+    /// <summary>The one place an event changes the in-memory state. Called under <see cref="_gate"/>.</summary>
+    private void Apply(LiveEvent liveEvent, List<LiveChange> changes)
+    {
+        switch (liveEvent)
         {
-            logger.LogWarning(exception, "Live state update {Update} failed; the state will be reloaded from the database.", update);
-            _loaded = false;
+            case AgentRegisteredEvent registered:
+                _agents[registered.AgentId] = new LiveAgent(
+                    registered.AgentId,
+                    registered.MachineName,
+                    registered.Tags,
+                    registered.Version,
+                    "Online",
+                    registered.AtUtc,
+                    LiveAgent.ParseInfo(registered.InfoJson));
+                changes.Add(new LiveChange(LiveChangeKind.Agent, registered.AgentId));
+                break;
+
+            case AgentHeartbeatEvent heartbeat when _agents.TryGetValue(heartbeat.AgentId, out var agent):
+                _agents[heartbeat.AgentId] = agent with { Status = "Online", LastHeartbeatAtUtc = heartbeat.AtUtc };
+                changes.Add(new LiveChange(LiveChangeKind.Agent, heartbeat.AgentId));
+                break;
+
+            case AgentOfflineEvent offline when _agents.TryGetValue(offline.AgentId, out var agent):
+                _agents[offline.AgentId] = agent with { Status = "Offline" };
+                changes.Add(new LiveChange(LiveChangeKind.Agent, offline.AgentId));
+                break;
+
+            case RunCreatedEvent created:
+                var agentName = created.AgentId is { } agentId && _agents.TryGetValue(agentId, out var owner) ? owner.MachineName : null;
+                var createdRun = LiveRun.Create(created, agentName);
+                _runs[created.RunId] = createdRun;
+                AddRunChanges(changes, createdRun);
+                break;
+
+            case RunStartedEvent started when _runs.TryGetValue(started.RunId, out var run):
+                run.Start(started.AtUtc);
+                AddRunChanges(changes, run);
+                break;
+
+            case RunFinishedEvent finished when _runs.TryGetValue(finished.RunId, out var run):
+                run.Finish(finished.Status, finished.ExitCode, finished.RowsRead, finished.RowsWritten, finished.RowsFailed, finished.AtUtc);
+                AddRunChanges(changes, run);
+                EvictExpired();
+                break;
+
+            case StageCompletedEvent stage when _runs.TryGetValue(stage.RunId, out var run):
+                run.AddStage(stage.Stage);
+                AddRunChanges(changes, run);
+                break;
+
+            case ResourceSampledEvent sample when _runs.TryGetValue(sample.RunId, out var run):
+                run.AddSample(new ResourceSampleDto(sample.AtUtc, sample.CpuPercent, sample.WorkingSetBytes));
+                changes.Add(new LiveChange(LiveChangeKind.Run, sample.RunId));
+                break;
+        }
+    }
+
+    /// <summary>A run changed - and so did its agent, whose "running now" list shows the run.</summary>
+    private static void AddRunChanges(List<LiveChange> changes, LiveRun run)
+    {
+        changes.Add(new LiveChange(LiveChangeKind.Run, run.Id));
+        if (run.AgentId is { } agentId)
+        {
+            changes.Add(new LiveChange(LiveChangeKind.Agent, agentId));
         }
     }
 
     private void EvictExpired()
     {
-        var cutoff = timeProvider.GetUtcNow().UtcDateTime - Retention;
+        var cutoff = Now() - Retention;
         foreach (var (runId, run) in _runs)
         {
             if (!run.IsActive && run.CompletedAtUtc < cutoff)
@@ -380,4 +411,154 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
             }
         }
     }
+
+    // ---- syncing to the database --------------------------------------------------------
+
+    /// <summary>Takes every event not yet written to the database, oldest first. See <see cref="LiveStateSync"/>.</summary>
+    public IReadOnlyList<LiveEvent> DrainPendingEvents()
+    {
+        // Under the same lock as every command, so a batch is always cut between commands: the events
+        // of one (a sweep's offline agents and lost runs, say) are never split across two batches.
+        lock (_gate)
+        {
+            return _outbox.Drain();
+        }
+    }
+
+    /// <summary>Puts events that could not be written back, ahead of any that happened since.</summary>
+    public void RequeuePendingEvents(IReadOnlyList<LiveEvent> events)
+    {
+        lock (_gate)
+        {
+            _outbox.Requeue(events);
+        }
+    }
+
+    // ---- reads --------------------------------------------------------------------------
+
+    /// <summary>The runs in flight, newest first, from memory.</summary>
+    public async Task<IReadOnlyList<RunSummaryDto>> ActiveRunsAsync(Guid? pipelineId, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        return _runs.Values
+            .Where(run => run.IsActive && (pipelineId is null || run.PipelineId == pipelineId))
+            .Select(run => run.ToSummary())
+            .OrderByDescending(run => run.RequestedAtUtc)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Runs, newest first: what memory holds, merged with what the database has (which can be a few
+    /// seconds behind, and has runs older than memory keeps). Where both have a run, memory wins.
+    /// </summary>
+    public async Task<IReadOnlyList<RunSummaryDto>> ListRunsAsync(
+        ServerDbContext db, bool? active, Guid? pipelineId, int limit, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        var held = _runs.Values
+            .Where(run => (active is null || run.IsActive == active) && (pipelineId is null || run.PipelineId == pipelineId))
+            .Select(run => run.ToSummary())
+            .ToList();
+
+        if (active is true)
+        {
+            return [.. held.OrderByDescending(run => run.RequestedAtUtc).Take(limit)];
+        }
+
+        var heldIds = _runs.Keys.ToHashSet();
+        var stored = await RunQueries.ListAsync(db, active, pipelineId, limit, cancellationToken).ConfigureAwait(false);
+
+        return [.. held.Concat(stored.Where(run => !heldIds.Contains(run.Id))).OrderByDescending(run => run.RequestedAtUtc).Take(limit)];
+    }
+
+    /// <summary>One run with its stages and samples: from memory if it is held, otherwise from the database.</summary>
+    public async Task<RunDetailDto?> GetRunAsync(ServerDbContext db, Guid runId, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        return TryGetRun(runId) ?? await RunQueries.LoadDetailAsync(db, runId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Whether a run is held - which every run in flight is. Waits for the state to be loaded.</summary>
+    public async Task<bool> HoldsRunAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+        return _runs.ContainsKey(runId);
+    }
+
+    /// <summary>One run's summary, if it is held in memory.</summary>
+    public RunSummaryDto? TryGetRunSummary(Guid runId) => _runs.TryGetValue(runId, out var run) ? run.ToSummary() : null;
+
+    /// <summary>One run with its stages and samples, if it is held in memory.</summary>
+    public RunDetailDto? TryGetRun(Guid runId) => _runs.TryGetValue(runId, out var run) ? run.ToDetail() : null;
+
+    /// <summary>How many runs of <paramref name="pipelineId"/> are in flight.</summary>
+    public async Task<int> ActiveRunCountAsync(Guid pipelineId, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        return _runs.Values.Count(run => run.PipelineId == pipelineId && run.IsActive);
+    }
+
+    /// <summary>
+    /// The latest run of <paramref name="pipelineId"/>: from memory when it has one in flight or
+    /// recent, otherwise from the database.
+    /// </summary>
+    public async Task<RunSummaryDto?> LastRunAsync(ServerDbContext db, Guid pipelineId, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        var held = _runs.Values
+            .Where(run => run.PipelineId == pipelineId)
+            .Select(run => run.ToSummary())
+            .OrderByDescending(run => run.RequestedAtUtc)
+            .FirstOrDefault();
+
+        return held ?? await RunQueries.LastRunAsync(db, pipelineId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The stage names of <paramref name="pipelineId"/>'s last successful run, in order - what a new
+    /// run of it is expected to go through. From memory when it holds such a run, otherwise the database.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ExpectedStagesAsync(ServerDbContext db, Guid pipelineId, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        var lastSucceeded = _runs.Values
+            .Where(run => run.PipelineId == pipelineId && run.Status == "Succeeded")
+            .OrderByDescending(run => run.CompletedAtUtc)
+            .Select(run => run.ToDetail())
+            .FirstOrDefault();
+
+        return lastSucceeded is not null
+            ? lastSucceeded.Stages.Select(stage => stage.Name).ToList()
+            : await RunQueries.ExpectedStageNamesAsync(db, pipelineId, null, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Every agent, by machine name, from memory.</summary>
+    public async Task<IReadOnlyList<AgentDto>> ListAgentsAsync(CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        var now = timeProvider.GetUtcNow();
+        return _agents.Values
+            .OrderBy(agent => agent.MachineName, StringComparer.Ordinal)
+            .ThenBy(agent => agent.LastHeartbeatAtUtc)
+            .Select(agent => agent.ToDto(now, ActiveRunsOf(agent.Id)))
+            .ToList();
+    }
+
+    /// <summary>One agent, if it is held in memory.</summary>
+    public AgentDto? TryGetAgent(Guid agentId) =>
+        _agents.TryGetValue(agentId, out var agent) ? agent.ToDto(timeProvider.GetUtcNow(), ActiveRunsOf(agentId)) : null;
+
+    private List<RunSummaryDto> ActiveRunsOf(Guid agentId) =>
+        _runs.Values
+            .Where(run => run.IsActive && run.AgentId == agentId)
+            .Select(run => run.ToSummary())
+            .OrderByDescending(run => run.RequestedAtUtc)
+            .ToList();
 }

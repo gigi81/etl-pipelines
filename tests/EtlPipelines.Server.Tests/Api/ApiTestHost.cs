@@ -78,13 +78,26 @@ internal sealed class ApiTestHost : IAsyncDisposable
 
         using (var scope = app.Services.CreateScope())
         {
-            await scope.ServiceProvider.GetRequiredService<ServerDbContext>().Database.EnsureCreatedAsync();
+            var context = scope.ServiceProvider.GetRequiredService<ServerDbContext>();
+            await context.Database.EnsureCreatedAsync();
+            await live.LoadAsync(context, CancellationToken.None);
         }
 
         var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
         var client = new HttpClient { BaseAddress = new Uri(address), Timeout = TimeSpan.FromSeconds(30) };
 
         return new ApiTestHost(app, keepAlive, connectionString, client, connections, live);
+    }
+
+    /// <summary>
+    /// Loads the server's in-memory state from the database as it is now - what a restart does. The
+    /// seeding helpers write the database directly, as a previous run of the server would have left
+    /// it, so each ends with this; a test that writes the database itself calls it too.
+    /// </summary>
+    public async Task ReloadAsync()
+    {
+        await using var context = NewContext();
+        await Live.LoadAsync(context, CancellationToken.None);
     }
 
     /// <summary>A fresh context on the same database the API reads.</summary>
@@ -106,6 +119,7 @@ internal sealed class ApiTestHost : IAsyncDisposable
         var pipeline = new Pipeline { Id = Guid.NewGuid(), PackageVersionId = packageVersion.Id, Name = name, CreatedAt = DateTime.UtcNow };
         context.AddRange(package, packageVersion, pipeline);
         await context.SaveChangesAsync();
+        await ReloadAsync();
         return pipeline.Id;
     }
 
@@ -132,6 +146,7 @@ internal sealed class ApiTestHost : IAsyncDisposable
         };
         context.Agents.Add(agent);
         await context.SaveChangesAsync();
+        await ReloadAsync();
         return agent.Id;
     }
 
@@ -171,6 +186,7 @@ internal sealed class ApiTestHost : IAsyncDisposable
         }
 
         await context.SaveChangesAsync();
+        await ReloadAsync();
         return run.Id;
     }
 

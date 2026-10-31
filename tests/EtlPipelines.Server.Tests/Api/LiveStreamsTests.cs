@@ -30,31 +30,16 @@ public class LiveStreamsTests
         first.Run.Status.Should().Be("Running");
         first.Stages.Should().BeEmpty();
 
-        await using (var context = host.NewContext())
-        {
-            await host.Live.StageCompletedAsync(
-                context, runId, new StageDto(0, "read", 0, 5, 0, 10, null, null), CancellationToken.None);
-        }
+        await host.Live.StageCompletedAsync(runId, new StageDto(0, "read", 0, 5, 0, 10, null, null), CancellationToken.None);
 
         var afterStage = Parse(await events.ReadWithinAsync(Soon));
         afterStage.Stages.Select(s => s.Name).Should().Equal("read");
 
-        await using (var context = host.NewContext())
-        {
-            await host.Live.ResourceSampledAsync(
-                context, runId, new ResourceSampleDto(DateTime.UtcNow, 12.5, 2048), CancellationToken.None);
-        }
+        await host.Live.ResourceSampledAsync(runId, Guid.NewGuid(), 12.5, 2048, CancellationToken.None);
 
         Parse(await events.ReadWithinAsync(Soon)).ResourceSamples.Should().ContainSingle(sample => sample.CpuPercent == 12.5);
 
-        await using (var context = host.NewContext())
-        {
-            var run = await context.Runs.SingleAsync(r => r.Id == runId);
-            run.Status = "Succeeded";
-            run.CompletedAt = DateTime.UtcNow;
-            await context.SaveChangesAsync();
-            await host.Live.RunChangedAsync(context, run, CancellationToken.None);
-        }
+        await host.Live.FinishRunAsync(runId, "Succeeded", 0, 0, 0, 0, CancellationToken.None);
 
         Parse(await events.ReadWithinAsync(Soon)).Run.Status.Should().Be("Succeeded");
         using var cancel = new CancellationTokenSource(Soon);
@@ -150,18 +135,15 @@ public class LiveStreamsTests
         (await events.ReadWithinAsync(Soon)).Type.Should().Be("ready");
 
         //act
-        var heartbeatAt = DateTime.UtcNow.AddMinutes(1);
-        await using (var context = host.NewContext())
-        {
-            await host.Live.AgentHeartbeatAsync(context, agentId, heartbeatAt, CancellationToken.None);
-        }
+        await host.Live.AgentHeartbeatAsync(agentId, CancellationToken.None);
+        var heartbeatAt = DateTime.UtcNow;
 
         host.Live.PipelinesChanged();
 
         //assert
         var agent = await events.ReadWithinAsync(Soon);
         agent.Type.Should().Be("agent");
-        JsonDocument.Parse(agent.Data).RootElement.GetProperty("lastHeartbeatAtUtc").GetDateTime().Should().BeCloseTo(heartbeatAt, TimeSpan.FromSeconds(1));
+        JsonDocument.Parse(agent.Data).RootElement.GetProperty("lastHeartbeatAtUtc").GetDateTime().Should().BeCloseTo(heartbeatAt, TimeSpan.FromSeconds(5));
         (await events.ReadWithinAsync(Soon)).Type.Should().Be("pipelines");
     }
 

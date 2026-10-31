@@ -1,5 +1,5 @@
 using EtlPipelines.Server.Contracts;
-using EtlPipelines.Server.Database.Entities;
+using EtlPipelines.Server.Live.Events;
 
 namespace EtlPipelines.Server.Live;
 
@@ -39,27 +39,64 @@ internal sealed class LiveRun
 
     public DateTime RequestedAtUtc => _run.RequestedAtUtc;
 
+    public DateTime? StartedAtUtc => Read(run => run.StartedAtUtc);
+
     public DateTime? CompletedAtUtc => Read(run => run.CompletedAtUtc);
 
     /// <summary>A live run holding what <paramref name="detail"/> (read from the database) says.</summary>
     public static LiveRun From(RunDetailDto detail) => new(detail);
 
-    /// <summary>Copies the status, times and row counts of <paramref name="run"/> (a database row) onto this run.</summary>
-    public void Apply(Run run, string? agentName)
+    /// <summary>A run that has just been created and dispatched.</summary>
+    public static LiveRun Create(RunCreatedEvent created, string? agentName) =>
+        new(new RunDetailDto(
+            new RunSummaryDto(
+                created.RunId,
+                created.PipelineId,
+                created.PipelineName,
+                created.PackageId,
+                created.PackageVersion,
+                created.AgentId,
+                agentName,
+                "Dispatched",
+                created.AtUtc,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                0,
+                created.ExpectedStages.Count > 0 ? created.ExpectedStages.Count : null),
+            [],
+            created.ExpectedStages,
+            []));
+
+    /// <summary>The run's process started: it is running, and has a start time if it had none.</summary>
+    public void Start(DateTime at)
     {
         lock (_gate)
         {
             _run = _run with
             {
-                AgentId = run.AgentId,
-                AgentName = run.AgentId == _run.AgentId ? _run.AgentName : agentName,
-                Status = run.Status,
-                StartedAtUtc = Utc(run.StartedAt),
-                CompletedAtUtc = Utc(run.CompletedAt),
-                ExitCode = run.ExitCode,
-                RowsRead = run.RowsRead,
-                RowsWritten = run.RowsWritten,
-                RowsFailed = run.RowsFailed,
+                StartedAtUtc = _run.StartedAtUtc ?? at,
+                Status = _run.Status is "Queued" or "Dispatched" ? "Running" : _run.Status,
+            };
+        }
+    }
+
+    /// <summary>The run ended. A null exit code or row count leaves the one the run has.</summary>
+    public void Finish(string status, int? exitCode, long? rowsRead, long? rowsWritten, long? rowsFailed, DateTime at)
+    {
+        lock (_gate)
+        {
+            _run = _run with
+            {
+                Status = status,
+                CompletedAtUtc = at,
+                ExitCode = exitCode ?? _run.ExitCode,
+                RowsRead = rowsRead ?? _run.RowsRead,
+                RowsWritten = rowsWritten ?? _run.RowsWritten,
+                RowsFailed = rowsFailed ?? _run.RowsFailed,
             };
         }
     }
@@ -122,7 +159,4 @@ internal sealed class LiveRun
             return read(_run);
         }
     }
-
-    private static DateTime? Utc(DateTime? value) =>
-        value is { } dateTime ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc) : null;
 }
