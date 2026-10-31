@@ -464,8 +464,7 @@ solution builds. **Verification:** `dotnet build --configuration Release` clean.
 
 **As shipped (#6):** as planned — the protos above, with every message fleshed out and commented in
 `protos/v1/`, and every RPC initially answering `UNIMPLEMENTED` through one shared helper
-(`ServiceScaffolding`). Later work replaced those stubs one by one; `UninstallPackage` and
-`UpdatePackage` still return `UNIMPLEMENTED` today (see "Other gaps").
+(`ServiceScaffolding`). Later work replaced those stubs one by one; none is left.
 
 ## Phase 3 — `EtlPipelines.Server.Database`
 
@@ -840,9 +839,10 @@ across every phase. Last, because documenting a still-moving target is wasted ef
 - **Every agent installs its own copy of a package** — the install-delegation decision removes
   double-installation on the *install-validation* path (one agent does it once), but execution-time
   installation still has no cache shared across agents. Deferred; a shared cache volume or server-side
-  proxying is a later phase's concern, not a blocker to a working system. *(As shipped this is
-  sharper than stated: an agent never installs at execution time at all, so a run dispatched to an
-  agent that lacks the package — or evicted it — fails with exit code `-1`.)*
+  proxying is a later phase's concern, not a blocker to a working system. *(As shipped in Phase 6 this
+  was sharper than stated: an agent never installed at execution time, so a run dispatched to an
+  agent that lacked the package — or evicted it — failed with exit code `-1`. Since then an agent
+  installs a missing version on demand, from feed URLs carried in the work item.)*
 
 Left open by the phases as shipped (operator-facing detail in
 [`docs/articles/server/limitations.md`](docs/articles/server/limitations.md)):
@@ -851,8 +851,9 @@ Left open by the phases as shipped (operator-facing detail in
   trusted network.
 - **Configuration entries are global** — every run receives every entry; per-pipeline scoping needs
   a schema change.
-- **Agent selection is arbitrary** — any connected agent; `Agents.Tags` is recorded but unused, and
-  selection is unaware of which agent has which package installed.
+- **Agent selection only looks at installs** — `ExecutePipeline` prefers an agent known (in memory)
+  to have the version, otherwise any connected agent, which installs it on demand; `Agents.Tags` is
+  recorded but unused.
 - **One work item at a time per agent** — `AgentRegistration` handles its `Subscribe` stream
   sequentially, so a long run delays installs behind it (which time out after five minutes).
 - **Agents do not reconnect in-process** — a dropped `Subscribe` stream ends the agent process; the
@@ -862,9 +863,8 @@ Left open by the phases as shipped (operator-facing detail in
   from `Runs`/`StageResults`.)
 - **No per-run liveness** — `PipelineExecutionService.Heartbeat` records nothing, so a hung process on
   a healthy agent stays `Running`.
-- **`UninstallPackage`, `UpdatePackage` are unimplemented** — still `UNIMPLEMENTED`
-  stubs. `UpdatePackage`'s intended semantics are in the first bullet of this section.
-- **Cache eviction does not tell the Server** — and nothing reinstalls an evicted version on demand.
+- **Cache eviction does not tell the Server** — harmless for correctness now that an agent reinstalls
+  a missing version on demand, but the Server may keep preferring an agent that has to reinstall.
 
 ## Verification (whole subsystem)
 

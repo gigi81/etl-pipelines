@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using Moq.Protected;
+using NuGet.Versioning;
 
 namespace EtlPipelines.Server.Tests.Services;
 
@@ -102,6 +103,136 @@ public class ManagementServiceImplTests
         run.PipelineId.Should().Be(pipelineId);
         run.AgentId.Should().Be(Guid.Parse(agentId));
         run.Status.Should().Be("Dispatched");
+    }
+
+    [Test]
+    public async Task ExecutePipeline_prefers_the_agent_known_to_have_the_version_and_sends_the_feed_urls()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        var pipelineId = await SeedInstalledPipelineAsync(context, "csv-to-database");
+        context.NuGetFeeds.Add(new NuGetFeed { Id = Guid.NewGuid(), Url = "http://nuget:8080/v3/index.json", Ordinal = 0 });
+
+        var withoutIt = await SeedAgentAsync(context);
+        var withIt = await SeedAgentAsync(context);
+        var connections = new AgentConnectionRegistry();
+        var withoutItChannel = Channel.CreateUnbounded<WorkItem>();
+        var withItChannel = Channel.CreateUnbounded<WorkItem>();
+        connections.Connect(withoutIt, withoutItChannel);
+        connections.Connect(withIt, withItChannel);
+        connections.MarkInstalled(withIt, "EtlPipelines.Samples.CsvToDatabase", "1.0.0");
+
+        var service = Create(context, connections: connections);
+
+        //act
+        await service.ExecutePipeline(new ExecutePipelineRequest { PipelineId = pipelineId.ToString() }, TestServerCallContext());
+
+        //assert
+        withoutItChannel.Reader.TryRead(out _).Should().BeFalse();
+        withItChannel.Reader.TryRead(out var workItem).Should().BeTrue();
+        workItem!.ExecutePipeline.FeedUrls.Should().Equal("http://nuget:8080/v3/index.json");
+    }
+
+    [Test]
+    public async Task UninstallPackage_hides_the_package_s_pipelines_and_stops_them_running()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        var pipelineId = await SeedInstalledPipelineAsync(context, "csv-to-database");
+        var connections = new AgentConnectionRegistry();
+        connections.Connect(await SeedAgentAsync(context), Channel.CreateUnbounded<WorkItem>());
+        var service = Create(context, connections: connections);
+
+        //act
+        await service.UninstallPackage(new UninstallPackageRequest { PackageId = "EtlPipelines.Samples.CsvToDatabase" }, TestServerCallContext());
+
+        //assert
+        (await service.ListInstalledPipelines(new Empty(), TestServerCallContext())).Pipelines.Should().BeEmpty();
+        var execute = () => service.ExecutePipeline(new ExecutePipelineRequest { PipelineId = pipelineId.ToString() }, TestServerCallContext());
+        (await execute.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        context.ChangeTracker.Clear();
+        (await context.PackageVersions.SingleAsync()).Status.Should().Be(PackageVersionStatus.Uninstalled);
+    }
+
+    [Test]
+    public async Task UninstallPackage_fails_with_NotFound_for_a_package_that_is_not_installed()
+    {
+        //arrange
+        var service = await CreateAsync();
+
+        //act
+        var act = () => service.UninstallPackage(new UninstallPackageRequest { PackageId = "Nope" }, TestServerCallContext());
+
+        //assert
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task UpdatePackage_fails_with_FailedPrecondition_for_a_package_that_is_not_installed()
+    {
+        //arrange
+        var service = await CreateAsync();
+
+        //act
+        var act = () => service.UpdatePackage(new UpdatePackageRequest { PackageId = "Nope" }, TestServerCallContext());
+
+        //assert
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+    }
+
+    [Test]
+    public async Task UpdatePackage_already_on_the_latest_version_retires_older_ones_without_an_agent()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        await SeedInstalledPipelineAsync(context, "csv-to-database", version: "1.0.0");
+        await SeedInstalledPipelineAsync(context, "csv-to-database", version: "2.0.0");
+        context.NuGetFeeds.Add(new NuGetFeed { Id = Guid.NewGuid(), Url = "http://nuget:8080/v3/index.json", Ordinal = 0 });
+        await context.SaveChangesAsync();
+        var service = Create(context, feedClient: FeedReportingLatest("2.0.0"));
+
+        //act
+        var response = await service.UpdatePackage(new UpdatePackageRequest { PackageId = "EtlPipelines.Samples.CsvToDatabase" }, TestServerCallContext());
+
+        //assert
+        response.Version.Should().Be("2.0.0");
+        response.PipelineNames.Should().Equal("csv-to-database");
+        var listed = (await service.ListInstalledPipelines(new Empty(), TestServerCallContext())).Pipelines;
+        listed.Should().ContainSingle().Which.PackageVersion.Should().Be("2.0.0");
+    }
+
+    [Test]
+    public async Task UpdatePackage_installs_the_latest_version_on_an_agent_then_supersedes_the_old_one()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        await SeedInstalledPipelineAsync(context, "csv-to-database", version: "1.0.0");
+        context.NuGetFeeds.Add(new NuGetFeed { Id = Guid.NewGuid(), Url = "http://nuget:8080/v3/index.json", Ordinal = 0 });
+        await context.SaveChangesAsync();
+
+        var agentId = await SeedAgentAsync(context);
+        var connections = new AgentConnectionRegistry();
+        var channel = Channel.CreateUnbounded<WorkItem>();
+        connections.Connect(agentId, channel);
+
+        var service = Create(context, connections: connections, feedClient: FeedReportingLatest("2.0.0"));
+        var agentService = new AgentServiceImpl(context, connections, new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()), new RunStatusStore());
+
+        //act - the agent's side: take the install work item and report it installed
+        var update = service.UpdatePackage(new UpdatePackageRequest { PackageId = "EtlPipelines.Samples.CsvToDatabase" }, TestServerCallContext());
+        var workItem = await channel.Reader.ReadAsync();
+        await agentService.ReportInstallResult(
+            new ReportInstallResultRequest { AgentId = agentId, WorkItemId = workItem.WorkItemId, Succeeded = true, PipelineNames = { "csv-to-database" } },
+            TestServerCallContext());
+        var response = await update;
+
+        //assert
+        workItem.InstallPackage.Version.Should().Be("2.0.0");
+        response.Version.Should().Be("2.0.0");
+        var listed = (await service.ListInstalledPipelines(new Empty(), TestServerCallContext())).Pipelines;
+        listed.Should().ContainSingle().Which.PackageVersion.Should().Be("2.0.0");
+        context.ChangeTracker.Clear();
+        (await context.PackageVersions.SingleAsync(v => v.Version == "1.0.0")).Status.Should().Be(PackageVersionStatus.Superseded);
     }
 
     [Test]
@@ -265,13 +396,14 @@ public class ManagementServiceImplTests
         ServerDbContext context,
         AgentConnectionRegistry? connections = null,
         IDataProtectionProvider? dataProtectionProvider = null,
-        RunStatusStore? statusStore = null)
+        RunStatusStore? statusStore = null,
+        INuGetFeedClient? feedClient = null)
     {
         var registry = connections ?? new AgentConnectionRegistry();
 
         return new ManagementServiceImpl(
             context,
-            new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()),
+            new PackageCatalogService(context, feedClient ?? Mock.Of<INuGetFeedClient>()),
             new SecretsStore(context, dataProtectionProvider ?? Mock.Of<IDataProtectionProvider>()),
             registry,
             new RunDispatcher(context, registry, "http://localhost:5000"),
@@ -279,19 +411,47 @@ public class ManagementServiceImplTests
     }
 
     /// <summary>Seeds one installed pipeline (package + version + pipeline row) and returns its id.</summary>
-    private static async Task<Guid> SeedInstalledPipelineAsync(ServerDbContext context, string pipelineName)
+    private static async Task<Guid> SeedInstalledPipelineAsync(ServerDbContext context, string pipelineName, string version = "1.0.0")
     {
-        var packageId = Guid.NewGuid();
+        var package = await context.Packages.SingleOrDefaultAsync(p => p.NugetPackageId == "EtlPipelines.Samples.CsvToDatabase");
+        var packageId = package?.Id ?? Guid.NewGuid();
         var versionId = Guid.NewGuid();
         var pipelineId = Guid.NewGuid();
 
-        context.Packages.Add(new Package { Id = packageId, NugetPackageId = "EtlPipelines.Samples.CsvToDatabase", CreatedAt = DateTime.UtcNow });
-        context.PackageVersions.Add(new PackageVersion { Id = versionId, PackageId = packageId, Version = "1.0.0", InstalledAt = DateTime.UtcNow, Status = "Installed" });
+        if (package is null)
+        {
+            context.Packages.Add(new Package { Id = packageId, NugetPackageId = "EtlPipelines.Samples.CsvToDatabase", CreatedAt = DateTime.UtcNow });
+        }
+
+        context.PackageVersions.Add(new PackageVersion { Id = versionId, PackageId = packageId, Version = version, InstalledAt = DateTime.UtcNow, Status = "Installed" });
         context.Pipelines.Add(new Pipeline { Id = pipelineId, PackageVersionId = versionId, Name = pipelineName, CreatedAt = DateTime.UtcNow });
         await context.SaveChangesAsync();
         context.ChangeTracker.Clear();
 
         return pipelineId;
+    }
+
+    /// <summary>Seeds one online agent row and returns its id.</summary>
+    private static async Task<string> SeedAgentAsync(ServerDbContext context)
+    {
+        var id = Guid.NewGuid();
+        context.Agents.Add(new Database.Entities.Agent
+        {
+            Id = id, MachineName = "agent", Tags = [], Version = "1.0.0", Status = "Online", LastHeartbeatAt = DateTime.UtcNow,
+        });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+        return id.ToString();
+    }
+
+    /// <summary>A feed client whose latest stable version of every package is <paramref name="version"/>.</summary>
+    private static INuGetFeedClient FeedReportingLatest(string version)
+    {
+        var feedClient = new Mock<INuGetFeedClient>();
+        feedClient
+            .Setup(client => client.GetLatestVersionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(NuGetVersion.Parse(version));
+        return feedClient.Object;
     }
 
     /// <summary>

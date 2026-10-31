@@ -1,5 +1,6 @@
 using EtlPipelines.AgentExecution.V1;
 using EtlPipelines.Server.Agents;
+using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
 using EtlPipelines.Server.Services;
@@ -24,10 +25,16 @@ namespace EtlPipelines.Server.Runs;
 /// </param>
 public sealed class RunDispatcher(ServerDbContext dbContext, AgentConnectionRegistry connections, string serverUrl)
 {
-    /// <summary>Dispatches <paramref name="pipelineId"/> to a connected agent and returns the new run's id.</summary>
+    /// <summary>
+    /// Dispatches <paramref name="pipelineId"/> to a connected agent and returns the new run's id.
+    /// An agent known to have the pipeline's package version installed is preferred; any other
+    /// connected agent installs it on demand from the feed URLs the work item carries.
+    /// </summary>
     /// <exception cref="RpcException">
     /// <see cref="StatusCode.NotFound"/> when no installed pipeline has that id;
-    /// <see cref="StatusCode.FailedPrecondition"/> (<see cref="ServiceScaffolding.NoAgentsAvailable"/>) when no agent is connected to dispatch to.
+    /// <see cref="StatusCode.FailedPrecondition"/> when its package version was uninstalled or
+    /// superseded by <c>UpdatePackage</c>, or (<see cref="ServiceScaffolding.NoAgentsAvailable"/>)
+    /// when no agent is connected to dispatch to.
     /// </exception>
     public async Task<Guid> DispatchAsync(Guid pipelineId, CancellationToken cancellationToken)
     {
@@ -41,10 +48,28 @@ public sealed class RunDispatcher(ServerDbContext dbContext, AgentConnectionRegi
             throw new RpcException(new Status(StatusCode.NotFound, $"No installed pipeline '{pipelineId}' is known to this server."));
         }
 
-        if (!connections.TryGetAnyConnectedAgentId(out var agentId))
+        if (pipeline.PackageVersion.Status != PackageVersionStatus.Installed)
+        {
+            throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"Pipeline '{pipelineId}' belongs to {pipeline.PackageVersion.Package.NugetPackageId} " +
+                $"{pipeline.PackageVersion.Version}, which is {pipeline.PackageVersion.Status}, not {PackageVersionStatus.Installed}."));
+        }
+
+        var packageId = pipeline.PackageVersion.Package.NugetPackageId;
+        var version = pipeline.PackageVersion.Version;
+
+        if (!connections.TryGetConnectedAgentIdFor(packageId, version, out var agentId))
         {
             throw ServiceScaffolding.NoAgentsAvailable();
         }
+
+        var feedUrls = await dbContext.NuGetFeeds
+            .AsNoTracking()
+            .OrderBy(feed => feed.Ordinal)
+            .Select(feed => feed.Url)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         var run = new Run
         {
@@ -58,14 +83,20 @@ public sealed class RunDispatcher(ServerDbContext dbContext, AgentConnectionRegi
         dbContext.Runs.Add(run);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        connections.DispatchExecutePipeline(agentId, new ExecutePipelineWorkItem
+        var workItem = new ExecutePipelineWorkItem
         {
             SessionId = run.Id.ToString(),
-            PackageId = pipeline.PackageVersion.Package.NugetPackageId,
-            PackageVersion = pipeline.PackageVersion.Version,
+            PackageId = packageId,
+            PackageVersion = version,
             PipelineName = pipeline.Name,
             ServerUrl = serverUrl,
-        });
+        };
+        workItem.FeedUrls.AddRange(feedUrls);
+
+        connections.DispatchExecutePipeline(agentId, workItem);
+
+        // Either it already had it, or it installs it before running.
+        connections.MarkInstalled(agentId, packageId, version);
 
         return run.Id;
     }

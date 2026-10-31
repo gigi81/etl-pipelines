@@ -109,6 +109,11 @@ public sealed class AgentServiceImpl(
                 request.Succeeded,
                 request.PipelineNames,
                 context.CancellationToken).ConfigureAwait(false);
+
+            if (request.Succeeded)
+            {
+                connections.MarkInstalled(request.AgentId, pending.PackageId, pending.Version);
+            }
         }
 
         connections.TryCompleteInstall(

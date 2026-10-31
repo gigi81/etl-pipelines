@@ -27,10 +27,9 @@ these is in [docs/articles/server/limitations.md](docs/articles/server/limitatio
 
 ## Scheduling and agents
 
-- [ ] **Install-aware agent selection.** `InstallPackage` and `ExecutePipeline` both pick *any*
-  connected agent (`AgentConnectionRegistry.TryGetAnyConnectedAgentId`). A run sent to an agent
-  without the package, or one that evicted it, fails with exit code -1. Either track installs per
-  agent and dispatch accordingly, or install on demand when a run arrives.
+- [x] **Install-aware agent selection.** `ExecutePipeline` prefers an agent known to have the version
+  (tracked in memory per connection), and an agent without it installs it on demand from the feed
+  URLs the work item now carries.
 - [ ] **Use `Agents.Tags` for selection.** Tags are recorded at registration and never used.
 - [ ] **Concurrent work items per agent.** `AgentRegistration` handles its `Subscribe` stream one
   item at a time, so a long run blocks installs, which time out after 5 minutes, and other runs.
@@ -54,17 +53,18 @@ these is in [docs/articles/server/limitations.md](docs/articles/server/limitatio
 ## Missing API surface
 
 - [x] **`ManagementService.ListAgents`**: reads the `Agents` table.
-- [ ] **`ManagementService.UninstallPackage`**: still `UNIMPLEMENTED`.
-- [ ] **`ManagementService.UpdatePackage`**: still `UNIMPLEMENTED`. The intended behaviour per
-  SERVER.md: resolve the latest stable version on the feed, and leave in-flight runs on the old one.
+- [x] **`ManagementService.UninstallPackage`**: marks the versions `Uninstalled`.
+- [x] **`ManagementService.UpdatePackage`**: installs the latest stable version and marks older ones
+  `Superseded`; in-flight runs are untouched.
 - [x] **Wire `ResourceMonitor` in.** The agent samples each pipeline process every
   `Agent:ResourceSampleInterval` and reports `RESOURCE_SAMPLE`.
 - [x] **gRPC server reflection**, so `grpcurl` works without the `.proto` files.
 
 ## Caches
 
-- [ ] **Tell the Server about evictions.** `CacheEvictor` deletes versions silently, so the catalog
-  still lists them as installed.
+- [ ] **Tell the Server about evictions.** `CacheEvictor` deletes versions silently. Runs no longer
+  fail because of it (the agent reinstalls on demand), but the Server may keep preferring an agent
+  that has to reinstall.
 - [ ] **Shared package cache across agents.** Every agent machine downloads and installs its own copy.
 
 ## Housekeeping

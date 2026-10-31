@@ -124,18 +124,33 @@ public sealed class AgentRegistration(
     }
 
     /// <summary>
-    /// Runs an already-installed pipeline package's shim for <paramref name="work"/> - the run
+    /// Runs a pipeline package's shim for <paramref name="work"/> - the run
     /// itself reports its own configuration pull and progress straight to
     /// <c>PipelineExecutionService</c> (via the launched process's own <c>EtlPipelines.GrpcClient</c>,
     /// SERVER.md Phase 6), so this only ever tells the server when the process started and when it
     /// exited, via <c>ReportExecutionStatus</c> - a fallback signal for a run whose process never
-    /// managed to report anything itself.
+    /// managed to report anything itself. A package version missing from this agent's cache is
+    /// installed first, from the work item's feed URLs.
     /// </summary>
     private async Task HandleExecutePipelineAsync(string agentId, ExecutePipelineWorkItem work, CancellationToken cancellationToken)
     {
         try
         {
-            var shimPath = packageInstaller.GetInstalledShimPath(work.PackageId, work.PackageVersion);
+            // Not in the cache (never installed on this agent, or evicted since): install it now
+            // from the feed the server sent, rather than failing a run the server had no way of
+            // knowing this agent couldn't serve. No feed URLs means an older server - keep the old
+            // behaviour and fail clearly.
+            var shimPath = packageInstaller.TryGetInstalledShimPath(work.PackageId, work.PackageVersion);
+            if (shimPath is null && work.FeedUrls.Count > 0)
+            {
+                logger.LogInformation(
+                    "Installing {PackageId} {Version} on demand for session {SessionId}", work.PackageId, work.PackageVersion, work.SessionId);
+                shimPath = await packageInstaller
+                    .InstallAsync(work.PackageId, work.PackageVersion, work.FeedUrls, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            shimPath ??= packageInstaller.GetInstalledShimPath(work.PackageId, work.PackageVersion);
 
             await client.ReportExecutionStatusAsync(
                 new ReportExecutionStatusRequest

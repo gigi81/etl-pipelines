@@ -68,6 +68,9 @@ message ExecutePipelineWorkItem {
   // Where the launched process's EtlPipelines.GrpcClient calls back to - not necessarily this
   // same AgentService endpoint (Phase 6's --server-url).
   string server_url = 5;
+  // Same as InstallPackageWorkItem.feed_urls: where the agent installs package_id/package_version
+  // from when it is not already in its cache (never installed there, or evicted since).
+  repeated string feed_urls = 6;
 }
 
 message ReportInstallResultRequest {

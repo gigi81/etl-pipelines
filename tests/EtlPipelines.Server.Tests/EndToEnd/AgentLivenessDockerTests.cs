@@ -49,6 +49,11 @@ public class AgentLivenessDockerTests(PostgreSqlFixture postgres, BagetterFixtur
 
         await using var server = EtlPipelines.Server.ServerApplication.Build([
             "--Server:Port", "0",
+            // Both the Server's and the Agent's appsettings.json are copied into this test's
+            // output, and whichever lands last wins. The Server's sets PublicUrl to the
+            // docker-compose hostname "server", which a pipeline process launched here cannot
+            // resolve - empty makes ResolvePublicUrl use Kestrel's real bound address instead.
+            "--Server:PublicUrl", "",
             "--ConnectionStrings:Server", postgres.ConnectionString,
             "--NuGetFeed:Url", bagetter.FeedUrl,
             // Short enough that this test does not need to wait long for the sweep to notice;

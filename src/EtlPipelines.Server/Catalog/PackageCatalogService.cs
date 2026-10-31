@@ -16,6 +16,7 @@ public sealed class PackageCatalogService(ServerDbContext context, INuGetFeedCli
     public async Task<IReadOnlyList<InstalledPipelineInfo>> ListInstalledPipelinesAsync(CancellationToken cancellationToken) =>
         await context.Pipelines
             .AsNoTracking()
+            .Where(pipeline => pipeline.PackageVersion.Status == PackageVersionStatus.Installed)
             .Select(pipeline => new InstalledPipelineInfo(
                 pipeline.Id,
                 pipeline.Name,
@@ -56,7 +57,7 @@ public sealed class PackageCatalogService(ServerDbContext context, INuGetFeedCli
             {
                 package.NugetPackageId,
                 InstalledVersion = package.PackageVersions
-                    .Where(version => version.Status == "Installed")
+                    .Where(version => version.Status == PackageVersionStatus.Installed)
                     .OrderByDescending(version => version.InstalledAt)
                     .Select(version => version.Version)
                     .FirstOrDefault(),
@@ -169,13 +170,13 @@ public sealed class PackageCatalogService(ServerDbContext context, INuGetFeedCli
                 PackageId = package.Id,
                 Version = version,
                 InstalledAt = DateTime.UtcNow,
-                Status = succeeded ? "Installed" : "Failed",
+                Status = succeeded ? PackageVersionStatus.Installed : PackageVersionStatus.Failed,
             };
             context.PackageVersions.Add(packageVersion);
         }
         else if (succeeded)
         {
-            packageVersion.Status = "Installed";
+            packageVersion.Status = PackageVersionStatus.Installed;
             packageVersion.InstalledAt = DateTime.UtcNow;
         }
 
@@ -203,12 +204,77 @@ public sealed class PackageCatalogService(ServerDbContext context, INuGetFeedCli
         return packageVersion.Id;
     }
 
+    /// <summary>
+    /// Marks every installed version of <paramref name="packageId"/> <see cref="PackageVersionStatus.Uninstalled"/>.
+    /// The rows stay - <c>Runs</c> reference their pipelines - but they are no longer listed or executable.
+    /// </summary>
+    /// <returns>False when no version of <paramref name="packageId"/> is installed.</returns>
+    public async Task<bool> UninstallAsync(string packageId, CancellationToken cancellationToken)
+    {
+        var installed = await InstalledVersions(packageId).ToListAsync(cancellationToken).ConfigureAwait(false);
+        if (installed.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var version in installed)
+        {
+            version.Status = PackageVersionStatus.Uninstalled;
+        }
+
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// Every installed version of <paramref name="packageId"/> other than
+    /// <paramref name="currentVersion"/> becomes <see cref="PackageVersionStatus.Superseded"/> -
+    /// what makes <c>UpdatePackage</c> an update rather than a second install alongside the first.
+    /// </summary>
+    public async Task SupersedeOtherVersionsAsync(string packageId, string currentVersion, CancellationToken cancellationToken)
+    {
+        var older = await InstalledVersions(packageId)
+            .Where(version => version.Version != currentVersion)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var version in older)
+        {
+            version.Status = PackageVersionStatus.Superseded;
+        }
+
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// <paramref name="packageId"/> <paramref name="version"/> if it is currently installed: its
+    /// <c>PackageVersions</c> id and pipeline names. Null otherwise.
+    /// </summary>
+    public async Task<InstalledVersionInfo?> FindInstalledVersionAsync(string packageId, string version, CancellationToken cancellationToken) =>
+        await InstalledVersions(packageId)
+            .AsNoTracking()
+            .Where(v => v.Version == version)
+            .Select(v => new InstalledVersionInfo(v.Id, v.Pipelines.Select(p => p.Name).ToList()))
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+    /// <summary>Whether any version of <paramref name="packageId"/> is currently installed.</summary>
+    public Task<bool> IsInstalledAsync(string packageId, CancellationToken cancellationToken) =>
+        InstalledVersions(packageId).AnyAsync(cancellationToken);
+
+    private IQueryable<PackageVersion> InstalledVersions(string packageId) =>
+        context.PackageVersions.Where(version =>
+            version.Package.NugetPackageId == packageId && version.Status == PackageVersionStatus.Installed);
+
     private async Task<string?> GetFeedUrlAsync(CancellationToken cancellationToken) =>
         (await GetFeedUrlsAsync(cancellationToken).ConfigureAwait(false)).FirstOrDefault();
 }
 
 /// <summary>One installed pipeline, joined out to the package/version that registered it.</summary>
 public sealed record InstalledPipelineInfo(Guid PipelineId, string Name, string PackageId, string PackageVersion);
+
+/// <summary>One installed package version: its <c>PackageVersions</c> id and the pipelines it registered.</summary>
+public sealed record InstalledVersionInfo(Guid PackageVersionId, IReadOnlyList<string> PipelineNames);
 
 /// <summary>One installed package with a newer stable version available on the feed.</summary>
 public sealed record PackageUpdateInfo(string PackageId, string InstalledVersion, string LatestVersion);

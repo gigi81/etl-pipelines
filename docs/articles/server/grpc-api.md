@@ -21,8 +21,8 @@ and tooling surface.
 | `StreamRunProgress(run_id)` | ✅ | A server stream of `StageCompleted` events, then one `RunCompleted`, after which the stream ends. Events published before you subscribed are replayed first, so subscribing late loses nothing. A finished run is answered from `Runs` and `StageResults` once its in-memory history has been evicted (an hour after it completed), and returns `NOT_FOUND` for a `run_id` that does not exist. |
 | `SetConfigurationEntry(key, value)` | ✅ | Creates or replaces one encrypted configuration entry. See [Configuration](configuration.md#pipeline-configuration-entries). |
 | `ListAgents()` | ✅ | Every agent that has ever registered, with its tags, version, `ONLINE`/`OFFLINE` status and last heartbeat. A restarted agent registers again under a new id, so its old registration stays listed as `OFFLINE`. |
-| `UninstallPackage(package_id)` | ⛔ | Returns `UNIMPLEMENTED`. |
-| `UpdatePackage(package_id)` | ⛔ | Returns `UNIMPLEMENTED`. Until it exists, call `InstallPackage` with the newer version. |
+| `UninstallPackage(package_id)` | ✅ | Every installed version of the package stops being listed by `ListInstalledPipelines` and can no longer be executed (`FAILED_PRECONDITION`). Runs already in flight finish; agents' copies are left to cache eviction. `NOT_FOUND` if no version is installed. `InstallPackage` brings a version back. |
+| `UpdatePackage(package_id)` | ✅ | Installs the feed's latest stable version on a connected agent, then retires every older installed version, so the package's pipelines are listed and run at the new version only. Runs already in flight are not interrupted. Already on the latest version, it only retires the older ones and needs no agent. `FAILED_PRECONDITION` if the package is not installed. |
 
 ### Errors
 
