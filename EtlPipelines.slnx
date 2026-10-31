@@ -21,6 +21,7 @@
   </Folder>
   <Folder Name="/server/">
     <Project Path="src/EtlPipelines.Server/EtlPipelines.Server.csproj" />
+    <Project Path="src/EtlPipelines.Server.Contracts/EtlPipelines.Server.Contracts.csproj" />
     <Project Path="src/EtlPipelines.Server.Database/EtlPipelines.Server.Database.csproj" />
   </Folder>
   <Folder Name="/agent/">

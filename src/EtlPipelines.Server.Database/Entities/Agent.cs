@@ -17,6 +17,8 @@ public partial class Agent
 
     public DateTime LastHeartbeatAt { get; set; }
 
+    public string? Info { get; set; }
+
     public virtual ICollection<AgentResourceSample> AgentResourceSamples { get; set; } = new List<AgentResourceSample>();
 
     public virtual ICollection<Run> Runs { get; set; } = new List<Run>();

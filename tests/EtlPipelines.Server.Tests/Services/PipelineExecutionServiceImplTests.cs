@@ -1,22 +1,22 @@
-using EtlPipelines.Management.V1;
 using EtlPipelines.PipelineExecution.V1;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
-using EtlPipelines.Server.Runs;
+using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Secrets;
 using EtlPipelines.Server.Services;
+using EtlPipelines.Server.Tests.Live;
 using Grpc.Core;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.EntityFrameworkCore;
 using Moq;
+using Microsoft.EntityFrameworkCore;
 using Moq.Protected;
 
 namespace EtlPipelines.Server.Tests.Services;
 
 /// <summary>
 /// Proves <see cref="PipelineExecutionServiceImpl"/> - the narrowest, least-trusted of the three
-/// v1 services (SERVER.md Phase 6) - resolves <c>session_id</c> against a real <c>Runs</c> row,
-/// persists what it is told, and publishes to <see cref="RunStatusStore"/> along the way.
+/// v1 services - resolves <c>session_id</c> against the runs <see cref="LiveState"/> holds, and
+/// records what it is told there (not in the database, which <see cref="LiveStateSync"/> writes behind).
 /// </summary>
 [Category("Server")]
 public class PipelineExecutionServiceImplTests
@@ -25,7 +25,7 @@ public class PipelineExecutionServiceImplTests
     public async Task GetConfiguration_fails_with_NotFound_for_an_unknown_session()
     {
         //arrange
-        var service = Create(SqliteServerDbContext.Create());
+        var service = Create(SqliteServerDbContext.Create(), await TestLiveState.CreateAsync());
 
         //act
         var act = () => service.GetConfiguration(new GetConfigurationRequest { SessionId = Guid.NewGuid().ToString() }, TestServerCallContext());
@@ -39,7 +39,7 @@ public class PipelineExecutionServiceImplTests
     public async Task GetConfiguration_fails_with_InvalidArgument_for_a_malformed_session_id()
     {
         //arrange
-        var service = Create(SqliteServerDbContext.Create());
+        var service = Create(SqliteServerDbContext.Create(), await TestLiveState.CreateAsync());
 
         //act
         var act = () => service.GetConfiguration(new GetConfigurationRequest { SessionId = "not-a-guid" }, TestServerCallContext());
@@ -55,6 +55,7 @@ public class PipelineExecutionServiceImplTests
         //arrange
         var context = SqliteServerDbContext.Create();
         var runId = await SeedRunAsync(context, "Dispatched");
+        var live = await TestLiveState.CreateAsync(context);
 
         var protector = new Mock<IDataProtector>();
         protector.Setup(p => p.Protect(It.IsAny<byte[]>())).Returns<byte[]>(bytes => bytes);
@@ -65,7 +66,7 @@ public class PipelineExecutionServiceImplTests
         var secretsStore = new SecretsStore(context, protectionProvider.Object);
         await secretsStore.SetAsync("ConnectionStrings:sales", "Host=db;", CancellationToken.None);
 
-        var service = Create(context, secretsStore);
+        var service = Create(context, live, secretsStore);
 
         //act
         var response = await service.GetConfiguration(new GetConfigurationRequest { SessionId = runId.ToString() }, TestServerCallContext());
@@ -73,20 +74,20 @@ public class PipelineExecutionServiceImplTests
         //assert
         response.Entries["ConnectionStrings:sales"].Should().Be("Host=db;");
 
-        var run = await context.Runs.SingleAsync(r => r.Id == runId);
+        var run = live.TryGetRunSummary(runId)!;
         run.Status.Should().Be("Running");
-        run.StartedAt.Should().NotBeNull();
+        run.StartedAtUtc.Should().NotBeNull();
     }
 
     [Test]
-    public async Task ReportStageResult_persists_a_StageResult_row_and_publishes_it()
+    public async Task ReportStageResult_records_the_stage_and_notifies_listeners()
     {
         //arrange
         var context = SqliteServerDbContext.Create();
         var runId = await SeedRunAsync(context, "Running");
-        var statusStore = new RunStatusStore();
-        var service = Create(context, statusStore: statusStore);
-        var reader = statusStore.Subscribe(runId);
+        var live = await TestLiveState.CreateAsync(context);
+        var service = Create(context, live);
+        using var changes = live.Subscribe(change => change.Id == runId);
 
         //act
         await service.ReportStageResult(new ReportStageResultRequest
@@ -101,25 +102,23 @@ public class PipelineExecutionServiceImplTests
         }, TestServerCallContext());
 
         //assert
-        var stored = await context.StageResults.SingleAsync(s => s.RunId == runId);
-        stored.Name.Should().Be("seed");
-        stored.RowsIn.Should().Be(10);
-        stored.RowsOut.Should().Be(9);
-        stored.RowsFailed.Should().Be(1);
-        stored.ErrorCode.Should().BeNull();
-
-        (await reader.ReadAsync()).StageCompleted.Name.Should().Be("seed");
+        var stage = live.TryGetRun(runId)!.Stages.Single();
+        stage.Name.Should().Be("seed");
+        (stage.RowsIn, stage.RowsOut, stage.RowsFailed, stage.ElapsedMs).Should().Be((10, 9, 1, 42));
+        stage.ErrorCode.Should().BeNull();
+        (await changes.NextAsync(TimeSpan.FromSeconds(1), CancellationToken.None)).Should().NotBeEmpty();
+        live.PendingEventCount.Should().Be(1, "queued for the database, which is not written to here");
+        (await context.StageResults.CountAsync()).Should().Be(0);
     }
 
     [Test]
-    public async Task ReportRunResult_settles_the_Run_row_and_publishes_completion()
+    public async Task ReportRunResult_settles_the_run()
     {
         //arrange
         var context = SqliteServerDbContext.Create();
         var runId = await SeedRunAsync(context, "Running");
-        var statusStore = new RunStatusStore();
-        var service = Create(context, statusStore: statusStore);
-        var reader = statusStore.Subscribe(runId);
+        var live = await TestLiveState.CreateAsync(context);
+        var service = Create(context, live);
 
         //act
         await service.ReportRunResult(new ReportRunResultRequest
@@ -133,22 +132,37 @@ public class PipelineExecutionServiceImplTests
         }, TestServerCallContext());
 
         //assert
-        var run = await context.Runs.SingleAsync(r => r.Id == runId);
+        var run = live.TryGetRunSummary(runId)!;
         run.Status.Should().Be("Succeeded");
         run.ExitCode.Should().Be(0);
-        run.RowsRead.Should().Be(10);
-        run.CompletedAt.Should().NotBeNull();
+        (run.RowsRead, run.RowsWritten, run.RowsFailed).Should().Be((10, 9, 1));
+        run.CompletedAtUtc.Should().NotBeNull();
+    }
 
-        var progressEvent = await reader.ReadAsync();
-        progressEvent.RunCompleted.Status.Should().Be(RunCompleted.Types.Status.Succeeded);
-        (await reader.WaitToReadAsync()).Should().BeFalse("the stream completes once the run itself completes");
+    [Test]
+    public async Task Reports_for_an_unknown_run_fail_with_NotFound()
+    {
+        //arrange
+        var service = Create(SqliteServerDbContext.Create(), await TestLiveState.CreateAsync());
+        var unknown = Guid.NewGuid().ToString();
+
+        //act + assert
+        foreach (var act in new Func<Task>[]
+        {
+            () => service.ReportStageResult(new ReportStageResultRequest { SessionId = unknown }, TestServerCallContext()),
+            () => service.ReportRunResult(new ReportRunResultRequest { SessionId = unknown }, TestServerCallContext()),
+        })
+        {
+            var exception = await act.Should().ThrowAsync<RpcException>();
+            exception.Which.StatusCode.Should().Be(StatusCode.NotFound);
+        }
     }
 
     [Test]
     public async Task Heartbeat_fails_with_NotFound_for_an_unknown_session()
     {
         //arrange
-        var service = Create(SqliteServerDbContext.Create());
+        var service = Create(SqliteServerDbContext.Create(), await TestLiveState.CreateAsync());
 
         //act
         var act = () => service.Heartbeat(new HeartbeatRequest { SessionId = Guid.NewGuid().ToString() }, TestServerCallContext());
@@ -158,15 +172,13 @@ public class PipelineExecutionServiceImplTests
         exception.Which.StatusCode.Should().Be(StatusCode.NotFound);
     }
 
-    private static PipelineExecutionServiceImpl Create(
-        ServerDbContext context, SecretsStore? secretsStore = null, RunStatusStore? statusStore = null) =>
+    private static PipelineExecutionServiceImpl Create(ServerDbContext context, LiveState liveState, SecretsStore? secretsStore = null) =>
         new(
-            context,
             // A loose mock returning null from CreateProtector is fine for every test here that
             // uses this default - none of them ever populate ConfigurationEntries, so
             // SecretsStore.GetAllAsync never actually touches the protector.
             secretsStore ?? new SecretsStore(context, Mock.Of<IDataProtectionProvider>()),
-            statusStore ?? new RunStatusStore());
+            liveState);
 
     /// <summary>Seeds a full package/version/pipeline/run chain and returns the run's id (the session id).</summary>
     private static async Task<Guid> SeedRunAsync(ServerDbContext context, string status)

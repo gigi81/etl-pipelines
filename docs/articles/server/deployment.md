@@ -14,7 +14,7 @@ docker compose up --build -d
 |---|---|---|
 | `postgres` | `postgres:15.1` | Holds the Server's database, `etlpipelines_server`. Health-checked with `pg_isready`. |
 | `nuget` | `bagetter/bagetter` | The package feed, `http://nuget:8080/v3/index.json` inside the network. |
-| `server` | built from `docker/Dockerfile.server` | Starts once `postgres` is healthy. Its entrypoint runs `dbdeploy deploy` before starting the app, so an empty database gets its schema without any manual step, and an existing one is left as it is. Health-checked over HTTP/2 on port 5000. |
+| `server` | built from `docker/Dockerfile.server` | Starts once `postgres` is healthy. Its entrypoint runs `dbdeploy deploy` before starting the app, so an empty database gets its schema without any manual step, and an existing one is left as it is. Health-checked over HTTP/2 on port 5000. Publishes port 5080, the [WebUI](webui.md) and its REST API. The gRPC port is not published. |
 | `agent` | built from `docker/Dockerfile.agent` | Starts once `server` is healthy. It ships the full .NET SDK, because installing a package means running `dotnet tool install` at run time. |
 | `seed` | built from `docker/Dockerfile.seed` | A one-shot job. It packs the six samples and pushes them to `nuget`, retrying until the feed answers, then exits. |
 

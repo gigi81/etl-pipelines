@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package etlpipelines.agent_execution.v1;
 
+import "google/protobuf/struct.proto";
+
 option csharp_namespace = "EtlPipelines.AgentExecution.V1";
 
 // Consumed by EtlPipelines.Agent.GrpcClient - the agent's own infrastructure, a separate
@@ -21,6 +23,12 @@ message RegisterAgentRequest {
   string machine_name = 1;
   repeated string tags = 2;
   string version = 3;
+  // Free-form details about the agent's host, shown by the WebUI's agents page and stored as JSON
+  // (Agents.Info) - so a new detail needs no proto or schema change. Keys are camelCase; today:
+  // osDescription, osArchitecture, processorCount, ipAddresses (a list - a host can have several
+  // IPv4 and IPv6 addresses) and startedAtUtc (ISO 8601, always UTC: when the agent process started). Unset by an
+  // older agent.
+  google.protobuf.Struct host_info = 4;
 }
 
 message RegisterAgentResponse {

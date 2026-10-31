@@ -62,6 +62,8 @@ public class AgentLivenessDockerTests(PostgreSqlFixture postgres, BagetterFixtur
             // if this were left at AgentLivenessOptions' own 30-second default.
             "--AgentLiveness:Timeout", "00:00:02",
             "--AgentLiveness:PollInterval", "00:00:01",
+            // The Server writes the database behind; this test reads it, so keep the delay short.
+            "--LiveState:SyncInterval", "00:00:00.5",
         ]);
         await server.StartAsync();
         var serverUrl = GetBoundUrl(server);
@@ -101,10 +103,12 @@ public class AgentLivenessDockerTests(PostgreSqlFixture postgres, BagetterFixtur
             var options = new DbContextOptionsBuilder<ServerDbContext>().UseNpgsql(postgres.ConnectionString).Options;
             await using var dbContext = new ServerDbContext(options);
 
-            var run = await PollUntilAsync(
-                () => dbContext.Runs.AsNoTracking().SingleAsync(r => r.Id == runId),
-                r => r.Status == "AgentLost",
+            // The row is written a moment after the run exists, so it may not be there on the first look.
+            var found = await PollUntilAsync(
+                () => dbContext.Runs.AsNoTracking().SingleOrDefaultAsync(r => r.Id == runId),
+                r => r is { Status: "AgentLost" },
                 TimeSpan.FromSeconds(20));
+            var run = found!;
 
             run.Status.Should().Be("AgentLost");
             run.CompletedAt.Should().NotBeNull();

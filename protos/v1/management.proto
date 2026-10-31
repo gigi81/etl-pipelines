@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package etlpipelines.management.v1;
 
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "EtlPipelines.Management.V1";
@@ -163,9 +164,10 @@ message AgentInfo {
   string version = 4;
   Status status = 5;
   google.protobuf.Timestamp last_heartbeat_at = 6;
+  // What the agent reported about its host when it registered (see
+  // agent_execution.v1.RegisterAgentRequest.host_info); unset for an agent that predates it.
+  google.protobuf.Struct info = 7;
 
-  // Mirrors Agents.Status (Phase 3); Phase 8 is what actually flips an agent to OFFLINE, after N
-  // missed heartbeats.
   enum Status {
     STATUS_UNSPECIFIED = 0;
     ONLINE = 1;

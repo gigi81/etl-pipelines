@@ -2,10 +2,13 @@ using EtlPipelines.Management.V1;
 using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
+using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Runs;
 using EtlPipelines.Server.Secrets;
+using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
+using Struct = Google.Protobuf.WellKnownTypes.Struct;
 using Timestamp = Google.Protobuf.WellKnownTypes.Timestamp;
 
 namespace EtlPipelines.Server.Services;
@@ -23,10 +26,11 @@ namespace EtlPipelines.Server.Services;
 /// <c>ReportInstallResult</c> resolves it (or it times out). Phase 6 adds
 /// <see cref="ExecutePipeline"/> (dispatched via <see cref="RunDispatcher"/>, returning the new
 /// run's id immediately rather than waiting for it to finish - see that RPC's own proto comment)
-/// and <see cref="StreamRunProgress"/> (backed by <see cref="RunStatusStore"/>, published to by
-/// <see cref="PipelineExecutionServiceImpl"/> as the launched process reports in, and falling back
-/// to <c>Runs</c>/<c>StageResults</c> once a finished run's history has been evicted from it).
-/// <see cref="ListAgents"/> reads the <c>Agents</c> table directly. <see cref="UninstallPackage"/>
+/// and <see cref="StreamRunProgress"/>. Those two, and <see cref="ListAgents"/>, are answered from
+/// <see cref="LiveState"/> - the one store of agents and runs, which the launched process and its
+/// agent report into - so they never wait for the database to catch up; <see cref="StreamRunProgress"/>
+/// falls back to the database for a finished run older than <see cref="LiveState"/> keeps.
+/// <see cref="UninstallPackage"/>
 /// and <see cref="UpdatePackage"/> retire package versions through <c>PackageVersions.Status</c>
 /// (<see cref="PackageVersionStatus"/>) rather than deleting rows <c>Runs</c> still reference.
 /// </remarks>
@@ -36,7 +40,7 @@ public sealed class ManagementServiceImpl(
     SecretsStore secretsStore,
     AgentConnectionRegistry connections,
     RunDispatcher runDispatcher,
-    RunStatusStore statusStore)
+    LiveState liveState)
     : ManagementService.ManagementServiceBase
 {
     // How long InstallPackage waits for the dispatched agent to report back before giving up -
@@ -117,6 +121,7 @@ public sealed class ManagementServiceImpl(
             throw new RpcException(new Status(StatusCode.NotFound, $"No version of '{request.PackageId}' is installed."));
         }
 
+        liveState.PipelinesChanged();
         return new Ack();
     }
 
@@ -146,6 +151,8 @@ public sealed class ManagementServiceImpl(
         await catalogService
             .SupersedeOtherVersionsAsync(request.PackageId, installed.Version, context.CancellationToken)
             .ConfigureAwait(false);
+
+        liveState.PipelinesChanged();
 
         var response = new UpdatePackageResponse
         {
@@ -177,74 +184,85 @@ public sealed class ManagementServiceImpl(
             throw new RpcException(new Status(StatusCode.InvalidArgument, $"'{request.RunId}' is not a valid run id."));
         }
 
-        // Not in the store: either a finished run whose history was already evicted, or a run id
-        // nothing ever dispatched. Runs/StageResults hold everything the store would have
-        // replayed for a finished run, so answer from there rather than subscribing to a run that
-        // will never publish again.
-        if (!statusStore.IsTracked(runId))
+        var cancellationToken = context.CancellationToken;
+
+        // Listen before reading the run, so a change in between is not missed.
+        using var changes = liveState.Subscribe(change => change is { Kind: LiveChangeKind.Run } && change.Id == runId);
+
+        // Held in memory while it is in flight and for an hour after; older, from the database.
+        var detail = await liveState.GetRunAsync(dbContext, runId, cancellationToken).ConfigureAwait(false)
+            ?? throw new RpcException(new Status(StatusCode.NotFound, $"No run with id '{runId}' exists."));
+
+        // Every stage the run has completed, once each and in order - then, as they complete, the
+        // rest - and the run's completion last, after which the stream ends.
+        var sent = new HashSet<int>();
+        while (true)
         {
-            var run = await dbContext.Runs
-                .AsNoTracking()
-                .Include(r => r.StageResults)
-                .SingleOrDefaultAsync(r => r.Id == runId, context.CancellationToken)
-                .ConfigureAwait(false)
-                ?? throw new RpcException(new Status(StatusCode.NotFound, $"No run with id '{runId}' exists."));
-
-            var terminalStatus = ToRunCompletedStatus(run.Status);
-            if (terminalStatus is not null)
+            foreach (var stage in detail.Stages.Where(stage => sent.Add(stage.Sequence)))
             {
-                foreach (var stage in run.StageResults.OrderBy(stage => stage.Sequence))
+                await responseStream.WriteAsync(new RunProgressEvent
                 {
-                    await responseStream.WriteAsync(new RunProgressEvent
+                    RunId = request.RunId,
+                    StageCompleted = new StageCompleted
                     {
-                        RunId = request.RunId,
-                        StageCompleted = new StageCompleted
-                        {
-                            Sequence = stage.Sequence,
-                            Name = stage.Name,
-                            RowsIn = stage.RowsIn,
-                            RowsOut = stage.RowsOut,
-                            RowsFailed = stage.RowsFailed,
-                            ElapsedMs = stage.ElapsedMs,
-                            ErrorCode = stage.ErrorCode ?? string.Empty,
-                            ErrorDescription = stage.ErrorDescription ?? string.Empty,
-                        },
-                    }).ConfigureAwait(false);
-                }
+                        Sequence = stage.Sequence,
+                        Name = stage.Name,
+                        RowsIn = stage.RowsIn,
+                        RowsOut = stage.RowsOut,
+                        RowsFailed = stage.RowsFailed,
+                        ElapsedMs = stage.ElapsedMs,
+                        ErrorCode = stage.ErrorCode ?? string.Empty,
+                        ErrorDescription = stage.ErrorDescription ?? string.Empty,
+                    },
+                }).ConfigureAwait(false);
+            }
 
+            if (ToRunCompletedStatus(detail.Run.Status) is { } terminalStatus)
+            {
                 await responseStream.WriteAsync(new RunProgressEvent
                 {
                     RunId = request.RunId,
                     RunCompleted = new RunCompleted
                     {
-                        Status = terminalStatus.Value,
-                        ExitCode = run.ExitCode ?? 0,
-                        RowsRead = run.RowsRead ?? 0,
-                        RowsWritten = run.RowsWritten ?? 0,
-                        RowsFailed = run.RowsFailed ?? 0,
+                        Status = terminalStatus,
+                        ExitCode = detail.Run.ExitCode ?? 0,
+                        RowsRead = detail.Run.RowsRead ?? 0,
+                        RowsWritten = detail.Run.RowsWritten ?? 0,
+                        RowsFailed = detail.Run.RowsFailed ?? 0,
                     },
                 }).ConfigureAwait(false);
                 return;
             }
-        }
 
-        var reader = statusStore.Subscribe(runId);
+            // Nothing in flight is ever missing from memory; if this one is, nothing will change it.
+            if (liveState.TryGetRun(runId) is null)
+            {
+                return;
+            }
 
-        await foreach (var progressEvent in reader.ReadAllAsync(context.CancellationToken).ConfigureAwait(false))
-        {
-            await responseStream.WriteAsync(progressEvent).ConfigureAwait(false);
+            IReadOnlyList<LiveChange> changed;
+            do
+            {
+                changed = await changes.NextAsync(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+            }
+            while (changed.Count == 0);
+
+            detail = liveState.TryGetRun(runId);
+            if (detail is null)
+            {
+                return;
+            }
         }
     }
 
     /// <inheritdoc />
     public override async Task<ListAgentsResponse> ListAgents(Empty request, ServerCallContext context)
     {
-        var agents = await dbContext.Agents
-            .AsNoTracking()
-            .OrderBy(agent => agent.MachineName)
-            .ThenBy(agent => agent.LastHeartbeatAt)
-            .ToListAsync(context.CancellationToken)
-            .ConfigureAwait(false);
+        var agents = await liveState.ListAgentsAsync(context.CancellationToken).ConfigureAwait(false);
 
         var response = new ListAgentsResponse();
         response.Agents.AddRange(agents.Select(agent => new AgentInfo
@@ -259,7 +277,8 @@ public sealed class ManagementServiceImpl(
                 "Offline" => AgentInfo.Types.Status.Offline,
                 _ => AgentInfo.Types.Status.Unspecified,
             },
-            LastHeartbeatAt = Timestamp.FromDateTime(DateTime.SpecifyKind(agent.LastHeartbeatAt, DateTimeKind.Utc)),
+            LastHeartbeatAt = Timestamp.FromDateTime(DateTime.SpecifyKind(agent.LastHeartbeatAtUtc, DateTimeKind.Utc)),
+            Info = ParseInfo(agent.Info),
         }));
         return response;
     }
@@ -310,6 +329,24 @@ public sealed class ManagementServiceImpl(
         }
 
         return new InstalledPackage(result.PackageVersionId!.Value, version, result.PipelineNames);
+    }
+
+    /// <summary>An agent's reported host details as a <see cref="Struct"/>; <see langword="null"/> when it reported none.</summary>
+    private static Struct? ParseInfo(System.Text.Json.JsonElement? info)
+    {
+        if (info is not { } element)
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonParser.Default.Parse<Struct>(element.GetRawText());
+        }
+        catch (InvalidProtocolBufferException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Maps a terminal <c>Runs.Status</c> onto <see cref="RunCompleted.Types.Status"/>; <see langword="null"/> while the run is still in flight.</summary>

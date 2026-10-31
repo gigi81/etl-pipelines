@@ -11,9 +11,11 @@ The defaults in each project's `appsettings.json` are the ones the compose netwo
 |---|---|---|
 | `ConnectionStrings:Server` | `Host=postgres;Database=etlpipelines_server;Username=postgres;Password=postgres` | The Postgres database dbdeploy deployed the schema into. |
 | `Server:Port` | `5000` | The port Kestrel listens on, on every interface, over cleartext HTTP/2 only. `0` picks a free port. |
+| `Server:HttpPort` | `5080` (`0` when `Server:Port` is `0`) | The port of the second endpoint, plain HTTP/1.1, which serves the [WebUI and REST API](webui.md) to browsers. A browser cannot use the HTTP/2-only gRPC port. |
 | `Server:PublicUrl` | `http://server:5000` | The address launched pipeline processes call back to, sent to them as `--server-url`. Set it when the Server is reachable at a different address than the one it binds, such as behind a proxy or from another container. If it is empty, the Server's own bound address is used, which only works when agents run on the same machine. |
 | `NuGetFeed:Url` | `http://nuget:8080/v3/index.json` | The feed to browse and install from. It is written into the `NuGetFeeds` table on every start, so changing it here is enough. |
 | `KeyRing:Path` | `/var/lib/etlpipelines/server-cache/keys` | Where ASP.NET Core Data Protection keeps its key ring. It must be on durable storage (the `server-cache` volume in compose). |
+| `LiveState:SyncInterval` | `00:00:05` | How often what has happened (and only if something has) is written to the database, in one batch. The most a hard crash can lose. See [Live state and the database](operations.md#live-state-and-the-database). |
 | `AgentLiveness:Timeout` | `00:00:30` | How long an agent can go without a heartbeat before it is marked `Offline` and its active runs `AgentLost`. Agents heartbeat every 10 seconds. |
 | `AgentLiveness:PollInterval` | `00:00:10` | How often the liveness sweep runs. |
 

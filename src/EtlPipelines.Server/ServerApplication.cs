@@ -1,6 +1,8 @@
 using EtlPipelines.Server.Agents;
+using EtlPipelines.Server.Api;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
+using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Runs;
 using EtlPipelines.Server.Secrets;
 using EtlPipelines.Server.Services;
@@ -12,7 +14,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EtlPipelines.Server;
 
-/// <summary>Builds the gRPC host that <c>Program.cs</c> runs.</summary>
+/// <summary>Builds the gRPC host (plus the REST API and WebUI) that <c>Program.cs</c> runs.</summary>
 /// <remarks>
 /// Split out from <c>Program.cs</c> deliberately: <see cref="EtlPipelines.Server.Tests"/> calls
 /// <see cref="Build"/> directly to build the exact same <see cref="WebApplication"/> a real run
@@ -63,6 +65,14 @@ public static class ServerApplication
         {
             options.ConfigureEndpointDefaults(listenOptions => listenOptions.Protocols = HttpProtocols.Http2);
             options.ListenAnyIP(port, listenOptions => listenOptions.Protocols = HttpProtocols.Http2);
+
+            // The REST API and WebUI for browsers, which cannot speak the cleartext HTTP/2 the
+            // gRPC endpoint above is dedicated to. Listed second on purpose: ResolvePublicUrl takes
+            // the first bound address, which must stay the gRPC one. Server:HttpPort follows
+            // Server:Port when that asks for an OS-assigned port (0), so tests that do never
+            // contend for a fixed one.
+            var httpPort = builder.Configuration.GetValue("Server:HttpPort", port == 0 ? 0 : 5080);
+            options.ListenAnyIP(httpPort, listenOptions => listenOptions.Protocols = HttpProtocols.Http1);
         });
 
         builder.Services.AddGrpc();
@@ -96,10 +106,15 @@ public static class ServerApplication
         // any one gRPC call.
         builder.Services.AddSingleton<AgentConnectionRegistry>();
 
-        // Process-wide run-progress fan-out (Phase 6) - a singleton for the same reason as
-        // AgentConnectionRegistry above: a run's history and its live StreamRunProgress
-        // subscribers outlive any one gRPC call.
-        builder.Services.AddSingleton<RunStatusStore>();
+        // The one store of agents and runs: what the WebUI shows and what StreamRunProgress streams,
+        // held in memory, with a feed of changes pushed to both. A singleton for the same reason as
+        // AgentConnectionRegistry above: a run's state and its live subscribers outlive any one gRPC
+        // call. Memory is where everything in flight is read and changed; LiveStateSync loads it from
+        // the database on startup and writes what happens to it back, a few seconds behind, in batches.
+        builder.Services.Configure<LiveStateOptions>(builder.Configuration.GetSection(LiveStateOptions.SectionName));
+        builder.Services.AddSingleton<LiveState>();
+        builder.Services.AddSingleton<LiveStateSync>();
+        builder.Services.AddHostedService(provider => provider.GetRequiredService<LiveStateSync>());
 
         // Real wall-clock time in production; AgentLivenessMonitorTests substitutes a fake one
         // directly (it does not go through DI) to drive the timeout decision without a real
@@ -125,19 +140,41 @@ public static class ServerApplication
         builder.Services.AddScoped(provider => new RunDispatcher(
             provider.GetRequiredService<ServerDbContext>(),
             provider.GetRequiredService<AgentConnectionRegistry>(),
+            provider.GetRequiredService<LiveState>(),
             ResolvePublicUrl(provider)));
 
         var app = builder.Build();
+
+        // The WebUI (web/), built into wwwroot by Dockerfile.server. Absent in a bare `dotnet run`
+        // and in tests - the UI is then served by `bun run dev` (which proxies /api here).
+        var hasWebUi = app.Environment.WebRootFileProvider.GetFileInfo("index.html").Exists;
+        if (hasWebUi)
+        {
+            app.UseStaticFiles();
+        }
 
         app.MapGrpcService<PipelineExecutionServiceImpl>();
         app.MapGrpcService<AgentServiceImpl>();
         app.MapGrpcService<ManagementServiceImpl>();
         app.MapGrpcReflectionService();
+        app.MapEtlApi();
 
-        // gRPC clients don't hit this, but a bare `curl` against the port otherwise gets an
-        // unhelpful 404 - the same courtesy the official grpc-dotnet templates extend.
-        app.MapGet("/", () =>
-            "EtlPipelines.Server hosts gRPC services only - use a gRPC client to reach them.");
+        if (hasWebUi)
+        {
+            // Client-side routes (/, /runs/<id>, /agents, ...) all belong to the single-page app.
+            // This also answers `/` on the gRPC port, which is what the container's HEALTHCHECK
+            // probes (any 200 will do).
+            app.MapFallbackToFile("index.html");
+        }
+        else
+        {
+            // gRPC clients don't hit this, but a bare `curl` against the port otherwise gets an
+            // unhelpful 404 - the same courtesy the official grpc-dotnet templates extend. (Not
+            // mapped alongside the WebUI: routing would pick it before the static-file middleware
+            // ever got to serve index.html for `/`.)
+            app.MapGet("/", () =>
+                "EtlPipelines.Server hosts gRPC services and a REST API only - use a gRPC client, or the WebUI, to reach them.");
+        }
 
         return app;
     }

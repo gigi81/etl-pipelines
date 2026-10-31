@@ -8,7 +8,8 @@ candidate for a later piece of work.
 ## Security
 
 - **No authentication or authorization.** Anyone who can reach port 5000 can install packages, run
-  pipelines, and read or overwrite configuration. Agents are not authenticated either, so anything
+  pipelines, and read or overwrite configuration. Anyone who can reach port 5080, the WebUI and its
+  REST API, can start any installed pipeline and see every run and agent. Agents are not authenticated either, so anything
   that can reach the Server can register as an agent and receive work.
 - **No TLS.** gRPC is served over cleartext HTTP/2, and bagetter over plain HTTP.
 - **Configuration entries are global.** Every run receives every entry, so any installed package can
@@ -44,16 +45,21 @@ Run the stack only on a network you trust.
 
 ## State kept in memory
 
-The Server keeps connected agents, pending installs, and each run's progress history in memory. After
-a Server restart:
+The Server holds agents and runs in memory and writes the database behind it, every
+`LiveState:SyncInterval` (5 seconds by default) - see
+[Live state and the database](operations.md#live-state-and-the-database). So:
 
-- runs that were still in flight keep going and can still report their results, because those go
-  straight to the database, but `StreamRunProgress` for them no longer replays their earlier stages;
-- pending `InstallPackage` calls fail;
-- agents reconnect as described above.
+- **A hard crash** (`SIGKILL`, an out-of-memory kill, power loss) **loses what happened since the last
+  sync**, up to that interval: some stages or samples, a status change, or a run created in that window.
+  A clean stop writes everything first.
+- After a restart, runs still in flight carry on and keep reporting, and `StreamRunProgress` replays
+  the stages that had been written. Connected agents, and pending `InstallPackage` calls, are
+  connection state and are not kept: pending installs fail, and agents reconnect as described above.
+- The tables can be up to one sync interval behind what the Server (and its API and WebUI) show.
+- If the database is down, the Server keeps serving from memory and queues what is to be written - without
+  a limit, so a long outage grows it.
 
-A finished run's in-memory progress history is evicted an hour after it completes; after that,
-`StreamRunProgress` answers from the database instead.
+A finished run is kept in memory for an hour; after that it is read from the database.
 
 ## Missing API surface
 

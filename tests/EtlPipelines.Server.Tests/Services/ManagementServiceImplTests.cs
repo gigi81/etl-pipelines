@@ -5,12 +5,16 @@ using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
+using EtlPipelines.Server.Live;
 using EtlPipelines.Server.Runs;
+using EtlPipelines.Server.Contracts;
+using EtlPipelines.Server.Tests.Live;
 using EtlPipelines.Server.Secrets;
 using EtlPipelines.Server.Services;
 using Grpc.Core;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Moq.Protected;
 using NuGet.Versioning;
@@ -74,7 +78,7 @@ public class ManagementServiceImplTests
     }
 
     [Test]
-    public async Task ExecutePipeline_dispatches_to_a_connected_agent_and_creates_a_Run()
+    public async Task ExecutePipeline_dispatches_to_a_connected_agent_and_creates_the_run_in_memory()
     {
         //arrange
         var context = SqliteServerDbContext.Create();
@@ -90,19 +94,28 @@ public class ManagementServiceImplTests
 
         var connections = new AgentConnectionRegistry();
         var agentId = agentGuid.ToString();
-        connections.Connect(agentId, Channel.CreateUnbounded<WorkItem>());
+        var channel = Channel.CreateUnbounded<WorkItem>();
+        connections.Connect(agentId, channel);
 
-        var service = Create(context, connections: connections);
+        var live = await TestLiveState.CreateAsync(context);
+        var service = Create(context, connections: connections, liveState: live);
 
         //act
         var response = await service.ExecutePipeline(new ExecutePipelineRequest { PipelineId = pipelineId.ToString() }, TestServerCallContext());
 
-        //assert
+        //assert - the run exists, in memory, and the work item went to the agent with its id as the session id
         response.RunId.Should().NotBeNullOrEmpty();
-        var run = await context.Runs.SingleAsync(r => r.Id == Guid.Parse(response.RunId));
+        var run = live.TryGetRunSummary(Guid.Parse(response.RunId))!;
         run.PipelineId.Should().Be(pipelineId);
         run.AgentId.Should().Be(Guid.Parse(agentId));
+        run.AgentName.Should().Be("agent-01");
         run.Status.Should().Be("Dispatched");
+        channel.Reader.TryRead(out var workItem).Should().BeTrue();
+        workItem!.ExecutePipeline.SessionId.Should().Be(response.RunId);
+
+        // ...and not written to the database here: that is what LiveStateSync does, a few seconds later.
+        (await context.Runs.CountAsync()).Should().Be(0);
+        live.PendingEventCount.Should().Be(1);
     }
 
     [Test]
@@ -216,7 +229,7 @@ public class ManagementServiceImplTests
         connections.Connect(agentId, channel);
 
         var service = Create(context, connections: connections, feedClient: FeedReportingLatest("2.0.0"));
-        var agentService = new AgentServiceImpl(context, connections, new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()), new RunStatusStore());
+        var agentService = new AgentServiceImpl(connections, new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()), new LiveState(TimeProvider.System, NullLogger<LiveState>.Instance));
 
         //act - the agent's side: take the install work item and report it installed
         var update = service.UpdatePackage(new UpdatePackageRequest { PackageId = "EtlPipelines.Samples.CsvToDatabase" }, TestServerCallContext());
@@ -236,15 +249,15 @@ public class ManagementServiceImplTests
     }
 
     [Test]
-    public async Task StreamRunProgress_replays_history_then_completes_after_RunCompleted()
+    public async Task StreamRunProgress_replays_a_finished_runs_history_then_completes()
     {
         //arrange
-        var statusStore = new RunStatusStore();
-        var runId = Guid.NewGuid();
-        statusStore.PublishStageCompleted(runId, new StageCompleted { Sequence = 0, Name = "seed" });
-        statusStore.PublishRunCompleted(runId, new RunCompleted { Status = RunCompleted.Types.Status.Succeeded });
+        var live = await TestLiveState.CreateAsync();
+        var runId = await live.CreateRunAsync(Guid.NewGuid(), "p", "Pkg", "1.0.0", null, [], CancellationToken.None);
+        await live.StageCompletedAsync(runId, new StageDto(0, "seed", 0, 1, 0, 5, null, null), CancellationToken.None);
+        await live.FinishRunAsync(runId, "Succeeded", 0, 1, 1, 0, CancellationToken.None);
 
-        var service = Create(SqliteServerDbContext.Create(), statusStore: statusStore);
+        var service = Create(SqliteServerDbContext.Create(), liveState: live);
         var responseStream = new RecordingServerStreamWriter<RunProgressEvent>();
 
         //act
@@ -252,20 +265,52 @@ public class ManagementServiceImplTests
 
         //assert
         responseStream.Written.Should().HaveCount(2);
-        responseStream.Written[0].StageCompleted.Should().NotBeNull();
+        responseStream.Written[0].StageCompleted.Name.Should().Be("seed");
         responseStream.Written[1].RunCompleted.Status.Should().Be(RunCompleted.Types.Status.Succeeded);
+        responseStream.Written[1].RunCompleted.RowsWritten.Should().Be(1);
     }
 
     [Test]
-    public async Task StreamRunProgress_answers_from_the_database_for_a_finished_run_the_store_no_longer_tracks()
+    public async Task StreamRunProgress_sends_each_stage_as_it_completes_to_a_caller_already_watching_then_the_completion()
+    {
+        //arrange
+        var live = await TestLiveState.CreateAsync();
+        var runId = await live.CreateRunAsync(Guid.NewGuid(), "p", "Pkg", "1.0.0", null, [], CancellationToken.None);
+        await live.StageCompletedAsync(runId, new StageDto(0, "extract", 0, 1, 0, 5, null, null), CancellationToken.None);
+
+        var service = Create(SqliteServerDbContext.Create(), liveState: live);
+        var responseStream = new RecordingServerStreamWriter<RunProgressEvent>();
+        var streaming = service.StreamRunProgress(new StreamRunProgressRequest { RunId = runId.ToString() }, responseStream, TestServerCallContext());
+
+        //act
+        await WaitUntilAsync(() => responseStream.Written.Count == 1);
+        streaming.IsCompleted.Should().BeFalse("the run is still going");
+
+        await live.StageCompletedAsync(runId, new StageDto(1, "load", 1, 1, 0, 5, null, null), CancellationToken.None);
+        await WaitUntilAsync(() => responseStream.Written.Count == 2);
+
+        await live.FinishRunAsync(runId, "Failed", 3, 1, 1, 0, CancellationToken.None);
+        await streaming.WaitAsync(TimeSpan.FromSeconds(5));
+
+        //assert
+        responseStream.Written.Select(e => e.EventCase).Should().Equal(
+            RunProgressEvent.EventOneofCase.StageCompleted, RunProgressEvent.EventOneofCase.StageCompleted, RunProgressEvent.EventOneofCase.RunCompleted);
+        responseStream.Written.Take(2).Select(e => e.StageCompleted.Name).Should().Equal("extract", "load");
+        responseStream.Written[2].RunCompleted.Status.Should().Be(RunCompleted.Types.Status.Failed);
+        responseStream.Written[2].RunCompleted.ExitCode.Should().Be(3);
+    }
+
+    [Test]
+    public async Task StreamRunProgress_answers_from_the_database_for_a_finished_run_older_than_memory_keeps()
     {
         //arrange
         var context = SqliteServerDbContext.Create();
         var pipelineId = await SeedInstalledPipelineAsync(context, "csv-to-database");
         var runId = Guid.NewGuid();
+        var longAgo = DateTime.UtcNow.AddDays(-2);
         context.Runs.Add(new Run
         {
-            Id = runId, PipelineId = pipelineId, Status = "Failed", RequestedAt = DateTime.UtcNow, CompletedAt = DateTime.UtcNow,
+            Id = runId, PipelineId = pipelineId, Status = "Failed", RequestedAt = longAgo, CompletedAt = longAgo,
             ExitCode = 2, RowsRead = 10, RowsWritten = 7, RowsFailed = 3,
         });
         context.StageResults.Add(new StageResult { Id = Guid.NewGuid(), RunId = runId, Sequence = 1, Name = "load", RowsIn = 10, RowsOut = 7, RowsFailed = 3, ErrorCode = "E1" });
@@ -273,7 +318,9 @@ public class ManagementServiceImplTests
         await context.SaveChangesAsync();
         context.ChangeTracker.Clear();
 
-        var service = Create(context);
+        var live = await TestLiveState.CreateAsync(context);
+        live.TryGetRun(runId).Should().BeNull("too old to be held");
+        var service = Create(context, liveState: live);
         var responseStream = new RecordingServerStreamWriter<RunProgressEvent>();
 
         //act
@@ -306,6 +353,59 @@ public class ManagementServiceImplTests
         //assert
         var exception = await act.Should().ThrowAsync<RpcException>();
         exception.Which.StatusCode.Should().Be(StatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task ListAgents_returns_the_host_details_an_agent_reported_when_it_registered()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        var live = await TestLiveState.CreateAsync(context);
+        var agentService = new AgentServiceImpl(
+            new AgentConnectionRegistry(), new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()), live);
+        var registration = new RegisterAgentRequest
+        {
+            MachineName = "agent-01",
+            Version = "1.0.0",
+            HostInfo = new Google.Protobuf.WellKnownTypes.Struct
+            {
+                Fields =
+                {
+                    ["osDescription"] = Google.Protobuf.WellKnownTypes.Value.ForString("Ubuntu 24.04"),
+                    ["processorCount"] = Google.Protobuf.WellKnownTypes.Value.ForNumber(8),
+                    ["ipAddresses"] = Google.Protobuf.WellKnownTypes.Value.ForList(
+                        Google.Protobuf.WellKnownTypes.Value.ForString("10.0.0.7"),
+                        Google.Protobuf.WellKnownTypes.Value.ForString("2001:db8::7")),
+                },
+            },
+        };
+        await agentService.RegisterAgent(registration, TestServerCallContext());
+
+        // An agent that predates the host details registers without them.
+        await agentService.RegisterAgent(new RegisterAgentRequest { MachineName = "agent-00", Version = "0.9.0" }, TestServerCallContext());
+        context.ChangeTracker.Clear();
+
+        var service = Create(context, liveState: live);
+
+        //act
+        var response = await service.ListAgents(new Empty(), TestServerCallContext());
+
+        //assert
+        var old = response.Agents[0];
+        old.MachineName.Should().Be("agent-00");
+        old.Info.Should().BeNull();
+
+        var described = response.Agents[1];
+        described.Info.Fields["osDescription"].StringValue.Should().Be("Ubuntu 24.04");
+        described.Info.Fields["processorCount"].NumberValue.Should().Be(8);
+        described.Info.Fields["ipAddresses"].ListValue.Values.Select(ip => ip.StringValue)
+            .Should().Equal("10.0.0.7", "2001:db8::7");
+
+        // Written to the database by the sync, as one JSON document, so a new detail needs no schema change.
+        await LiveEventWriter.WriteAsync(context, live.DrainPendingEvents(), CancellationToken.None);
+        var stored = await context.Agents.AsNoTracking().SingleAsync(a => a.MachineName == "agent-01");
+        System.Text.Json.JsonDocument.Parse(stored.Info!).RootElement.GetProperty("ipAddresses").GetArrayLength().Should().Be(2);
+        (await context.Agents.AsNoTracking().SingleAsync(a => a.MachineName == "agent-00")).Info.Should().BeNull();
     }
 
     [Test]
@@ -392,22 +492,41 @@ public class ManagementServiceImplTests
 
     private static Task<ManagementServiceImpl> CreateAsync() => Task.FromResult(Create(SqliteServerDbContext.Create()));
 
+    /// <summary>
+    /// A service over <paramref name="context"/>, with a <see cref="LiveState"/> loaded from it as it
+    /// is now (what startup does) unless one is given - so seed the database first.
+    /// </summary>
     private static ManagementServiceImpl Create(
         ServerDbContext context,
         AgentConnectionRegistry? connections = null,
         IDataProtectionProvider? dataProtectionProvider = null,
-        RunStatusStore? statusStore = null,
-        INuGetFeedClient? feedClient = null)
+        INuGetFeedClient? feedClient = null,
+        LiveState? liveState = null)
     {
         var registry = connections ?? new AgentConnectionRegistry();
+        liveState ??= TestLiveState.CreateAsync(context).GetAwaiter().GetResult();
 
         return new ManagementServiceImpl(
             context,
             new PackageCatalogService(context, feedClient ?? Mock.Of<INuGetFeedClient>()),
             new SecretsStore(context, dataProtectionProvider ?? Mock.Of<IDataProtectionProvider>()),
             registry,
-            new RunDispatcher(context, registry, "http://localhost:5000"),
-            statusStore ?? new RunStatusStore());
+            new RunDispatcher(context, registry, liveState, "http://localhost:5000"),
+            liveState);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException("The condition was not met in time.");
+            }
+
+            await Task.Delay(10);
+        }
     }
 
     /// <summary>Seeds one installed pipeline (package + version + pipeline row) and returns its id.</summary>

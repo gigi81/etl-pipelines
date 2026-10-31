@@ -1,24 +1,17 @@
-using EtlPipelines.Management.V1;
 using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
-using EtlPipelines.Server.Runs;
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
+using EtlPipelines.Server.Live;
+using EtlPipelines.Server.Tests.Live;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace EtlPipelines.Server.Tests.Agents;
 
 /// <summary>
 /// Fast tests for <see cref="AgentLivenessMonitor.SweepAsync"/> - SERVER.md Phase 8's own
-/// instruction ("fast tests for the heartbeat timeout (fake clock)"). Drives the timeout decision
-/// with a fake "now" (<see cref="FakeTimeProvider"/>) rather than a real elapsed wait, and a real
-/// SQLite-backed <see cref="ServerDbContext"/> behind a genuine <see cref="IServiceScopeFactory"/>
-/// (the same per-tick-scope shape <see cref="AgentLivenessMonitor"/> itself uses in production),
-/// so the EF Core query <see cref="AgentLivenessMonitor.SweepAsync"/> runs is exercised for real,
-/// not mocked away.
+/// instruction ("fast tests for the heartbeat timeout (fake clock)"). The sweep works on
+/// <see cref="LiveState"/>, which knows every agent's last heartbeat, so it needs no database: the
+/// state is loaded from a seeded one and a clock the test moves stands in for a real 30 seconds.
 /// </summary>
 [Category("Server")]
 public class AgentLivenessMonitorTests
@@ -29,166 +22,122 @@ public class AgentLivenessMonitorTests
     public async Task An_agent_past_the_timeout_is_marked_Offline()
     {
         //arrange
-        var now = DateTimeOffset.UtcNow;
-        var scopeFactory = await CreateScopeFactoryAsync();
-        var agentId = Guid.NewGuid();
-        await SeedAsync(scopeFactory, context => context.Agents.Add(MakeAgent(agentId, now.UtcDateTime - Timeout - TimeSpan.FromSeconds(1))));
-
-        var monitor = CreateMonitor(scopeFactory, new FakeTimeProvider(now), new RunStatusStore());
+        var (live, monitor, agentId, _) = await SetUpAsync(heartbeatAge: Timeout + TimeSpan.FromSeconds(1));
 
         //act
         await monitor.SweepAsync(CancellationToken.None);
 
         //assert
-        var agent = await GetAsync(scopeFactory, context => context.Agents.SingleAsync(a => a.Id == agentId));
-        agent.Status.Should().Be("Offline");
+        live.TryGetAgent(agentId)!.Status.Should().Be("Offline");
     }
 
     [Test]
-    public async Task An_agent_within_the_timeout_is_left_Online()
+    public async Task An_agent_within_the_timeout_stays_Online()
     {
         //arrange
-        var now = DateTimeOffset.UtcNow;
-        var scopeFactory = await CreateScopeFactoryAsync();
-        var agentId = Guid.NewGuid();
-        await SeedAsync(scopeFactory, context => context.Agents.Add(MakeAgent(agentId, now.UtcDateTime - Timeout + TimeSpan.FromSeconds(5))));
-
-        var monitor = CreateMonitor(scopeFactory, new FakeTimeProvider(now), new RunStatusStore());
+        var (live, monitor, agentId, _) = await SetUpAsync(heartbeatAge: Timeout - TimeSpan.FromSeconds(1));
 
         //act
         await monitor.SweepAsync(CancellationToken.None);
 
         //assert
-        var agent = await GetAsync(scopeFactory, context => context.Agents.SingleAsync(a => a.Id == agentId));
-        agent.Status.Should().Be("Online");
+        live.TryGetAgent(agentId)!.Status.Should().Be("Online");
     }
 
     [Test]
     [Arguments("Queued")]
     [Arguments("Dispatched")]
     [Arguments("Running")]
-    public async Task A_Run_still_active_on_a_timed_out_agent_is_marked_AgentLost_and_published(string activeStatus)
+    public async Task A_run_still_active_on_a_timed_out_agent_is_marked_AgentLost(string activeStatus)
     {
         //arrange
-        var now = DateTimeOffset.UtcNow;
-        var scopeFactory = await CreateScopeFactoryAsync();
-        var agentId = Guid.NewGuid();
-        var runId = Guid.NewGuid();
-
-        await SeedAsync(scopeFactory, context =>
-        {
-            context.Agents.Add(MakeAgent(agentId, now.UtcDateTime - Timeout - TimeSpan.FromSeconds(1)));
-            context.Runs.Add(MakeRun(context, runId, agentId, activeStatus));
-        });
-
-        var statusStore = new RunStatusStore();
-        var reader = statusStore.Subscribe(runId);
-        var monitor = CreateMonitor(scopeFactory, new FakeTimeProvider(now), statusStore);
+        var (live, monitor, agentId, runId) = await SetUpAsync(heartbeatAge: Timeout + TimeSpan.FromSeconds(1), runStatus: activeStatus);
+        using var changes = live.Subscribe();
 
         //act
         await monitor.SweepAsync(CancellationToken.None);
 
         //assert
-        var run = await GetAsync(scopeFactory, context => context.Runs.SingleAsync(r => r.Id == runId));
+        var run = live.TryGetRunSummary(runId)!;
         run.Status.Should().Be("AgentLost");
-        run.CompletedAt.Should().Be(now.UtcDateTime);
-
-        var published = await reader.ReadAsync(CancellationToken.None);
-        published.RunCompleted.Status.Should().Be(RunCompleted.Types.Status.AgentLost);
+        run.CompletedAtUtc.Should().NotBeNull();
+        live.TryGetAgent(agentId)!.ActiveRuns.Should().BeEmpty();
+        (await changes.NextAsync(TimeSpan.FromSeconds(1), CancellationToken.None)).Should().Contain(
+            [new LiveChange(LiveChangeKind.Run, runId), new LiveChange(LiveChangeKind.Agent, agentId)]);
     }
 
     [Test]
-    public async Task A_Run_already_terminal_is_left_alone_even_if_its_agent_timed_out()
+    public async Task A_run_already_finished_is_left_alone_even_if_its_agent_timed_out()
     {
         //arrange
-        var now = DateTimeOffset.UtcNow;
-        var scopeFactory = await CreateScopeFactoryAsync();
-        var agentId = Guid.NewGuid();
-        var runId = Guid.NewGuid();
-
-        await SeedAsync(scopeFactory, context =>
-        {
-            context.Agents.Add(MakeAgent(agentId, now.UtcDateTime - Timeout - TimeSpan.FromSeconds(1)));
-            context.Runs.Add(MakeRun(context, runId, agentId, "Succeeded"));
-        });
-
-        var monitor = CreateMonitor(scopeFactory, new FakeTimeProvider(now), new RunStatusStore());
+        var (live, monitor, _, runId) = await SetUpAsync(
+            heartbeatAge: Timeout + TimeSpan.FromSeconds(1), runStatus: "Succeeded", completedMinutesAgo: 1);
 
         //act
         await monitor.SweepAsync(CancellationToken.None);
 
         //assert
-        var run = await GetAsync(scopeFactory, context => context.Runs.SingleAsync(r => r.Id == runId));
-        run.Status.Should().Be("Succeeded");
+        live.TryGetRunSummary(runId)!.Status.Should().Be("Succeeded");
     }
 
-    // Fully qualified - within this file's own EtlPipelines.Server.Tests.Agents namespace, the
-    // bare name "Agent" resolves to the sibling EtlPipelines.Agent *project* namespace (this test
-    // project also references it), not this entity type - the same collision
-    // ManagementServiceImplTests works around the same way.
-    private static Database.Entities.Agent MakeAgent(Guid id, DateTime lastHeartbeatAt) => new()
+    [Test]
+    public async Task What_a_sweep_changes_is_queued_for_the_database_in_order()
     {
-        Id = id, MachineName = "agent-01", Tags = [], Version = "1.0.0", Status = "Online", LastHeartbeatAt = lastHeartbeatAt,
-    };
+        //arrange
+        var (live, monitor, agentId, runId) = await SetUpAsync(heartbeatAge: Timeout + TimeSpan.FromSeconds(1), runStatus: "Running");
 
-    /// <summary>A minimal Package/PackageVersion/Pipeline chain, matching <c>ManagementServiceImplTests</c>' own seeding shape - a <c>Runs</c> row needs a real <c>Pipelines</c> FK to attach to.</summary>
-    private static Run MakeRun(ServerDbContext context, Guid runId, Guid agentId, string status)
-    {
-        var packageId = Guid.NewGuid();
-        var versionId = Guid.NewGuid();
-        var pipelineId = Guid.NewGuid();
+        //act
+        await monitor.SweepAsync(CancellationToken.None);
 
-        context.Packages.Add(new Package { Id = packageId, NugetPackageId = "EtlPipelines.Samples.CsvToDatabase", CreatedAt = DateTime.UtcNow });
-        context.PackageVersions.Add(new PackageVersion { Id = versionId, PackageId = packageId, Version = "1.0.0", InstalledAt = DateTime.UtcNow, Status = "Installed" });
-        context.Pipelines.Add(new Pipeline { Id = pipelineId, PackageVersionId = versionId, Name = "csv-to-database", CreatedAt = DateTime.UtcNow });
-
-        return new Run { Id = runId, PipelineId = pipelineId, AgentId = agentId, Status = status, RequestedAt = DateTime.UtcNow };
+        //assert
+        live.DrainPendingEvents().Select(e => e.GetType().Name).Should().Equal("AgentOfflineEvent", "RunFinishedEvent");
+        agentId.Should().NotBeEmpty();
+        runId.Should().NotBeEmpty();
     }
 
-    private static AgentLivenessMonitor CreateMonitor(IServiceScopeFactory scopeFactory, TimeProvider clock, RunStatusStore statusStore) =>
-        new(scopeFactory, Microsoft.Extensions.Options.Options.Create(new AgentLivenessOptions { Timeout = Timeout, PollInterval = TimeSpan.FromSeconds(10) }),
-            statusStore, clock, NullLogger<AgentLivenessMonitor>.Instance);
-
-    private static async Task SeedAsync(IServiceScopeFactory scopeFactory, Action<ServerDbContext> seed)
+    private static async Task<(LiveState Live, AgentLivenessMonitor Monitor, Guid AgentId, Guid RunId)> SetUpAsync(
+        TimeSpan heartbeatAge, string runStatus = "Running", int? completedMinutesAgo = null)
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var context = scope.ServiceProvider.GetRequiredService<ServerDbContext>();
-        seed(context);
-        await context.SaveChangesAsync();
-    }
+        var now = DateTimeOffset.UtcNow;
+        var clock = new ManualTimeProvider(now);
+        var context = SqliteServerDbContext.Create();
 
-    private static async Task<T> GetAsync<T>(IServiceScopeFactory scopeFactory, Func<ServerDbContext, Task<T>> query)
-    {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        return await query(scope.ServiceProvider.GetRequiredService<ServerDbContext>());
-    }
-
-    /// <summary>
-    /// A real SQLite-in-memory-backed <see cref="ServerDbContext"/> registered scoped behind a real
-    /// <see cref="IServiceScopeFactory"/> - the connection is kept open for this provider's whole
-    /// lifetime (an in-memory SQLite database disappears the moment its one open connection
-    /// closes), the same reason <c>SqliteServerDbContext</c> owns its own connection.
-    /// </summary>
-    private static async Task<IServiceScopeFactory> CreateScopeFactoryAsync()
-    {
-        var connection = new SqliteConnection("DataSource=:memory:");
-        await connection.OpenAsync();
-
-        var services = new ServiceCollection();
-        services.AddDbContext<ServerDbContext>(options => options.UseSqlite(connection));
-        var provider = services.BuildServiceProvider();
-
-        await using (var scope = provider.CreateAsyncScope())
+        var agentId = Guid.NewGuid();
+        context.Agents.Add(new Database.Entities.Agent
         {
-            await scope.ServiceProvider.GetRequiredService<ServerDbContext>().Database.EnsureCreatedAsync();
-        }
+            Id = agentId, MachineName = "agent-01", Tags = [], Version = "1.0.0", Status = "Online", LastHeartbeatAt = now.UtcDateTime - heartbeatAge,
+        });
 
-        return provider.GetRequiredService<IServiceScopeFactory>();
+        var runId = Guid.NewGuid();
+        var pipelineId = SeedPipeline(context);
+        context.Runs.Add(new Run
+        {
+            Id = runId,
+            PipelineId = pipelineId,
+            AgentId = agentId,
+            Status = runStatus,
+            RequestedAt = now.UtcDateTime.AddMinutes(-5),
+            CompletedAt = completedMinutesAgo is { } minutes ? now.UtcDateTime.AddMinutes(-minutes) : null,
+        });
+        await context.SaveChangesAsync();
+
+        var live = await TestLiveState.CreateAsync(context, clock);
+        var monitor = new AgentLivenessMonitor(
+            live,
+            Microsoft.Extensions.Options.Options.Create(new AgentLivenessOptions { Timeout = Timeout, PollInterval = TimeSpan.FromSeconds(10) }),
+            clock,
+            NullLogger<AgentLivenessMonitor>.Instance);
+
+        return (live, monitor, agentId, runId);
     }
 
-    /// <summary>A <see cref="TimeProvider"/> whose <see cref="GetUtcNow"/> is fixed at construction - what lets these tests assert a 30-second timeout without a real 30-second wait.</summary>
-    private sealed class FakeTimeProvider(DateTimeOffset now) : TimeProvider
+    /// <summary>A minimal Package/PackageVersion/Pipeline chain - a run needs a real pipeline to attach to.</summary>
+    private static Guid SeedPipeline(ServerDbContext context)
     {
-        public override DateTimeOffset GetUtcNow() => now;
+        var package = new Package { Id = Guid.NewGuid(), NugetPackageId = "EtlPipelines.Samples.CsvToDatabase", CreatedAt = DateTime.UtcNow };
+        var version = new PackageVersion { Id = Guid.NewGuid(), PackageId = package.Id, Version = "1.0.0", InstalledAt = DateTime.UtcNow, Status = "Installed" };
+        var pipeline = new Pipeline { Id = Guid.NewGuid(), PackageVersionId = version.Id, Name = "csv-to-database", CreatedAt = DateTime.UtcNow };
+        context.AddRange(package, version, pipeline);
+        return pipeline.Id;
     }
 }

@@ -1,0 +1,43 @@
+name: WebUI
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+    paths:
+      - 'web/**'
+      - '.github/workflows/web.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/web.yml'
+# A superseded push cancels the older run for the same ref, same as every other workflow here.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  web:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v7
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+      # --frozen-lockfile fails when package.json and bun.lock disagree, so a dependency change that
+      # forgot to commit the lockfile is caught here rather than on someone else's machine.
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Test
+        run: bun run test
+      # `build` runs `tsc --noEmit` first, so this is the typecheck as well.
+      - name: Build
+        run: bun run build

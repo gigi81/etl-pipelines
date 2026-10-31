@@ -43,6 +43,10 @@ services:
         condition: service_healthy
       nuget:
         condition: service_started
+    # The WebUI and its REST API. gRPC (5000) stays inside the compose network - agents reach it as
+    # "server:5000" - so it is deliberately not published.
+    ports:
+      - "5080:5080"
     volumes:
       - server-cache:/var/lib/etlpipelines/server-cache
     restart: unless-stopped

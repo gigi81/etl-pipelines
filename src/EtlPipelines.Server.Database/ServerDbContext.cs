@@ -37,6 +37,7 @@ public partial class ServerDbContext : DbContext
             entity.HasKey(e => e.Id).HasName("Agents_pkey");
 
             entity.Property(e => e.Id).ValueGeneratedNever();
+            entity.Property(e => e.Info).HasColumnType("jsonb");
             entity.Property(e => e.Tags).HasDefaultValueSql("'{}'::text[]");
         });
 

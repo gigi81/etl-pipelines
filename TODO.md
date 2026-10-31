@@ -44,11 +44,15 @@ these is in [docs/articles/server/limitations.md](docs/articles/server/limitatio
 
 ## Server state
 
-- [ ] **Survive a Server restart.** Connected agents, pending installs and `RunStatusStore` history
-  are in memory only. After a restart, `StreamRunProgress` can't replay earlier stages of in-flight
-  runs, and pending `InstallPackage` calls fail.
-- [x] **Evict `RunStatusStore` history.** Finished runs are evicted after an hour; `StreamRunProgress`
-  then answers from `Runs`/`StageResults`.
+- [x] **Survive a Server restart.** Agents and runs (in flight and recent, with their stages and
+  samples) are loaded from the database on startup; `StreamRunProgress` replays what had been written.
+  Still lost: pending `InstallPackage` calls, and the events of the last `LiveState:SyncInterval` after a hard crash.
+- [x] **One store.** `LiveState` replaced `RunStatusStore`: gRPC, the REST API and the WebUI all use it.
+- [ ] **Bound the outbox.** A long database outage grows the queue of events waiting to be written without
+  limit. Cap it, dropping the high-volume resource samples first.
+- [ ] **A durable event log (maybe).** Events are replayed into the existing tables, so a status that
+  is overwritten inside one sync window leaves only its timestamps. Writing the events themselves
+  to an append-only table would keep every transition, and allow rebuilding the state from it.
 
 ## Missing API surface
 
@@ -59,6 +63,17 @@ these is in [docs/articles/server/limitations.md](docs/articles/server/limitatio
 - [x] **Wire `ResourceMonitor` in.** The agent samples each pipeline process every
   `Agent:ResourceSampleInterval` and reports `RESOURCE_SAMPLE`.
 - [x] **gRPC server reflection**, so `grpcurl` works without the `.proto` files.
+- [x] **WebUI** (`web/`): pipelines with a manual **Run now**, runs in flight with live per-stage
+  progress and CPU/memory charts, and agents with their OS, IP and uptime. It talks to a REST API
+  (`/api`) on a second, HTTP/1.1 port, since browsers cannot call the gRPC services. See
+  [docs/articles/server/webui.md](docs/articles/server/webui.md).
+- [ ] **WebUI: manage packages and configuration.** It is read-only apart from starting runs. Installing,
+  updating and uninstalling packages, and setting configuration entries, are still gRPC-only.
+- [ ] **WebUI: a stage-by-stage view for a run that has not reported yet.** Stages are only known once
+  they complete, so a pipeline's first run draws no stages ahead of time. The pipeline process could
+  report its stage plan when it starts.
+- [ ] **Prune stale agents.** Every agent restart registers a new row, so the agents page accumulates
+  `Offline` duplicates. Reconnecting under the same agent id (see above) would fix it at the source.
 
 ## Caches
 

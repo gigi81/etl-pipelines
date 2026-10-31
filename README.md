@@ -965,6 +965,7 @@ samples, the Server and an Agent. Everything else is gRPC (`protos/v1/`):
   runs to read through `IConfiguration` as if it came from `appsettings.json`;
 - `ExecutePipeline` dispatches a run to an agent and returns its id; `StreamRunProgress` streams each
   stage as it completes;
+- a web UI at <http://localhost:5080> (built from [`web/`](https://github.com/gigi81/etl-pipelines/tree/main/web), served by the Server) lists the installed pipelines with a **Run now** button, shows runs live as a flow of their stages with CPU and memory charts, and lists the agents with their OS, IP and uptime;
 - an agent that stops heartbeating is marked offline and its unfinished runs `AgentLost` — never
   retried, since a half-applied load is not safe to replay blindly.
 
