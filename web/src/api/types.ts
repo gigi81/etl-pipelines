@@ -55,6 +55,22 @@ export interface RunDetail {
   resourceSamples: ResourceSample[];
 }
 
+/**
+ * What an agent reported about its host (Agents.Info): a free-form JSON object, so it can grow
+ * without a schema change. The keys below are the ones the agent sends today; anything else is
+ * passed through and shown by the agents page as it is.
+ */
+export interface AgentInfo {
+  osDescription?: string;
+  osArchitecture?: string;
+  processorCount?: number;
+  /** Every address of the host, IPv4 and IPv6 alike. */
+  ipAddresses?: string[];
+  /** ISO 8601 - when the agent process started. */
+  startedAt?: string;
+  [key: string]: unknown;
+}
+
 export interface Agent {
   id: string;
   machineName: string;
@@ -62,11 +78,7 @@ export interface Agent {
   version: string;
   status: 'Online' | 'Offline';
   lastHeartbeatAt: string;
-  osDescription: string | null;
-  osArchitecture: string | null;
-  ipAddresses: string[];
-  processorCount: number | null;
-  startedAt: string | null;
+  info: AgentInfo | null;
   uptimeSeconds: number | null;
   activeRuns: RunSummary[];
 }

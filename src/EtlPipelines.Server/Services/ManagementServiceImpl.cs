@@ -4,8 +4,10 @@ using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Runs;
 using EtlPipelines.Server.Secrets;
+using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
+using Struct = Google.Protobuf.WellKnownTypes.Struct;
 using Timestamp = Google.Protobuf.WellKnownTypes.Timestamp;
 
 namespace EtlPipelines.Server.Services;
@@ -249,13 +251,6 @@ public sealed class ManagementServiceImpl(
         var response = new ListAgentsResponse();
         response.Agents.AddRange(agents.Select(agent => new AgentInfo
         {
-            OsDescription = agent.OsDescription ?? string.Empty,
-            OsArchitecture = agent.OsArchitecture ?? string.Empty,
-            IpAddresses = { agent.IpAddresses ?? [] },
-            ProcessorCount = agent.ProcessorCount ?? 0,
-            StartedAt = agent.StartedAt is { } startedAt
-                ? Timestamp.FromDateTime(DateTime.SpecifyKind(startedAt, DateTimeKind.Utc))
-                : null,
             AgentId = agent.Id.ToString(),
             MachineName = agent.MachineName,
             Tags = { agent.Tags },
@@ -267,6 +262,7 @@ public sealed class ManagementServiceImpl(
                 _ => AgentInfo.Types.Status.Unspecified,
             },
             LastHeartbeatAt = Timestamp.FromDateTime(DateTime.SpecifyKind(agent.LastHeartbeatAt, DateTimeKind.Utc)),
+            Info = ParseInfo(agent.Info),
         }));
         return response;
     }
@@ -317,6 +313,24 @@ public sealed class ManagementServiceImpl(
         }
 
         return new InstalledPackage(result.PackageVersionId!.Value, version, result.PipelineNames);
+    }
+
+    /// <summary>The stored <c>Agents.Info</c> JSON as a <see cref="Struct"/>; <see langword="null"/> when there is none, or it is not a JSON object.</summary>
+    private static Struct? ParseInfo(string? json)
+    {
+        if (string.IsNullOrEmpty(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonParser.Default.Parse<Struct>(json);
+        }
+        catch (InvalidProtocolBufferException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Maps a terminal <c>Runs.Status</c> onto <see cref="RunCompleted.Types.Status"/>; <see langword="null"/> while the run is still in flight.</summary>

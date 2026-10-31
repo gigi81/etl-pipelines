@@ -29,7 +29,7 @@ public sealed class AgentRegistration(
             Version = typeof(AgentRegistration).Assembly.GetName().Version?.ToString() ?? "0.0.0",
         };
         registerRequest.Tags.AddRange(options.Value.Tags);
-        HostInfo.Describe(registerRequest);
+        registerRequest.HostInfo = HostInfo.Describe();
 
         var registerResponse = await client
             .RegisterAgentAsync(registerRequest, cancellationToken: stoppingToken)

@@ -39,9 +39,25 @@ second port, `Server:HttpPort` (5080), over HTTP/1.1, and exposes the same data 
 
 Anything else under `/api` is a `404`.
 
-The agent's host details come from its registration: `RegisterAgentRequest` carries the OS
-description and architecture, the IP addresses, the CPU count and the time the agent process started.
-Agents registered before they were added show `-` for them.
+The agent's host details come from its registration, and are stored as one JSON document
+(`Agents.Info`, a `jsonb` column) rather than a column each, so a new detail needs no schema change.
+`RegisterAgentRequest.host_info` is a free-form `google.protobuf.Struct`, which the Server stores
+as it is, and `GET /api/agents` returns it as `info`. Today the agent sends:
+
+```json
+{
+  "osDescription": "Ubuntu 24.04.5 LTS",
+  "osArchitecture": "X64",
+  "processorCount": 4,
+  "ipAddresses": ["192.168.1.20", "2001:db8::20"],
+  "startedAt": "2026-10-31T08:36:59.640Z"
+}
+```
+
+`ipAddresses` is an array: a host commonly has IPv4 and IPv6 addresses, and several of each.
+`uptimeSeconds` is worked out from `startedAt`. To report something more, add a key in
+`src/EtlPipelines.Agent/HostInfo.cs`: the Server passes it through, and the agents page lists any key
+it has no dedicated row for. Agents registered before this existed have no `info`, and show `-`.
 
 > **There is no authentication.** Port 5080 can start any installed pipeline. Like the gRPC port, it
 > belongs on a trusted network. See [Known limitations](limitations.md).

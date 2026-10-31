@@ -222,10 +222,12 @@ public class ApiEndpointsTests
 
         var first = agents[0];
         first.Status.Should().Be("Online");
-        first.OsDescription.Should().Be("Ubuntu 24.04");
-        first.OsArchitecture.Should().Be("X64");
-        first.IpAddresses.Should().Equal("10.0.0.7");
-        first.ProcessorCount.Should().Be(8);
+        first.Info!.Value.GetProperty("osDescription").GetString().Should().Be("Ubuntu 24.04");
+        first.Info.Value.GetProperty("osArchitecture").GetString().Should().Be("X64");
+        first.Info.Value.GetProperty("processorCount").GetInt32().Should().Be(8);
+        first.Info.Value.GetProperty("ipAddresses").EnumerateArray().Select(ip => ip.GetString())
+            .Should().Equal("10.0.0.7", "2001:db8::7");
+        first.Info.Value.GetProperty("somethingAddedLater").GetString().Should().Be("kept as is", "details the API does not know about pass through");
         first.Tags.Should().Equal("linux");
         first.UptimeSeconds.Should().BeInRange(2 * 3600 - 5, 2 * 3600 + 60);
         first.ActiveRuns.Select(r => r.Id).Should().Equal(running);

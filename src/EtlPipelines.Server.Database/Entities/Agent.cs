@@ -17,15 +17,7 @@ public partial class Agent
 
     public DateTime LastHeartbeatAt { get; set; }
 
-    public string? OsDescription { get; set; }
-
-    public string? OsArchitecture { get; set; }
-
-    public List<string>? IpAddresses { get; set; }
-
-    public int? ProcessorCount { get; set; }
-
-    public DateTime? StartedAt { get; set; }
+    public string? Info { get; set; }
 
     public virtual ICollection<AgentResourceSample> AgentResourceSamples { get; set; } = new List<AgentResourceSample>();
 

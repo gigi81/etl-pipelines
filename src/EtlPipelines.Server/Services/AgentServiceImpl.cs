@@ -6,6 +6,7 @@ using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
 using EtlPipelines.Server.Runs;
+using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.EntityFrameworkCore;
 
@@ -42,11 +43,7 @@ public sealed class AgentServiceImpl(
             Version = request.Version,
             Status = "Online",
             LastHeartbeatAt = DateTime.UtcNow,
-            OsDescription = string.IsNullOrEmpty(request.OsDescription) ? null : request.OsDescription,
-            OsArchitecture = string.IsNullOrEmpty(request.OsArchitecture) ? null : request.OsArchitecture,
-            IpAddresses = request.IpAddresses.ToList(),
-            ProcessorCount = request.ProcessorCount > 0 ? request.ProcessorCount : null,
-            StartedAt = request.StartedAt?.ToDateTime(),
+            Info = request.HostInfo is { Fields.Count: > 0 } info ? JsonFormatter.Default.Format(info) : null,
         };
 
         dbContext.Agents.Add(agent);

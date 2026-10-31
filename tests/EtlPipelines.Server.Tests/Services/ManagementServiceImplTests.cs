@@ -315,17 +315,22 @@ public class ManagementServiceImplTests
         var context = SqliteServerDbContext.Create();
         var agentService = new AgentServiceImpl(
             context, new AgentConnectionRegistry(), new PackageCatalogService(context, Mock.Of<INuGetFeedClient>()), new RunStatusStore());
-        var started = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
         var registration = new RegisterAgentRequest
         {
             MachineName = "agent-01",
             Version = "1.0.0",
-            OsDescription = "Ubuntu 24.04",
-            OsArchitecture = "X64",
-            ProcessorCount = 8,
-            StartedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(started),
+            HostInfo = new Google.Protobuf.WellKnownTypes.Struct
+            {
+                Fields =
+                {
+                    ["osDescription"] = Google.Protobuf.WellKnownTypes.Value.ForString("Ubuntu 24.04"),
+                    ["processorCount"] = Google.Protobuf.WellKnownTypes.Value.ForNumber(8),
+                    ["ipAddresses"] = Google.Protobuf.WellKnownTypes.Value.ForList(
+                        Google.Protobuf.WellKnownTypes.Value.ForString("10.0.0.7"),
+                        Google.Protobuf.WellKnownTypes.Value.ForString("2001:db8::7")),
+                },
+            },
         };
-        registration.IpAddresses.Add("10.0.0.7");
         await agentService.RegisterAgent(registration, TestServerCallContext());
 
         // An agent that predates the host details registers without them.
@@ -340,17 +345,18 @@ public class ManagementServiceImplTests
         //assert
         var old = response.Agents[0];
         old.MachineName.Should().Be("agent-00");
-        old.OsDescription.Should().BeEmpty();
-        old.IpAddresses.Should().BeEmpty();
-        old.ProcessorCount.Should().Be(0);
-        old.StartedAt.Should().BeNull();
+        old.Info.Should().BeNull();
 
         var described = response.Agents[1];
-        described.OsDescription.Should().Be("Ubuntu 24.04");
-        described.OsArchitecture.Should().Be("X64");
-        described.IpAddresses.Should().Equal("10.0.0.7");
-        described.ProcessorCount.Should().Be(8);
-        described.StartedAt.ToDateTime().Should().Be(started);
+        described.Info.Fields["osDescription"].StringValue.Should().Be("Ubuntu 24.04");
+        described.Info.Fields["processorCount"].NumberValue.Should().Be(8);
+        described.Info.Fields["ipAddresses"].ListValue.Values.Select(ip => ip.StringValue)
+            .Should().Equal("10.0.0.7", "2001:db8::7");
+
+        // Stored as one JSON document, so a new detail needs no schema change.
+        var stored = await context.Agents.AsNoTracking().SingleAsync(a => a.MachineName == "agent-01");
+        System.Text.Json.JsonDocument.Parse(stored.Info!).RootElement.GetProperty("ipAddresses").GetArrayLength().Should().Be(2);
+        (await context.Agents.AsNoTracking().SingleAsync(a => a.MachineName == "agent-00")).Info.Should().BeNull();
     }
 
     [Test]

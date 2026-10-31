@@ -3,6 +3,7 @@ import { IconAlertCircle, IconCpu, IconNetwork, IconServer } from '@tabler/icons
 import { Link } from 'react-router-dom';
 import { useAgents, useNow } from '../api/hooks';
 import type { Agent } from '../api/types';
+import { extraInfo } from '../lib/agentInfo';
 import { RunProgress } from '../components/RunProgress';
 import { StatusBadge } from '../components/StatusBadge';
 import { formatDateTime, formatDuration, formatRelative } from '../lib/format';
@@ -23,6 +24,8 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
 function AgentCard({ agent }: { agent: Agent }) {
   const now = useNow(5000);
   const online = agent.status === 'Online';
+  const info = agent.info;
+  const ipAddresses = info?.ipAddresses ?? [];
 
   return (
     <Card withBorder padding="lg" radius="md">
@@ -41,19 +44,19 @@ function AgentCard({ agent }: { agent: Agent }) {
 
         <Stack gap={4}>
           <Detail label="OS">
-            {agent.osDescription ?? '-'}
-            {agent.osArchitecture ? ` (${agent.osArchitecture})` : ''}
+            {info?.osDescription ?? '-'}
+            {info?.osArchitecture ? ` (${info.osArchitecture})` : ''}
           </Detail>
           <Detail label="IP">
             <Group gap={6}>
               <IconNetwork size={14} />
-              {agent.ipAddresses.length ? agent.ipAddresses.map((ip) => <Code key={ip}>{ip}</Code>) : '-'}
+              {ipAddresses.length ? ipAddresses.map((ip) => <Code key={ip}>{ip}</Code>) : '-'}
             </Group>
           </Detail>
           <Detail label="CPUs">
             <Group gap={6}>
               <IconCpu size={14} />
-              {agent.processorCount ?? '-'}
+              {info?.processorCount ?? '-'}
             </Group>
           </Detail>
           <Detail label="Uptime">
@@ -63,6 +66,11 @@ function AgentCard({ agent }: { agent: Agent }) {
             <span title={formatDateTime(agent.lastHeartbeatAt)}>{formatRelative(agent.lastHeartbeatAt, now)}</span>
           </Detail>
           <Detail label="Version">{agent.version}</Detail>
+          {extraInfo(info).map(([label, value]) => (
+            <Detail key={label} label={label}>
+              {value}
+            </Detail>
+          ))}
           {agent.tags.length > 0 && (
             <Detail label="Tags">
               <Group gap={4}>

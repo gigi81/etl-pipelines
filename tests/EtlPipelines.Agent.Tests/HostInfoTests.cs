@@ -1,5 +1,5 @@
 using System.Net;
-using EtlPipelines.AgentExecution.V1;
+using Google.Protobuf.WellKnownTypes;
 
 namespace EtlPipelines.Agent.Tests;
 
@@ -8,20 +8,20 @@ namespace EtlPipelines.Agent.Tests;
 public class HostInfoTests
 {
     [Test]
-    public async Task Describe_fills_in_the_host_details_the_agents_page_shows()
+    public async Task Describe_gives_the_host_details_the_agents_page_shows()
     {
         //arrange
-        var request = new RegisterAgentRequest();
-        var before = DateTime.UtcNow;
+        var before = DateTimeOffset.UtcNow;
 
         //act
-        HostInfo.Describe(request);
+        var info = HostInfo.Describe();
 
         //assert
-        request.OsDescription.Should().NotBeNullOrWhiteSpace();
-        request.OsArchitecture.Should().NotBeNullOrWhiteSpace();
-        request.ProcessorCount.Should().BeGreaterThan(0);
-        request.StartedAt.ToDateTime().Should().BeBefore(before.AddSeconds(1), "the agent process started before it registered");
+        info.Fields["osDescription"].StringValue.Should().NotBeNullOrWhiteSpace();
+        info.Fields["osArchitecture"].StringValue.Should().NotBeNullOrWhiteSpace();
+        info.Fields["processorCount"].NumberValue.Should().BeGreaterThan(0);
+        info.Fields["ipAddresses"].KindCase.Should().Be(Value.KindOneofCase.ListValue, "a host can have several addresses");
+        DateTimeOffset.Parse(info.Fields["startedAt"].StringValue).Should().BeBefore(before.AddSeconds(1), "the process started before it registered");
         await Task.CompletedTask;
     }
 

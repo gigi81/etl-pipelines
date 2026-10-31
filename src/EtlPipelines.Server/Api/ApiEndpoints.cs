@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
@@ -223,26 +224,52 @@ public static class ApiEndpoints
                 .ConfigureAwait(false),
             cancellationToken).ConfigureAwait(false);
 
-        var now = time.GetUtcNow().UtcDateTime;
-        var result = agents.Select(agent => new AgentDto(
-            agent.Id,
-            agent.MachineName,
-            agent.Tags,
-            agent.Version,
-            agent.Status,
-            Utc(agent.LastHeartbeatAt),
-            agent.OsDescription,
-            agent.OsArchitecture,
-            agent.IpAddresses ?? [],
-            agent.ProcessorCount,
-            agent.StartedAt is { } started ? Utc(started) : null,
-            agent.Status == "Online" && agent.StartedAt is { } startedAt
-                ? Math.Max(0, (long)(now - Utc(startedAt)).TotalSeconds)
-                : null,
-            activeRuns.Where(r => r.AgentId == agent.Id).ToList())).ToList();
+        var now = time.GetUtcNow();
+        var result = agents.Select(agent =>
+        {
+            var info = ParseInfo(agent.Info);
+            return new AgentDto(
+                agent.Id,
+                agent.MachineName,
+                agent.Tags,
+                agent.Version,
+                agent.Status,
+                Utc(agent.LastHeartbeatAt),
+                info,
+                agent.Status == "Online" ? UptimeSeconds(info, now) : null,
+                activeRuns.Where(r => r.AgentId == agent.Id).ToList());
+        }).ToList();
 
         return TypedResults.Ok(result);
     }
+
+    /// <summary>The stored <c>Agents.Info</c> as JSON; <see langword="null"/> when there is none, or it is not a JSON object.</summary>
+    private static JsonElement? ParseInfo(string? json)
+    {
+        if (string.IsNullOrEmpty(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.ValueKind == JsonValueKind.Object ? document.RootElement.Clone() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Seconds from <c>info.startedAt</c> to <paramref name="now"/>, when the agent reported a start time.</summary>
+    private static long? UptimeSeconds(JsonElement? info, DateTimeOffset now) =>
+        info is { } element
+            && element.TryGetProperty("startedAt", out var startedAt)
+            && startedAt.ValueKind == JsonValueKind.String
+            && startedAt.TryGetDateTimeOffset(out var started)
+                ? Math.Max(0, (long)(now - started).TotalSeconds)
+                : null;
 
     /// <summary>Projects <c>Runs</c> onto <see cref="RunSummaryDto"/>, one SQL query, no tracking - filter, order and page <paramref name="runs"/> first - EF cannot translate a filter or ordering over the projected DTO.</summary>
     private static IQueryable<RunSummaryDto> Project(IQueryable<Run> runs) =>

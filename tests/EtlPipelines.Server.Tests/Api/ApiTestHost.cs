@@ -112,11 +112,15 @@ internal sealed class ApiTestHost : IAsyncDisposable
             Version = "1.2.3",
             Status = status,
             LastHeartbeatAt = DateTime.UtcNow,
-            OsDescription = "Ubuntu 24.04",
-            OsArchitecture = "X64",
-            IpAddresses = ["10.0.0.7"],
-            ProcessorCount = 8,
-            StartedAt = startedAt,
+            Info = JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["osDescription"] = "Ubuntu 24.04",
+                ["osArchitecture"] = "X64",
+                ["processorCount"] = 8,
+                ["ipAddresses"] = new[] { "10.0.0.7", "2001:db8::7" },
+                ["startedAt"] = startedAt?.ToString("O"),
+                ["somethingAddedLater"] = "kept as is",
+            }),
         };
         context.Agents.Add(agent);
         await context.SaveChangesAsync();
