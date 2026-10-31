@@ -37,6 +37,9 @@ second port, `Server:HttpPort` (5080), over HTTP/1.1, and exposes the same data 
 | `GET /api/runs/{id}/stream` | The same payload as server-sent events (`event: run`), once on connect and again on every change. |
 | `GET /api/agents` | Agents with their host details, `uptimeSeconds` (online agents only) and `activeRuns`. |
 
+The response shapes are plain records in `src/EtlPipelines.Server.Contracts`; `web/src/api/types.ts`
+mirrors them by hand.
+
 Every timestamp in the API is ISO 8601 in UTC, ending in `Z`, and its name ends in `Utc`
 (`requestedAtUtc`, `startedAtUtc`, `completedAtUtc`, `sampledAtUtc`, `lastHeartbeatAtUtc`), so no client
 has to guess a zone or convert. The Server enforces it when it serializes, whatever the database

@@ -1,4 +1,4 @@
-namespace EtlPipelines.Server.Api;
+namespace EtlPipelines.Server.Contracts;
 
 /// <summary>One stage of a run as the pipeline process reported it.</summary>
 public sealed record StageDto(

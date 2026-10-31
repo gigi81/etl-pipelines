@@ -22,6 +22,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EtlPipelines.Server.Database\EtlPipelines.Server.Database.csproj" />
+    <!-- The REST API's request/response records (Api/ApiEndpoints.cs maps them). -->
+    <ProjectReference Include="..\EtlPipelines.Server.Contracts\EtlPipelines.Server.Contracts.csproj" />
     <!-- Generated proto types (messages, service base classes) - see that project's own comment. -->
     <ProjectReference Include="..\EtlPipelines.Protos\EtlPipelines.Protos.csproj" />
   </ItemGroup>

@@ -1,5 +1,5 @@
 // Every timestamp is ISO 8601 in UTC (ending in Z) and its name ends in `Utc`.
-// Mirrors the records in the DTO records in src/EtlPipelines.Server/Api/ (camelCase on the wire).
+// Mirrors the records in src/EtlPipelines.Server.Contracts/ (camelCase on the wire).
 
 export type RunStatus = 'Queued' | 'Dispatched' | 'Running' | 'Succeeded' | 'Failed' | 'AgentLost';
 

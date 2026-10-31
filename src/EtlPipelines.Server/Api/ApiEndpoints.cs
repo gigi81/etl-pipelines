@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using EtlPipelines.Server.Catalog;
+using EtlPipelines.Server.Contracts;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
 using EtlPipelines.Server.Runs;

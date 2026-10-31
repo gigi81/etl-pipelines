@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace EtlPipelines.Server.Api;
+namespace EtlPipelines.Server.Contracts;
 
 /// <summary>
 /// Reads and writes a <see cref="DateTime"/> as an ISO 8601 string that is always UTC (ending in

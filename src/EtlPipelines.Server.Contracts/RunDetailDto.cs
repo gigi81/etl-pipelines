@@ -1,4 +1,4 @@
-namespace EtlPipelines.Server.Api;
+namespace EtlPipelines.Server.Contracts;
 
 /// <summary>A run with everything the run page shows - and what <c>/api/runs/{id}/stream</c> pushes.</summary>
 /// <param name="Run">The run itself.</param>

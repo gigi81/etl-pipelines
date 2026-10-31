@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The shapes of the Server's REST API (what /api returns), as plain records with no dependency on
+    the Server, EF Core or ASP.NET Core - so the Server that produces them, its tests, and any .NET
+    client of the API can all share one definition. Not the gRPC messages: those are generated from
+    protos/v1 into EtlPipelines.Protos. web/src/api/types.ts mirrors these by hand.
+  -->
+
+</Project>

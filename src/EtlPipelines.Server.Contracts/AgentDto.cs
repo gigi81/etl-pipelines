@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace EtlPipelines.Server.Api;
+namespace EtlPipelines.Server.Contracts;
 
 /// <summary>An agent, with its host details and the runs it is working on right now.</summary>
 /// <param name="Info">

@@ -1,5 +1,5 @@
 using System.Text.Json;
-using EtlPipelines.Server.Api;
+using EtlPipelines.Server.Contracts;
 
 namespace EtlPipelines.Server.Tests.Api;
 

@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading.Channels;
 using EtlPipelines.AgentExecution.V1;
-using EtlPipelines.Server.Api;
+using EtlPipelines.Server.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace EtlPipelines.Server.Tests.Api;
