@@ -59,7 +59,7 @@ export function PipelinesPage() {
                   <>
                     <StatusBadge status={pipeline.lastRun.status} />
                     <Text size="xs" c="dimmed" component={Link} to={`/runs/${pipeline.lastRun.id}`}>
-                      last run {formatRelative(pipeline.lastRun.requestedAt, now)}
+                      last run {formatRelative(pipeline.lastRun.requestedAtUtc, now)}
                     </Text>
                   </>
                 ) : (

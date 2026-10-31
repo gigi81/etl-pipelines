@@ -80,7 +80,7 @@ export function RunDetailPage() {
             )
           }
         />
-        <Stat label="Started" value={<Text span inherit title={formatDateTime(run.startedAt)}>{run.startedAt ? new Date(run.startedAt).toLocaleTimeString() : '-'}</Text>} />
+        <Stat label="Started" value={<Text span inherit title={formatDateTime(run.startedAtUtc)}>{run.startedAtUtc ? new Date(run.startedAtUtc).toLocaleTimeString() : '-'}</Text>} />
         <Stat label="Rows read" value={formatNumber(run.rowsRead)} />
         <Stat label="Rows written" value={formatNumber(run.rowsWritten)} />
         <Stat label="Rows failed" value={formatNumber(run.rowsFailed)} color={run.rowsFailed ? 'red' : undefined} />

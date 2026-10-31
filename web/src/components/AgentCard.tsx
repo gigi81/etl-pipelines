@@ -52,7 +52,7 @@ export function AgentCard({ agent }: { agent: Agent }) {
             {agent.uptimeSeconds !== null ? formatDuration(agent.uptimeSeconds * 1000) : '-'}
           </Detail>
           <Detail label="Heartbeat">
-            <span title={formatDateTime(agent.lastHeartbeatAt)}>{formatRelative(agent.lastHeartbeatAt, now)}</span>
+            <span title={formatDateTime(agent.lastHeartbeatAtUtc)}>{formatRelative(agent.lastHeartbeatAtUtc, now)}</span>
           </Detail>
           <Detail label="Version">{agent.version}</Detail>
           {extraInfo(info).map(([label, value]) => (

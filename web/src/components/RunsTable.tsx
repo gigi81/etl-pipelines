@@ -45,8 +45,8 @@ export function RunsTable({ runs, showProgress }: { runs: RunSummary[]; showProg
                 </Table.Td>
               )}
               <Table.Td>{run.agentName ?? <Text c="dimmed">-</Text>}</Table.Td>
-              <Table.Td title={formatDateTime(run.startedAt ?? run.requestedAt)}>
-                {formatRelative(run.startedAt ?? run.requestedAt, now)}
+              <Table.Td title={formatDateTime(run.startedAtUtc ?? run.requestedAtUtc)}>
+                {formatRelative(run.startedAtUtc ?? run.requestedAtUtc, now)}
               </Table.Td>
               <Table.Td>{formatDuration(runDurationMs(run, isActive(run.status) ? now : undefined))}</Table.Td>
               <Table.Td ta="right">{formatNumber(run.rowsRead)}</Table.Td>

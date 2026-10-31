@@ -204,7 +204,7 @@ public static class ApiEndpoints
     }
 
     private static string Fingerprint(RunDetailDto detail) =>
-        $"{detail.Run.Status}|{detail.Run.AgentId}|{detail.Stages.Count}|{detail.ResourceSamples.LastOrDefault()?.SampledAt:O}|{detail.Run.CompletedAt:O}";
+        $"{detail.Run.Status}|{detail.Run.AgentId}|{detail.Stages.Count}|{detail.ResourceSamples.LastOrDefault()?.SampledAtUtc:O}|{detail.Run.CompletedAtUtc:O}";
 
     private static async Task<Ok<List<AgentDto>>> ListAgentsAsync(ServerDbContext db, TimeProvider time, CancellationToken cancellationToken)
     {
@@ -234,7 +234,7 @@ public static class ApiEndpoints
                 agent.Tags,
                 agent.Version,
                 agent.Status,
-                Utc(agent.LastHeartbeatAt),
+                agent.LastHeartbeatAt,
                 info,
                 agent.Status == "Online" ? UptimeSeconds(info, now) : null,
                 activeRuns.Where(r => r.AgentId == agent.Id).ToList());
@@ -262,10 +262,10 @@ public static class ApiEndpoints
         }
     }
 
-    /// <summary>Seconds from <c>info.startedAt</c> to <paramref name="now"/>, when the agent reported a start time.</summary>
+    /// <summary>Seconds from <c>info.startedAtUtc</c> to <paramref name="now"/>, when the agent reported a start time.</summary>
     private static long? UptimeSeconds(JsonElement? info, DateTimeOffset now) =>
         info is { } element
-            && element.TryGetProperty("startedAt", out var startedAt)
+            && element.TryGetProperty("startedAtUtc", out var startedAt)
             && startedAt.ValueKind == JsonValueKind.String
             && startedAt.TryGetDateTimeOffset(out var started)
                 ? Math.Max(0, (long)(now - started).TotalSeconds)
@@ -378,6 +378,4 @@ public static class ApiEndpoints
             expected,
             samples);
     }
-
-    private static DateTime Utc(DateTime value) => DateTime.SpecifyKind(value, DateTimeKind.Utc);
 }

@@ -14,7 +14,7 @@ export function ResourceCharts({ samples }: { samples: ResourceSample[] }) {
   }
 
   const data = samples.map((sample) => ({
-    time: new Date(sample.sampledAt).toLocaleTimeString(),
+    time: new Date(sample.sampledAtUtc).toLocaleTimeString(),
     cpu: Math.round(sample.cpuPercent * 10) / 10,
     memory: Math.round((sample.workingSetBytes / (1024 * 1024)) * 10) / 10,
   }));

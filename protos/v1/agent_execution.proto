@@ -26,7 +26,7 @@ message RegisterAgentRequest {
   // Free-form details about the agent's host, shown by the WebUI's agents page and stored as JSON
   // (Agents.Info) - so a new detail needs no proto or schema change. Keys are camelCase; today:
   // osDescription, osArchitecture, processorCount, ipAddresses (a list - a host can have several
-  // IPv4 and IPv6 addresses) and startedAt (ISO 8601, when the agent process started). Unset by an
+  // IPv4 and IPv6 addresses) and startedAtUtc (ISO 8601, always UTC: when the agent process started). Unset by an
   // older agent.
   google.protobuf.Struct host_info = 4;
 }

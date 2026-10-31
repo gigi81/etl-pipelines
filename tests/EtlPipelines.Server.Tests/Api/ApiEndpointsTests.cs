@@ -187,6 +187,72 @@ public class ApiEndpointsTests
     }
 
     [Test]
+    public async Task Every_timestamp_is_UTC_and_named_so_whatever_kind_the_database_returns()
+    {
+        //arrange - SQLite hands DateTimes back with an unspecified kind, which would serialise without a "Z"
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("p");
+        var agentId = await host.SeedAgentAsync(startedAt: DateTime.UtcNow.AddHours(-1));
+        var runId = await host.SeedRunAsync(pipelineId, "Succeeded", agentId, stages: [("read", false)]);
+        await using (var context = host.NewContext())
+        {
+            context.AgentResourceSamples.Add(new Database.Entities.AgentResourceSample
+            {
+                Id = Guid.NewGuid(), RunId = runId, AgentId = agentId, SampledAt = DateTime.UtcNow, CpuPercent = 1, WorkingSetBytes = 1,
+            });
+            await context.SaveChangesAsync();
+        }
+
+        //act
+        var run = await host.Client.GetStringAsync($"/api/runs/{runId}");
+        var agents = await host.Client.GetStringAsync("/api/agents");
+
+        //assert
+        var timestamps = new List<(string Name, string Value)>();
+        foreach (var json in new[] { run, agents })
+        {
+            CollectTimestamps(JsonDocument.Parse(json).RootElement, timestamps);
+        }
+
+        timestamps.Select(t => t.Name).Should().Contain(
+            ["requestedAtUtc", "startedAtUtc", "completedAtUtc", "sampledAtUtc", "lastHeartbeatAtUtc"]);
+        timestamps.Should().OnlyContain(t => t.Name.EndsWith("Utc", StringComparison.Ordinal), "every timestamp field says it is UTC");
+        timestamps.Should().OnlyContain(t => t.Value.EndsWith('Z'), "and is");
+        timestamps.Where(t => t.Name == "startedAtUtc").Should().OnlyContain(t => t.Value.EndsWith('Z'));
+    }
+
+    /// <summary>Every string value that parses as a date, with the name of the property it is under.</summary>
+    private static void CollectTimestamps(JsonElement element, List<(string, string)> found)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (property.Value.ValueKind == JsonValueKind.String
+                        && property.Value.GetString() is { } text
+                        && text.Length > 10 && char.IsDigit(text[0]) && DateTimeOffset.TryParse(text, out _))
+                    {
+                        found.Add((property.Name, text));
+                    }
+                    else
+                    {
+                        CollectTimestamps(property.Value, found);
+                    }
+                }
+
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    CollectTimestamps(item, found);
+                }
+
+                break;
+        }
+    }
+
+    [Test]
     public async Task An_unknown_run_is_a_404_both_as_detail_and_as_a_stream()
     {
         await using var host = await ApiTestHost.StartAsync();

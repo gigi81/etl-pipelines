@@ -46,11 +46,11 @@ export const formatDateTime = (iso: string | null) => (iso ? new Date(iso).toLoc
 
 /** How long a run has been going, or took: from start (or request) to completion (or `now`). */
 export function runDurationMs(
-  run: { requestedAt: string; startedAt: string | null; completedAt: string | null },
+  run: { requestedAtUtc: string; startedAtUtc: string | null; completedAtUtc: string | null },
   now: number = Date.now(),
 ): number {
-  const start = new Date(run.startedAt ?? run.requestedAt).getTime();
-  const end = run.completedAt ? new Date(run.completedAt).getTime() : now;
+  const start = new Date(run.startedAtUtc ?? run.requestedAtUtc).getTime();
+  const end = run.completedAtUtc ? new Date(run.completedAtUtc).getTime() : now;
   return end - start;
 }
 

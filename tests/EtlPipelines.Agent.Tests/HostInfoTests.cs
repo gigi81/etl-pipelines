@@ -21,7 +21,9 @@ public class HostInfoTests
         info.Fields["osArchitecture"].StringValue.Should().NotBeNullOrWhiteSpace();
         info.Fields["processorCount"].NumberValue.Should().BeGreaterThan(0);
         info.Fields["ipAddresses"].KindCase.Should().Be(Value.KindOneofCase.ListValue, "a host can have several addresses");
-        DateTimeOffset.Parse(info.Fields["startedAt"].StringValue).Should().BeBefore(before.AddSeconds(1), "the process started before it registered");
+        var startedAt = info.Fields["startedAtUtc"].StringValue;
+        startedAt.Should().EndWith("Z", "timestamps are always UTC");
+        DateTimeOffset.Parse(startedAt).Should().BeBefore(before.AddSeconds(1), "the process started before it registered");
         await Task.CompletedTask;
     }
 

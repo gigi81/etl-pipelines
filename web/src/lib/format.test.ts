@@ -26,13 +26,13 @@ describe('formatBytes', () => {
 
 describe('runDurationMs', () => {
   it('runs from start to completion, or to now while running', () => {
-    const run = { requestedAt: '2026-01-01T00:00:00Z', startedAt: '2026-01-01T00:00:10Z', completedAt: null };
+    const run = { requestedAtUtc: '2026-01-01T00:00:00Z', startedAtUtc: '2026-01-01T00:00:10Z', completedAtUtc: null };
     expect(runDurationMs(run, Date.parse('2026-01-01T00:01:10Z'))).toBe(60_000);
-    expect(runDurationMs({ ...run, completedAt: '2026-01-01T00:00:40Z' })).toBe(30_000);
+    expect(runDurationMs({ ...run, completedAtUtc: '2026-01-01T00:00:40Z' })).toBe(30_000);
   });
 
   it('falls back to the request time for a run that has not started', () => {
-    const run = { requestedAt: '2026-01-01T00:00:00Z', startedAt: null, completedAt: null };
+    const run = { requestedAtUtc: '2026-01-01T00:00:00Z', startedAtUtc: null, completedAtUtc: null };
     expect(runDurationMs(run, Date.parse('2026-01-01T00:00:05Z'))).toBe(5_000);
   });
 });

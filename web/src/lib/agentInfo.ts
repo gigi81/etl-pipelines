@@ -1,7 +1,7 @@
 import type { AgentInfo } from '../api/types';
 
 /** Keys of `AgentInfo` the card has its own row for; any other key is listed after them. */
-const KNOWN_INFO_KEYS = new Set(['osDescription', 'osArchitecture', 'processorCount', 'ipAddresses', 'startedAt']);
+const KNOWN_INFO_KEYS = new Set(['osDescription', 'osArchitecture', 'processorCount', 'ipAddresses', 'startedAtUtc']);
 
 /** "someNewDetail" -> "Some new detail". */
 const humanize = (key: string) => {

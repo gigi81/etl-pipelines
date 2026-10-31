@@ -118,7 +118,7 @@ internal sealed class ApiTestHost : IAsyncDisposable
                 ["osArchitecture"] = "X64",
                 ["processorCount"] = 8,
                 ["ipAddresses"] = new[] { "10.0.0.7", "2001:db8::7" },
-                ["startedAt"] = startedAt?.ToString("O"),
+                ["startedAtUtc"] = startedAt?.ToUniversalTime().ToString("O"),
                 ["somethingAddedLater"] = "kept as is",
             }),
         };

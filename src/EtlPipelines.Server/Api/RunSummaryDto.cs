@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace EtlPipelines.Server.Api;
 
 /// <summary>One run, without its per-stage detail - what the run lists show.</summary>
@@ -10,9 +12,9 @@ public sealed record RunSummaryDto(
     Guid? AgentId,
     string? AgentName,
     string Status,
-    DateTime RequestedAt,
-    DateTime? StartedAt,
-    DateTime? CompletedAt,
+    [property: JsonConverter(typeof(UtcDateTimeConverter))] DateTime RequestedAtUtc,
+    [property: JsonConverter(typeof(UtcDateTimeConverter))] DateTime? StartedAtUtc,
+    [property: JsonConverter(typeof(UtcDateTimeConverter))] DateTime? CompletedAtUtc,
     int? ExitCode,
     long? RowsRead,
     long? RowsWritten,

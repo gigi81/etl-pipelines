@@ -1,3 +1,4 @@
+// Every timestamp is ISO 8601 in UTC (ending in Z) and its name ends in `Utc`.
 // Mirrors the records in the DTO records in src/EtlPipelines.Server/Api/ (camelCase on the wire).
 
 export type RunStatus = 'Queued' | 'Dispatched' | 'Running' | 'Succeeded' | 'Failed' | 'AgentLost';
@@ -11,9 +12,9 @@ export interface RunSummary {
   agentId: string | null;
   agentName: string | null;
   status: RunStatus;
-  requestedAt: string;
-  startedAt: string | null;
-  completedAt: string | null;
+  requestedAtUtc: string;
+  startedAtUtc: string | null;
+  completedAtUtc: string | null;
   exitCode: number | null;
   rowsRead: number | null;
   rowsWritten: number | null;
@@ -43,7 +44,7 @@ export interface Stage {
 }
 
 export interface ResourceSample {
-  sampledAt: string;
+  sampledAtUtc: string;
   cpuPercent: number;
   workingSetBytes: number;
 }
@@ -66,8 +67,8 @@ export interface AgentInfo {
   processorCount?: number;
   /** Every address of the host, IPv4 and IPv6 alike. */
   ipAddresses?: string[];
-  /** ISO 8601 - when the agent process started. */
-  startedAt?: string;
+  /** ISO 8601, UTC - when the agent process started. */
+  startedAtUtc?: string;
   [key: string]: unknown;
 }
 
@@ -77,7 +78,7 @@ export interface Agent {
   tags: string[];
   version: string;
   status: 'Online' | 'Offline';
-  lastHeartbeatAt: string;
+  lastHeartbeatAtUtc: string;
   info: AgentInfo | null;
   uptimeSeconds: number | null;
   activeRuns: RunSummary[];

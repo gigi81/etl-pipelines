@@ -28,7 +28,7 @@ public static class HostInfo
         try
         {
             using var process = Process.GetCurrentProcess();
-            info.Fields["startedAt"] = Value.ForString(process.StartTime.ToUniversalTime().ToString("O"));
+            info.Fields["startedAtUtc"] = Value.ForString(process.StartTime.ToUniversalTime().ToString("O"));
         }
         catch (Exception exception) when (exception is InvalidOperationException or PlatformNotSupportedException or System.ComponentModel.Win32Exception)
         {

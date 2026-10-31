@@ -37,6 +37,11 @@ second port, `Server:HttpPort` (5080), over HTTP/1.1, and exposes the same data 
 | `GET /api/runs/{id}/stream` | The same payload as server-sent events (`event: run`), once on connect and again on every change. |
 | `GET /api/agents` | Agents with their host details, `uptimeSeconds` (online agents only) and `activeRuns`. |
 
+Every timestamp in the API is ISO 8601 in UTC, ending in `Z`, and its name ends in `Utc`
+(`requestedAtUtc`, `startedAtUtc`, `completedAtUtc`, `sampledAtUtc`, `lastHeartbeatAtUtc`), so no client
+has to guess a zone or convert. The Server enforces it when it serializes, whatever the database
+returns.
+
 Anything else under `/api` is a `404`.
 
 The agent's host details come from its registration, and are stored as one JSON document
@@ -50,12 +55,13 @@ as it is, and `GET /api/agents` returns it as `info`. Today the agent sends:
   "osArchitecture": "X64",
   "processorCount": 4,
   "ipAddresses": ["192.168.1.20", "2001:db8::20"],
-  "startedAt": "2026-10-31T08:36:59.640Z"
+  "startedAtUtc": "2026-10-31T08:36:59.640Z"
 }
 ```
 
 `ipAddresses` is an array: a host commonly has IPv4 and IPv6 addresses, and several of each.
-`uptimeSeconds` is worked out from `startedAt`. To report something more, add a key in
+`uptimeSeconds` is worked out from `startedAtUtc`. An agent reports every timestamp the same way:
+UTC, with the `Utc` postfix on the key. To report something more, add a key in
 `src/EtlPipelines.Agent/HostInfo.cs`: the Server passes it through, and the agents page lists any key
 it has no dedicated row for. Agents registered before this existed have no `info`, and show `-`.
 
