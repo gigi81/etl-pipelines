@@ -23,6 +23,7 @@ public static class ApiEndpoints
     {
         var api = app.MapGroup("/api");
 
+        api.MapGet("/info", () => TypedResults.Ok(new ServerInfoDto(ServerVersion.Current)));
         api.MapGet("/pipelines", ListPipelinesAsync);
         api.MapPost("/pipelines/{pipelineId:guid}/runs", TriggerRunAsync);
         api.MapGet("/runs", ListRunsAsync);

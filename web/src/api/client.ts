@@ -8,6 +8,7 @@ import type {
   PipelineAssignment,
   RunDetail,
   RunSummary,
+  ServerInfo,
   UploadedPackage,
 } from './types';
 
@@ -39,6 +40,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  info: () => request<ServerInfo>('/api/info'),
   pipelines: () => request<Pipeline[]>('/api/pipelines'),
   triggerRun: (pipelineId: string) =>
     request<{ runId: string }>(`/api/pipelines/${pipelineId}/runs`, { method: 'POST' }),

@@ -94,6 +94,7 @@ second port, `Server:HttpPort` (5080), over HTTP/1.1, and exposes the same data 
 
 | Route | |
 |---|---|
+| `GET /api/info` | `{ "version": ... }`: the version the Server was built as (`0.2.0.5+01d5a8c`: version, commits since it was set, commit), shown at the bottom of the navigation bar. |
 | `GET /api/pipelines` | Installed pipelines with `activeRuns` and `lastRun`. |
 | `POST /api/pipelines/{id}/runs` | Starts a run. `202` with `{ "runId": ... }` and a `Location` header. `404` for an unknown pipeline, `409` when it cannot be run, which includes no agent being connected. The body is a [problem details](https://www.rfc-editor.org/rfc/rfc9457) with the reason. |
 | `GET /api/runs?active=&pipelineId=&limit=` | Runs, newest first. `active=true` keeps those in flight, `active=false` the finished ones. `limit` is 1 to 200, 50 by default. |

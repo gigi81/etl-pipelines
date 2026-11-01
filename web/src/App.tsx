@@ -1,9 +1,9 @@
-import { ActionIcon, AppShell, Badge, Burger, Group, Loader, NavLink, Title, useComputedColorScheme, useMantineColorScheme } from '@mantine/core';
+import { ActionIcon, AppShell, Badge, Burger, Group, Loader, NavLink, Text, Title, useComputedColorScheme, useMantineColorScheme } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { IconMoon, IconPackage, IconPlayerPlay, IconServer, IconSettings, IconSun, IconTopologyStar3 } from '@tabler/icons-react';
 import { Suspense, lazy } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { useRuns } from './api/hooks';
+import { useRuns, useServerInfo } from './api/hooks';
 import { useLiveUpdates } from './api/useLiveUpdates';
 import { AgentsPage } from './pages/AgentsPage';
 import { ConfigurationPage } from './pages/ConfigurationPage';
@@ -21,6 +21,7 @@ export function App() {
   const scheme = useComputedColorScheme('light');
   const running = useRuns({ active: true });
   const live = useLiveUpdates();
+  const { data: server } = useServerInfo();
 
   const links = [
     { to: '/pipelines', label: 'Pipelines', icon: <IconTopologyStar3 size={18} />, match: '/pipelines' },
@@ -76,6 +77,11 @@ export function App() {
             onClick={close}
           />
         ))}
+        {server && (
+          <Text size="xs" c="dimmed" mt="auto" px="sm" py="xs" title="The version of the server">
+            Server {server.version}
+          </Text>
+        )}
       </AppShell.Navbar>
 
       <AppShell.Main>

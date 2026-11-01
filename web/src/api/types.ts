@@ -124,6 +124,12 @@ export interface ConfigurationKey {
   updatedAtUtc: string;
 }
 
+/** What `GET /api/info` says about the server. */
+export interface ServerInfo {
+  /** The version it was built as, e.g. `0.2.0.5+01d5a8c`. */
+  version: string;
+}
+
 export interface Agent {
   id: string;
   machineName: string;

@@ -7,6 +7,9 @@ import { buildPipelineLabeller } from '../lib/pipelineLabels';
 
 // The lists below are fetched once and then kept current by `useLiveUpdates` (the server pushes
 // every change), so none of them polls.
+/** The server's version. Refetched when the live feed reconnects, which is what happens when the server is upgraded. */
+export const useServerInfo = () => useQuery({ queryKey: ['info'], queryFn: api.info });
+
 export const usePipelines = () =>
   useQuery({ queryKey: ['pipelines'], queryFn: api.pipelines });
 
