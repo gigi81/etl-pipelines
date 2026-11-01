@@ -78,8 +78,8 @@ online matches; the card shows `Runs on: …` for a pipeline that has a choice. 
 (package, pipeline name), so it survives the package being updated.
 
 When a run starts, the Server picks among the connected agents that are allowed: the one with the fewest
-runs going (an agent carries out one work item at a time, so a second run would otherwise wait behind the
-first while another agent sat idle), and among equally busy ones one that already has the package
+runs going (an agent runs only so many at once, four by default, and the rest wait on it while another
+agent might sit idle), and among equally busy ones one that already has the package
 installed, then the lowest id so the choice is repeatable. If agents are connected but none is allowed,
 the run is refused with the assignment named (`409`), rather than sent somewhere it should not go.
 Installing a package is not restricted: it goes to any connected agent, and the agent that runs a pipeline

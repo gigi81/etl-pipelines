@@ -14,8 +14,31 @@ namespace EtlPipelines.Agent;
 /// </summary>
 public sealed class PackageInstaller(IOptions<AgentOptions> options)
 {
-    /// <summary>Installs <paramref name="packageId"/> <paramref name="version"/> and returns the installed shim's full path.</summary>
+    // One install at a time: work items are handled concurrently, and two `dotnet tool install`s of the same
+    // package into one directory (two runs of it arriving together, say) would fail each other.
+    private readonly SemaphoreSlim _installLock = new(1, 1);
+
+    /// <summary>
+    /// Installs <paramref name="packageId"/> <paramref name="version"/> and returns the installed shim's full path.
+    /// Installs go one at a time, and one that finds the version already installed (another install of it just
+    /// finished) returns that instead of installing it again.
+    /// </summary>
     public async Task<string> InstallAsync(
+        string packageId, string version, IEnumerable<string> feedUrls, CancellationToken cancellationToken)
+    {
+        await _installLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return TryGetInstalledShimPath(packageId, version)
+                ?? await InstallCoreAsync(packageId, version, feedUrls, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _installLock.Release();
+        }
+    }
+
+    private async Task<string> InstallCoreAsync(
         string packageId, string version, IEnumerable<string> feedUrls, CancellationToken cancellationToken)
     {
         var installDirectory = Path.Combine(options.Value.CacheDirectory, packageId, version);

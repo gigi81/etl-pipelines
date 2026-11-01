@@ -41,7 +41,7 @@ public class AgentServiceImplTests
     }
 
     [Test]
-    public async Task Registering_does_not_wait_for_the_database_and_a_heartbeat_from_an_unknown_agent_is_ignored()
+    public async Task Registering_does_not_wait_for_the_database()
     {
         //arrange
         var live = await TestLiveState.CreateAsync();
@@ -49,40 +49,77 @@ public class AgentServiceImplTests
 
         //act
         await service.RegisterAgent(new RegisterAgentRequest { MachineName = "a", Version = "1" }, CallContext());
-        var ack = await service.Heartbeat(new AgentHeartbeatRequest { AgentId = Guid.NewGuid().ToString() }, CallContext());
 
         //assert
-        ack.Should().NotBeNull();
         live.PendingEventCount.Should().Be(1, "just the registration, queued for the database");
     }
 
     [Test]
-    public async Task An_agent_that_brings_the_id_it_was_issued_is_the_same_agent_and_one_that_does_not_is_new()
+    public async Task A_heartbeat_from_an_agent_the_server_does_not_know_is_told_so_and_one_from_a_known_agent_is_answered()
     {
         //arrange
         var live = await TestLiveState.CreateAsync();
         var service = Create(live);
-        var first = await service.RegisterAgent(new RegisterAgentRequest { MachineName = "container-1", Version = "1" }, CallContext());
+        var known = await service.RegisterAgent(new RegisterAgentRequest { MachineName = "a", Version = "1" }, CallContext());
 
-        //act - the agent starts again, with the id it kept
-        var again = await service.RegisterAgent(
-            new RegisterAgentRequest { MachineName = "container-2", Version = "1", AgentId = first.AgentId }, CallContext());
-        var other = await service.RegisterAgent(new RegisterAgentRequest { MachineName = "elsewhere", Version = "1" }, CallContext());
+        //act
+        var ack = await service.Heartbeat(new AgentHeartbeatRequest { AgentId = known.AgentId }, CallContext());
+        var unknown = async () => await service.Heartbeat(new AgentHeartbeatRequest { AgentId = Guid.NewGuid().ToString() }, CallContext());
+        var malformed = async () => await service.Heartbeat(new AgentHeartbeatRequest { AgentId = "nope" }, CallContext());
 
-        //assert
-        again.AgentId.Should().Be(first.AgentId);
-        other.AgentId.Should().NotBe(first.AgentId);
-        (await live.ListAgentsAsync(CancellationToken.None)).Select(agent => agent.MachineName).Should().BeEquivalentTo("container-2", "elsewhere");
+        //assert - told "not found", so the agent registers again, rather than heartbeating to nobody
+        ack.Should().NotBeNull();
+        (await unknown.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.NotFound);
+        (await malformed.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
     }
 
     [Test]
-    public async Task An_agent_id_that_is_not_an_id_is_refused()
+    public async Task An_agent_that_reconnects_keeps_its_new_connection_when_the_old_one_ends_afterwards()
     {
-        var service = Create(await TestLiveState.CreateAsync());
+        //arrange - the agent subscribes, loses the connection, and subscribes again before the server noticed the first was gone
+        var connections = new AgentConnectionRegistry();
+        var service = Create(await TestLiveState.CreateAsync(), connections);
+        var writer = new Mock<IServerStreamWriter<WorkItem>>();
+        using var firstCall = new CancellationTokenSource();
+        using var secondCall = new CancellationTokenSource();
+        var request = new SubscribeRequest { AgentId = "agent" };
 
-        var act = () => service.RegisterAgent(new RegisterAgentRequest { MachineName = "a", AgentId = "not-a-guid" }, CallContext());
+        var first = service.Subscribe(request, writer.Object, CallContext(firstCall.Token));
+        await Task.Delay(50);
+        var second = service.Subscribe(request, writer.Object, CallContext(secondCall.Token));
+        await Task.Delay(50);
 
-        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        //act - the old call ends (the new one replaced it, which ended it) - or is cancelled by the server finally noticing
+        await firstCall.CancelAsync();
+        try
+        {
+            await first.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        catch (OperationCanceledException)
+        {
+            // Either way: it is over.
+        }
+
+        //assert - the agent is still connected on its new call, and work for it still reaches it
+        connections.TryGetAnyConnectedAgentId(out var connected).Should().BeTrue();
+        connected.Should().Be("agent");
+        var work = new ExecutePipelineWorkItem { SessionId = "s", PackageId = "P", PackageVersion = "1", PipelineName = "p" };
+        connections.DispatchExecutePipeline("agent", work);
+        await Task.Delay(100);
+        writer.Verify(w => w.WriteAsync(It.Is<WorkItem>(item => item.ExecutePipeline.SessionId == "s")), Times.Once);
+
+        // and when the call it has now ends, it is gone
+        await secondCall.CancelAsync();
+        try
+        {
+            await second.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        catch (OperationCanceledException)
+        {
+            // Over.
+        }
+
+        connections.TryGetAnyConnectedAgentId(out _).Should().BeFalse();
     }
 
     [Test]
@@ -185,10 +222,10 @@ public class AgentServiceImplTests
             new PackageCatalogService(SqliteServerDbContext.Create(), Mock.Of<INuGetFeedClient>()),
             live);
 
-    private static ServerCallContext CallContext()
+    private static ServerCallContext CallContext(CancellationToken cancellationToken = default)
     {
         var context = new Mock<ServerCallContext> { CallBase = true };
-        context.Protected().Setup<CancellationToken>("CancellationTokenCore").Returns(CancellationToken.None);
+        context.Protected().Setup<CancellationToken>("CancellationTokenCore").Returns(cancellationToken);
         return context.Object;
     }
 }

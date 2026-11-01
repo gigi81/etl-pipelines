@@ -7,48 +7,150 @@ using Microsoft.Extensions.Options;
 namespace EtlPipelines.Agent;
 
 /// <summary>
-/// Registers with the server once at startup, then holds <c>AgentService.Subscribe</c> open for
-/// this agent's whole lifetime, installing whatever <c>InstallPackage</c> work items arrive and
-/// reporting the result back - closing the install loop (SERVER.md Phase 5). Sends a heartbeat on
-/// its own timer alongside the <c>Subscribe</c> loop, on the same registered identity.
+/// Keeps this agent connected to the server for as long as it runs: registers (as the same agent every time -
+/// see <see cref="AgentIdentity"/>), holds <c>AgentService.Subscribe</c> open to receive work items, and sends a
+/// heartbeat on its own timer. When the connection is lost - the server restarting, the network dropping, the
+/// server no longer knowing this agent - it connects again after a pause that grows with each failure, instead of
+/// stopping the process. The work items themselves are carried out by the <see cref="IWorkItemProcessor"/> (<see cref="WorkItemProcessor"/>), which
+/// belongs to the agent rather than to a connection, so a run in progress is not disturbed by any of this.
 /// </summary>
 public sealed class AgentRegistration(
     AgentService.AgentServiceClient client,
-    PackageInstaller packageInstaller,
+    IWorkItemProcessor processor,
     IOptions<AgentOptions> options,
     ILogger<AgentRegistration> logger) : BackgroundService
 {
-    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(10);
+    /// <summary>How many heartbeats in a row can fail before the connection is given up on.</summary>
+    private const int MaxHeartbeatFailures = 3;
+
+    private static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(15);
+
+    // Kept in memory too, once issued: if the id file cannot be written, a reconnect must not become a new agent.
+    private Guid? _agentId;
 
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var registerRequest = new RegisterAgentRequest
+        var delay = options.Value.ReconnectInitialDelay;
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            var connected = false;
+
+            try
+            {
+                await ConnectAsync(() => connected = true, stoppingToken).ConfigureAwait(false);
+                logger.LogWarning("The server ended the connection.");
+            }
+            catch (Exception) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning("Lost the server: {Reason}", Describe(exception));
+                logger.LogDebug(exception, "Details of the lost connection");
+            }
+
+            // A connection that was made resets the pause: the next failure is a new one, not one more of a long run of them.
+            if (connected)
+            {
+                delay = options.Value.ReconnectInitialDelay;
+            }
+
+            logger.LogInformation("Connecting again in {Delay}.", delay);
+
+            try
+            {
+                await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            delay = TimeSpan.FromTicks(Math.Min(delay.Ticks * 2, options.Value.ReconnectMaxDelay.Ticks));
+        }
+
+        // Stopping: what is still running was given the same token and is winding down.
+        await processor.WhenIdleAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// One connection: registers, then receives work until the stream ends or fails, or the heartbeats show the
+    /// server is gone or no longer knows this agent. Returns when the server closes the stream; otherwise throws.
+    /// </summary>
+    private async Task ConnectAsync(Action onRegistered, CancellationToken stoppingToken)
+    {
+        using var connection = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        string? lostReason = null;
+
+        var agentId = await RegisterAsync(connection.Token).ConfigureAwait(false);
+        onRegistered();
+
+        var heartbeats = SendHeartbeatsAsync(
+            agentId,
+            reason =>
+            {
+                lostReason = reason;
+                connection.Cancel();
+            },
+            connection.Token);
+
+        try
+        {
+            using var call = client.Subscribe(new SubscribeRequest { AgentId = agentId }, cancellationToken: connection.Token);
+
+            await foreach (var workItem in call.ResponseStream.ReadAllAsync(connection.Token).ConfigureAwait(false))
+            {
+                // Handed over, not awaited: it runs under the agent's own token, whatever becomes of this connection.
+                processor.Process(agentId, workItem, stoppingToken);
+            }
+        }
+        catch (Exception) when (lostReason is not null && !stoppingToken.IsCancellationRequested)
+        {
+            throw new IOException(lostReason);
+        }
+        finally
+        {
+            await connection.CancelAsync().ConfigureAwait(false);
+            await heartbeats.ConfigureAwait(false);
+        }
+    }
+
+    private async Task<string> RegisterAsync(CancellationToken cancellationToken)
+    {
+        var request = new RegisterAgentRequest
         {
             MachineName = string.IsNullOrWhiteSpace(options.Value.Name) ? Environment.MachineName : options.Value.Name.Trim(),
             Version = AgentVersion.Current,
         };
-        registerRequest.Tags.AddRange(options.Value.Tags);
-        registerRequest.HostInfo = HostInfo.Describe();
+        request.Tags.AddRange(options.Value.Tags);
+        request.HostInfo = HostInfo.Describe();
 
-        // The id from the last start, if there was one: the server then knows this as the same agent
-        // rather than issuing a new id (and a new entry in the agents list) every time it starts.
-        var previousId = AgentIdentity.Load(options.Value.CacheDirectory);
+        // The id from the last start or connection, if there was one: the server then knows this as the same
+        // agent rather than issuing a new id (and a new entry in the agents list) every time.
+        var previousId = _agentId ?? AgentIdentity.Load(options.Value.CacheDirectory);
         if (previousId is { } known)
         {
-            registerRequest.AgentId = known.ToString();
+            request.AgentId = known.ToString();
         }
 
-        var registerResponse = await client
-            .RegisterAgentAsync(registerRequest, cancellationToken: stoppingToken)
+        var response = await client
+            .RegisterAgentAsync(request, deadline: DateTime.UtcNow + CallTimeout, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
-        var agentId = registerResponse.AgentId;
+        var agentId = response.AgentId;
 
-        if (Guid.TryParse(agentId, out var issued) && issued != previousId && !AgentIdentity.Save(options.Value.CacheDirectory, issued))
+        if (Guid.TryParse(agentId, out var issued))
         {
-            logger.LogWarning(
-                "Could not save the agent id under {CacheDirectory}; this agent will register as a new one the next time it starts.",
-                options.Value.CacheDirectory);
+            _agentId = issued;
+
+            if (issued != previousId && !AgentIdentity.Save(options.Value.CacheDirectory, issued))
+            {
+                logger.LogWarning(
+                    "Could not save the agent id under {CacheDirectory}; this agent will register as a new one the next time it starts.",
+                    options.Value.CacheDirectory);
+            }
         }
 
         if (previousId is null)
@@ -60,200 +162,55 @@ public sealed class AgentRegistration(
             logger.LogInformation("Registered again as agent {AgentId}", agentId);
         }
 
-        var heartbeatTask = SendHeartbeatsAsync(agentId, stoppingToken);
-        await SubscribeAsync(agentId, stoppingToken).ConfigureAwait(false);
-        await heartbeatTask.ConfigureAwait(false);
-    }
-
-    private async Task SendHeartbeatsAsync(string agentId, CancellationToken stoppingToken)
-    {
-        using var timer = new PeriodicTimer(HeartbeatInterval);
-
-        try
-        {
-            while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
-            {
-                await client
-                    .HeartbeatAsync(new AgentHeartbeatRequest { AgentId = agentId }, cancellationToken: stoppingToken)
-                    .ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-        {
-            // Ordinary shutdown - the agent is stopping, not a failure to report.
-        }
-    }
-
-    private async Task SubscribeAsync(string agentId, CancellationToken stoppingToken)
-    {
-        using var call = client.Subscribe(new SubscribeRequest { AgentId = agentId }, cancellationToken: stoppingToken);
-
-        try
-        {
-            await foreach (var workItem in call.ResponseStream.ReadAllAsync(stoppingToken).ConfigureAwait(false))
-            {
-                await HandleWorkItemAsync(agentId, workItem, stoppingToken).ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-        {
-            // Ordinary shutdown.
-        }
-    }
-
-    private Task HandleWorkItemAsync(string agentId, WorkItem workItem, CancellationToken cancellationToken) =>
-        workItem.KindCase switch
-        {
-            WorkItem.KindOneofCase.InstallPackage => HandleInstallPackageAsync(agentId, workItem.InstallPackage, workItem.WorkItemId, cancellationToken),
-            WorkItem.KindOneofCase.ExecutePipeline => HandleExecutePipelineAsync(agentId, workItem.ExecutePipeline, cancellationToken),
-            _ => LogUnhandledAsync(workItem),
-        };
-
-    private Task LogUnhandledAsync(WorkItem workItem)
-    {
-        logger.LogWarning(
-            "Ignoring work item {WorkItemId} of kind {Kind} - not handled.", workItem.WorkItemId, workItem.KindCase);
-        return Task.CompletedTask;
-    }
-
-    private async Task HandleInstallPackageAsync(
-        string agentId, InstallPackageWorkItem install, string workItemId, CancellationToken cancellationToken)
-    {
-        var report = new ReportInstallResultRequest { AgentId = agentId, WorkItemId = workItemId };
-
-        try
-        {
-            var shimPath = await packageInstaller
-                .InstallAsync(install.PackageId, install.Version, install.FeedUrls, cancellationToken)
-                .ConfigureAwait(false);
-            var pipelineNames = await PipelineProcessRunner
-                .ListPipelineNamesAsync(shimPath, cancellationToken)
-                .ConfigureAwait(false);
-
-            report.Succeeded = true;
-            report.PipelineNames.AddRange(pipelineNames);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            // Deliberately broad: whatever went wrong installing or listing this one package
-            // becomes a reported failure for this one work item, not a crashed agent that can no
-            // longer serve any other work.
-            logger.LogWarning(exception, "Install failed for {PackageId} {Version}", install.PackageId, install.Version);
-            report.Succeeded = false;
-            report.Error = exception.Message;
-        }
-
-        await client.ReportInstallResultAsync(report, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return agentId;
     }
 
     /// <summary>
-    /// Runs a pipeline package's shim for <paramref name="work"/> - the run
-    /// itself reports its own configuration pull and progress straight to
-    /// <c>PipelineExecutionService</c> (via the launched process's own <c>EtlPipelines.GrpcClient</c>,
-    /// SERVER.md Phase 6), so this only ever tells the server when the process started and when it
-    /// exited, via <c>ReportExecutionStatus</c> - a fallback signal for a run whose process never
-    /// managed to report anything itself. A package version missing from this agent's cache is
-    /// installed first, from the work item's feed URLs.
+    /// Heartbeats until the connection ends. Gives the connection up (by calling <paramref name="lost"/>) when the
+    /// server does not know this agent - it was removed, or lost it in a restart - or when several heartbeats in a
+    /// row fail, which is how a connection that died without telling anyone is noticed.
     /// </summary>
-    private async Task HandleExecutePipelineAsync(string agentId, ExecutePipelineWorkItem work, CancellationToken cancellationToken)
+    private async Task SendHeartbeatsAsync(string agentId, Action<string> lost, CancellationToken connectionToken)
     {
+        using var timer = new PeriodicTimer(options.Value.HeartbeatInterval);
+        var failures = 0;
+
         try
         {
-            // Not in the cache (never installed on this agent, or evicted since): install it now
-            // from the feed the server sent, rather than failing a run the server had no way of
-            // knowing this agent couldn't serve. No feed URLs means an older server - keep the old
-            // behaviour and fail clearly.
-            var shimPath = packageInstaller.TryGetInstalledShimPath(work.PackageId, work.PackageVersion);
-            if (shimPath is null && work.FeedUrls.Count > 0)
+            while (await timer.WaitForNextTickAsync(connectionToken).ConfigureAwait(false))
             {
-                logger.LogInformation(
-                    "Installing {PackageId} {Version} on demand for session {SessionId}", work.PackageId, work.PackageVersion, work.SessionId);
-                shimPath = await packageInstaller
-                    .InstallAsync(work.PackageId, work.PackageVersion, work.FeedUrls, cancellationToken)
-                    .ConfigureAwait(false);
+                try
+                {
+                    await client
+                        .HeartbeatAsync(
+                            new AgentHeartbeatRequest { AgentId = agentId },
+                            deadline: DateTime.UtcNow + CallTimeout,
+                            cancellationToken: connectionToken)
+                        .ConfigureAwait(false);
+                    failures = 0;
+                }
+                catch (RpcException exception) when (exception.StatusCode == StatusCode.NotFound)
+                {
+                    lost("the server does not know this agent");
+                    return;
+                }
+                catch (RpcException exception) when (exception.StatusCode != StatusCode.Cancelled && ++failures >= MaxHeartbeatFailures)
+                {
+                    lost($"{failures} heartbeats failed ({Describe(exception)})");
+                    return;
+                }
+                catch (RpcException exception) when (exception.StatusCode != StatusCode.Cancelled)
+                {
+                    logger.LogDebug(exception, "A heartbeat failed; {Failures} so far.", failures);
+                }
             }
-
-            shimPath ??= packageInstaller.GetInstalledShimPath(work.PackageId, work.PackageVersion);
-
-            await client.ReportExecutionStatusAsync(
-                new ReportExecutionStatusRequest
-                {
-                    AgentId = agentId,
-                    SessionId = work.SessionId,
-                    Status = ReportExecutionStatusRequest.Types.Status.Started,
-                },
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            var exitCode = await PipelineProcessRunner
-                .RunAsync(
-                    shimPath,
-                    work.PipelineName,
-                    work.SessionId,
-                    work.ServerUrl,
-                    options.Value.ResourceSampleInterval,
-                    (sample, token) => ReportResourceSampleAsync(agentId, work.SessionId, sample, token),
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            await client.ReportExecutionStatusAsync(
-                new ReportExecutionStatusRequest
-                {
-                    AgentId = agentId,
-                    SessionId = work.SessionId,
-                    Status = ReportExecutionStatusRequest.Types.Status.Exited,
-                    ExitCode = exitCode,
-                },
-                cancellationToken: cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception) when (connectionToken.IsCancellationRequested)
         {
-            // Deliberately broad, same reasoning as HandleInstallPackageAsync's own catch: this
-            // work item's own failure (the package isn't in this agent's cache, the shim could
-            // not be started) never takes down the agent's ability to serve other work. Reported
-            // as an EXITED(-1) rather than left silent, so the run does not sit "Dispatched"
-            // forever with nobody ever having told the server it will never report in.
-            logger.LogWarning(
-                exception, "Execution failed for pipeline {PipelineName} ({PackageId} {Version})",
-                work.PipelineName, work.PackageId, work.PackageVersion);
-
-            try
-            {
-                await client.ReportExecutionStatusAsync(
-                    new ReportExecutionStatusRequest
-                    {
-                        AgentId = agentId,
-                        SessionId = work.SessionId,
-                        Status = ReportExecutionStatusRequest.Types.Status.Exited,
-                        ExitCode = -1,
-                    },
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception reportException) when (reportException is not OperationCanceledException)
-            {
-                logger.LogWarning(reportException, "Failed to report execution failure for session {SessionId}", work.SessionId);
-            }
+            // The connection ended: nothing more to send.
         }
     }
 
-    private async Task ReportResourceSampleAsync(string agentId, string sessionId, ResourceSample sample, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await client.ReportExecutionStatusAsync(
-                new ReportExecutionStatusRequest
-                {
-                    AgentId = agentId,
-                    SessionId = sessionId,
-                    Status = ReportExecutionStatusRequest.Types.Status.ResourceSample,
-                    CpuPercent = sample.CpuPercent,
-                    WorkingSetBytes = sample.WorkingSetBytes,
-                },
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            // A lost sample is only a gap in a chart - never a reason to fail the run itself.
-            logger.LogDebug(exception, "Failed to report a resource sample for session {SessionId}", sessionId);
-        }
-    }
+    private static string Describe(Exception exception) =>
+        exception is RpcException rpc ? $"{rpc.StatusCode}: {rpc.Status.Detail}" : exception.Message;
 }

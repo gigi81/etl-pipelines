@@ -34,11 +34,17 @@ these is in [docs/articles/server/limitations.md](docs/articles/server/limitatio
   a pipeline can be assigned to tags and/or named agents; a run goes to the least busy allowed agent.
   Not done: `InstallPackage` still goes to any connected agent, assignments are "any of" (no "all of"
   or exclusions), and load means runs in flight, not CPU or memory.
-- [ ] **Concurrent work items per agent.** `AgentRegistration` handles its `Subscribe` stream one
-  item at a time, so a long run blocks installs, which time out after 5 minutes, and other runs.
-- [ ] **In-process reconnect.** A dropped `Subscribe` stream (a Server restart, say) ends the agent process,
-  which relies on `restart: unless-stopped` to start again - as the same agent, since it keeps its id in
-  `agent-cache`. Reconnect in the same process instead.
+- [x] **Concurrent work items per agent.** An agent carries out up to `Agent:MaxConcurrentRuns` runs at once,
+  and installs alongside them. Still open: the limit counts runs, not what they use, so it is a number
+  an operator picks for the machine; nothing measures CPU or memory.
+- [x] **In-process reconnect.** An agent that loses the Server connects again by itself, as the same agent,
+  while its runs carry on; the Server gives agents a grace period after it starts before judging them.
+  Still open: a pending `InstallPackage` call is lost with the connection, and the pipeline process's
+  own progress reports to the Server are not retried by anyone.
+- [ ] **Scheduled runs.** Runs start only when someone triggers them. Add cron-style schedules per
+  pipeline (with a time zone), kept in the database and fired by the Server; decide what a schedule does
+  when the previous run is still going (skip, queue or overlap) and when no agent is available. The
+  WebUI would show the next run and let a schedule be paused.
 - [ ] **Per-run liveness.** `PipelineExecutionService.Heartbeat` records nothing, so a hung pipeline
   process on a healthy agent stays `Running` forever. It needs a column (e.g.
   `Runs.LastHeartbeatAt`) and a sweep like `AgentLivenessMonitor`'s.
@@ -83,8 +89,8 @@ these is in [docs/articles/server/limitations.md](docs/articles/server/limitatio
   they complete, so a pipeline's first run draws no stages ahead of time. The pipeline process could
   report its stage plan when it starts.
 - [x] **Prune stale agents.** An agent that has stopped responding can be removed from the WebUI, singly or
-  all at once, so the duplicates a restart leaves behind don't pile up. (Reconnecting under the same agent
-  id, above, would stop them being created in the first place.)
+  all at once, so the duplicates a restart leaves behind don't pile up. (Agents now keep their id, so a restart no
+  longer creates them.)
 - [ ] **Delete a single run, and cancel a run in progress.** History can only be cleared per pipeline, and
   a run can't be stopped from the UI.
 

@@ -76,4 +76,49 @@ public class AgentConnectionRegistryTests
         found.Should().BeFalse();
         agentId.Should().BeNull();
     }
+
+    [Test]
+    public async Task An_agent_that_connects_again_replaces_its_old_connection_which_is_ended()
+    {
+        //arrange
+        var registry = new AgentConnectionRegistry();
+        var old = Channel.CreateUnbounded<WorkItem>();
+        var current = Channel.CreateUnbounded<WorkItem>();
+        registry.Connect("agent", old);
+
+        //act
+        registry.Connect("agent", current);
+
+        //assert - the old queue is closed (its Subscribe call ends), and work goes to the new one
+        (await old.Reader.WaitToReadAsync()).Should().BeFalse();
+        registry.DispatchExecutePipeline("agent", new ExecutePipelineWorkItem { SessionId = "s" });
+        current.Reader.TryRead(out _).Should().BeTrue();
+    }
+
+    [Test]
+    public async Task The_end_of_an_old_connection_does_not_disconnect_a_newer_one()
+    {
+        //arrange
+        var registry = new AgentConnectionRegistry();
+        var old = Channel.CreateUnbounded<WorkItem>();
+        var current = Channel.CreateUnbounded<WorkItem>();
+        registry.Connect("agent", old);
+        registry.MarkInstalled("agent", "Pkg", "1.0.0");
+        registry.Connect("agent", current);
+
+        //act
+        registry.Disconnect("agent", old);
+
+        //assert
+        registry.TryGetAnyConnectedAgentId(out var connected).Should().BeTrue();
+        connected.Should().Be("agent");
+        registry.HasInstalled("agent", "Pkg", "1.0.0").Should().BeTrue("it is the same agent, still connected");
+
+        //act - the end of the connection it has now
+        registry.Disconnect("agent", current);
+
+        //assert
+        registry.TryGetAnyConnectedAgentId(out _).Should().BeFalse();
+        registry.HasInstalled("agent", "Pkg", "1.0.0").Should().BeFalse();
+    }
 }

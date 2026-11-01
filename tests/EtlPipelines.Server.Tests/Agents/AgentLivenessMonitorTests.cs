@@ -32,6 +32,42 @@ public class AgentLivenessMonitorTests
     }
 
     [Test]
+    public async Task After_the_server_starts_agents_are_given_the_timeout_to_be_heard_from_before_they_are_judged()
+    {
+        //arrange - an agent last heard from long before the server was (re)started, with a short timeout so the test is quick
+        var shortTimeout = TimeSpan.FromMilliseconds(600);
+        var (live, _, agentId, _) = await SetUpAsync(heartbeatAge: TimeSpan.FromHours(1));
+        var monitor = new AgentLivenessMonitor(
+            live,
+            Microsoft.Extensions.Options.Options.Create(new AgentLivenessOptions { Timeout = shortTimeout, PollInterval = TimeSpan.FromMilliseconds(100) }),
+            TimeProvider.System,
+            NullLogger<AgentLivenessMonitor>.Instance);
+
+        //act
+        await monitor.StartAsync(CancellationToken.None);
+        try
+        {
+            await Task.Delay(200);
+
+            //assert - not offline yet: it has until the timeout to reconnect and heartbeat
+            live.TryGetAgent(agentId)!.Status.Should().Be("Online");
+
+            // ...and once the timeout has passed without it being heard from, it is
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (live.TryGetAgent(agentId)!.Status != "Offline" && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(50);
+            }
+
+            live.TryGetAgent(agentId)!.Status.Should().Be("Offline");
+        }
+        finally
+        {
+            await monitor.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Test]
     public async Task An_agent_within_the_timeout_stays_Online()
     {
         //arrange

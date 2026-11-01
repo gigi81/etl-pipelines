@@ -55,10 +55,16 @@ public sealed class AgentServiceImpl(
     /// <inheritdoc />
     public override async Task<AgentExecution.V1.Ack> Heartbeat(AgentHeartbeatRequest request, ServerCallContext context)
     {
-        // A heartbeat from an agent id the server does not know (it was never registered here, or the
-        // server lost it) is silently ignored rather than an error - nothing to update is not a failure.
-        await liveState.AgentHeartbeatAsync(Guid.Parse(request.AgentId), context.CancellationToken).ConfigureAwait(false);
-        return new AgentExecution.V1.Ack();
+        if (!Guid.TryParse(request.AgentId, out var agentId))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, $"'{request.AgentId}' is not a valid agent id."));
+        }
+
+        // An agent the server does not know (it was removed, or the server lost it in a restart) is told so: it
+        // then registers again, rather than heartbeating for ever to nobody.
+        return await liveState.AgentHeartbeatAsync(agentId, context.CancellationToken).ConfigureAwait(false)
+            ? new AgentExecution.V1.Ack()
+            : throw new RpcException(new Status(StatusCode.NotFound, $"No agent '{agentId}' is known to this server; register again."));
     }
 
     /// <inheritdoc />
@@ -81,7 +87,8 @@ public sealed class AgentServiceImpl(
         {
             // Reached on ordinary cancellation (the agent disconnected) as much as on a real
             // fault - either way, this agent can no longer be dispatched to.
-            connections.Disconnect(request.AgentId);
+            // Only if it is still this call's connection: the agent may have reconnected already.
+            connections.Disconnect(request.AgentId, channel);
         }
     }
 

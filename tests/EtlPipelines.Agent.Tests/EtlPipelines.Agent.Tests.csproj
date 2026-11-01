@@ -3,6 +3,7 @@
   <ItemGroup>
     <PackageReference Include="CliWrap" />
     <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Moq" />
   </ItemGroup>
 
   <ItemGroup>
