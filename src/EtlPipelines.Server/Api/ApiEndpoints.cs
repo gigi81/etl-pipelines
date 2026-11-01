@@ -1,4 +1,5 @@
 using System.Net.ServerSentEvents;
+using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Contracts;
 using EtlPipelines.Server.Database;
@@ -29,6 +30,8 @@ public static class ApiEndpoints
         api.MapGet("/runs/{runId:guid}/stream", StreamRunAsync);
         api.MapGet("/events", StreamEvents);
         api.MapGet("/agents", ListAgentsAsync);
+        api.MapDelete("/agents/{agentId:guid}", RemoveAgentAsync);
+        PipelineEndpoints.Map(api);
         PackageEndpoints.Map(api);
         ConfigurationEndpoints.Map(api);
 
@@ -45,12 +48,21 @@ public static class ApiEndpoints
         // clients are told when it does); how each pipeline is doing is the live state's.
         var pipelines = await catalog.ListInstalledPipelinesAsync(cancellationToken).ConfigureAwait(false);
 
+        // The names users gave pipelines, by (package, the pipeline's own name).
+        var displayNames = (await db.PipelineDisplayNames
+                .AsNoTracking()
+                .Select(entry => new { entry.Package.NugetPackageId, entry.PipelineName, entry.DisplayName })
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false))
+            .ToDictionary(entry => (entry.NugetPackageId, entry.PipelineName), entry => entry.DisplayName);
+
         var result = new List<PipelineDto>(pipelines.Count);
         foreach (var pipeline in pipelines)
         {
             result.Add(new PipelineDto(
                 pipeline.PipelineId,
                 pipeline.Name,
+                displayNames.GetValueOrDefault((pipeline.PackageId, pipeline.Name)),
                 pipeline.PackageId,
                 pipeline.PackageVersion,
                 await live.ActiveRunCountAsync(pipeline.PipelineId, cancellationToken).ConfigureAwait(false),
@@ -94,6 +106,30 @@ public static class ApiEndpoints
 
     private static async Task<Ok<IReadOnlyList<AgentDto>>> ListAgentsAsync(LiveState live, CancellationToken cancellationToken) =>
         TypedResults.Ok(await live.ListAgentsAsync(cancellationToken).ConfigureAwait(false));
+
+    /// <summary>Removes an agent that has stopped heartbeating, so it is no longer listed. Its past runs keep its name.</summary>
+    private static async Task<Results<NoContent, ProblemHttpResult>> RemoveAgentAsync(
+        Guid agentId, LiveState live, AgentConnectionRegistry connections, CancellationToken cancellationToken)
+    {
+        switch (await live.RemoveAgentAsync(agentId, cancellationToken).ConfigureAwait(false))
+        {
+            case AgentRemovalResult.Removed:
+                // Nothing more is to be sent its way, whether or not its process is somehow still holding a stream open.
+                connections.Disconnect(agentId.ToString());
+                return TypedResults.NoContent();
+
+            case AgentRemovalResult.StillOnline:
+                return TypedResults.Problem(
+                    detail: "That agent is online. Only an agent that has stopped heartbeating can be removed.",
+                    statusCode: StatusCodes.Status409Conflict);
+
+            case AgentRemovalResult.HasActiveRuns:
+                return TypedResults.Problem(detail: "That agent still has runs in progress.", statusCode: StatusCodes.Status409Conflict);
+
+            default:
+                return TypedResults.Problem(detail: $"No agent '{agentId}' is known to this server.", statusCode: StatusCodes.Status404NotFound);
+        }
+    }
 
     /// <summary>
     /// Follows one run as server-sent events: its full detail right away, then again each time a

@@ -41,6 +41,10 @@ anything that needs the database caught up now (the end-to-end tests call it).
 
 ## Agent liveness
 
+An agent's `Agents.Status` is `Online` or `Offline` (set by this sweep, and back to `Online` by its next
+heartbeat) - or `Removed`, which is what removing an agent from the WebUI does. A removed agent is no
+longer listed or loaded, but its row stays so the runs it carried out still show where they ran.
+
 Each agent heartbeats every 10 seconds. A background sweep on the Server (`AgentLivenessMonitor`)
 runs every `AgentLiveness:PollInterval` (10 seconds by default) and looks for agents whose last
 heartbeat is older than `AgentLiveness:Timeout` (30 seconds by default):

@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { applyAgentEvent, applyRunEvent } from '../lib/liveCache';
+import { applyAgentEvent, applyAgentRemoved, applyRunEvent } from '../lib/liveCache';
 import type { Agent, RunSummary } from './types';
 
 /** How long to wait before reconnecting a stream the browser gave up on. */
@@ -37,10 +37,16 @@ export function useLiveUpdates(): boolean {
       source.addEventListener('agent', (event) =>
         applyAgentEvent(queryClient, JSON.parse((event as MessageEvent<string>).data) as Agent),
       );
-      // A package was installed, updated or removed (by anyone): the pipelines and the packages page change.
+      source.addEventListener('agent-removed', (event) =>
+        applyAgentRemoved(queryClient, (JSON.parse((event as MessageEvent<string>).data) as { id: string }).id),
+      );
+
+      // A package was installed, updated or removed, a pipeline was renamed or had its history cleared (by
+      // anyone): the pipelines, the packages and the runs lists change.
       source.addEventListener('pipelines', () => {
         void queryClient.invalidateQueries({ queryKey: ['pipelines'] });
         void queryClient.invalidateQueries({ queryKey: ['packages'] });
+        void queryClient.invalidateQueries({ queryKey: ['runs'] });
       });
 
       source.onerror = () => {

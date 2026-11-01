@@ -79,8 +79,11 @@ these is in [docs/articles/server/limitations.md](docs/articles/server/limitatio
 - [ ] **WebUI: a stage-by-stage view for a run that has not reported yet.** Stages are only known once
   they complete, so a pipeline's first run draws no stages ahead of time. The pipeline process could
   report its stage plan when it starts.
-- [ ] **Prune stale agents.** Every agent restart registers a new row, so the agents page accumulates
-  `Offline` duplicates. Reconnecting under the same agent id (see above) would fix it at the source.
+- [x] **Prune stale agents.** An agent that has stopped responding can be removed from the WebUI, singly or
+  all at once, so the duplicates a restart leaves behind don't pile up. (Reconnecting under the same agent
+  id, above, would stop them being created in the first place.)
+- [ ] **Delete a single run, and cancel a run in progress.** History can only be cleared per pipeline, and
+  a run can't be stopped from the UI.
 
 ## Caches
 

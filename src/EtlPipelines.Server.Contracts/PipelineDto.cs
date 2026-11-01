@@ -4,6 +4,7 @@ namespace EtlPipelines.Server.Contracts;
 public sealed record PipelineDto(
     Guid Id,
     string Name,
+    string? DisplayName,
     string PackageId,
     string PackageVersion,
     int ActiveRuns,

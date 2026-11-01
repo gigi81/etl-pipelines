@@ -1,12 +1,12 @@
-import { Alert, Badge, Button, Card, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { Alert, Button, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
-import { IconAlertCircle, IconPackage, IconPlayerPlay, IconUpload } from '@tabler/icons-react';
+import { IconAlertCircle, IconPackage, IconUpload } from '@tabler/icons-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useNow, usePipelines, useTriggerRun } from '../api/hooks';
-import { StatusBadge } from '../components/StatusBadge';
+import { PipelineCard } from '../components/PipelineCard';
 import { UploadPackageModal } from '../components/UploadPackageModal';
-import { formatRelative } from '../lib/format';
+import { pipelineLabel } from '../lib/pipelineLabels';
 
 export function PipelinesPage() {
   const { data: pipelines, error, isLoading } = usePipelines();
@@ -56,48 +56,13 @@ export function PipelinesPage() {
       )}
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
         {pipelines?.map((pipeline) => (
-          <Card key={pipeline.id} withBorder padding="lg" radius="md">
-            <Stack gap="xs" h="100%" justify="space-between">
-              <div>
-                <Group justify="space-between" wrap="nowrap" align="flex-start">
-                  <Text fw={600} size="lg" truncate>
-                    {pipeline.name}
-                  </Text>
-                  {pipeline.activeRuns > 0 && (
-                    <Badge color="blue" variant="filled" component={Link} to="/runs" style={{ cursor: 'pointer' }}>
-                      {pipeline.activeRuns} running
-                    </Badge>
-                  )}
-                </Group>
-                <Text size="sm" c="dimmed">
-                  {pipeline.packageId} {pipeline.packageVersion}
-                </Text>
-              </div>
-
-              <Group gap="xs" mih={24}>
-                {pipeline.lastRun ? (
-                  <>
-                    <StatusBadge status={pipeline.lastRun.status} />
-                    <Text size="xs" c="dimmed" component={Link} to={`/runs/${pipeline.lastRun.id}`}>
-                      last run {formatRelative(pipeline.lastRun.requestedAtUtc, now)}
-                    </Text>
-                  </>
-                ) : (
-                  <Text size="xs" c="dimmed">
-                    Never run
-                  </Text>
-                )}
-              </Group>
-
-              <Button
-                leftSection={<IconPlayerPlay size={16} />}
-                onClick={() => run(pipeline.id, pipeline.name)}
-                loading={trigger.isPending && trigger.variables === pipeline.id}
-              >
-                Run now
-              </Button>
-            </Stack>
-          </Card>
+          <PipelineCard
+            key={pipeline.id}
+            pipeline={pipeline}
+            now={now}
+            onRun={() => run(pipeline.id, pipelineLabel(pipeline))}
+            running={trigger.isPending && trigger.variables === pipeline.id}
+          />
         ))}
       </SimpleGrid>
 

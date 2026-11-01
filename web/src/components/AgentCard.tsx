@@ -1,17 +1,21 @@
-import { Anchor, Badge, Card, Code, Divider, Group, Stack, Text } from '@mantine/core';
-import { IconCpu, IconNetwork, IconServer } from '@tabler/icons-react';
+import { Anchor, Badge, Button, Card, Code, Divider, Group, Stack, Text } from '@mantine/core';
+import { IconCpu, IconNetwork, IconServer, IconTrash } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
-import { useNow } from '../api/hooks';
+import { useDisclosure } from '@mantine/hooks';
+import { useNow, usePipelineLabeller } from '../api/hooks';
 import type { Agent } from '../api/types';
 import { extraInfo } from '../lib/agentInfo';
 import { formatDateTime, formatDuration, formatRelative } from '../lib/format';
 import { Detail } from './Detail';
+import { RemoveAgentsModal } from './RemoveAgentsModal';
 import { RunProgress } from './RunProgress';
 import { StatusBadge } from './StatusBadge';
 
 /** One agent: status, host details, and the runs it is working on. */
 export function AgentCard({ agent }: { agent: Agent }) {
   const now = useNow(5000);
+  const label = usePipelineLabeller();
+  const [removing, { open, close }] = useDisclosure();
   const online = agent.status === 'Online';
   const info = agent.info;
   const ipAddresses = info?.ipAddresses ?? [];
@@ -84,7 +88,7 @@ export function AgentCard({ agent }: { agent: Agent }) {
               <Group key={run.id} justify="space-between" wrap="nowrap">
                 <div style={{ minWidth: 0 }}>
                   <Anchor component={Link} to={`/runs/${run.id}`} size="sm" fw={500}>
-                    {run.pipelineName}
+                    {label(run.packageId, run.pipelineName)}
                   </Anchor>
                   <div>
                     <StatusBadge status={run.status} />
@@ -94,6 +98,21 @@ export function AgentCard({ agent }: { agent: Agent }) {
               </Group>
             ))}
           </Stack>
+        )}
+
+        {!online && (
+          <>
+            <Divider />
+            <Group justify="space-between" wrap="nowrap">
+              <Text size="xs" c="dimmed">
+                Not responding.
+              </Text>
+              <Button size="xs" color="red" variant="subtle" leftSection={<IconTrash size={14} />} onClick={open}>
+                Remove
+              </Button>
+            </Group>
+            <RemoveAgentsModal agents={[agent]} opened={removing} onClose={close} />
+          </>
         )}
       </Stack>
     </Card>

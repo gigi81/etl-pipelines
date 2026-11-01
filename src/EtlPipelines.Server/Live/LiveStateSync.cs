@@ -99,6 +99,7 @@ public sealed class LiveStateSync(
             try
             {
                 await WriteAsync(batch, cancellationToken).ConfigureAwait(false);
+                liveState.MarkWritten(batch);
                 _failedAttempts = 0;
                 logger.LogDebug("Wrote {Count} live event(s) to the database.", batch.Count);
                 return batch.Count;
@@ -133,11 +134,13 @@ public sealed class LiveStateSync(
             try
             {
                 await WriteAsync([liveEvent], cancellationToken).ConfigureAwait(false);
+                liveState.MarkWritten([liveEvent]);
                 written++;
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 logger.LogError(exception, "The database refused {Event}; dropping it.", liveEvent);
+                liveState.MarkWritten([liveEvent]);
             }
         }
 

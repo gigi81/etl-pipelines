@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, runStreamUrl } from './client';
 import type { RunDetail } from './types';
 import { isActive } from '../lib/format';
+import { buildPipelineLabeller } from '../lib/pipelineLabels';
 
 // The lists below are fetched once and then kept current by `useLiveUpdates` (the server pushes
 // every change), so none of them polls.
@@ -15,6 +16,12 @@ export const useRuns = (query: { active?: boolean; pipelineId?: string; limit?: 
     queryFn: () => api.runs(query),
     placeholderData: keepPreviousData,
   });
+
+/** `(packageId, pipelineName) => the name to show`, so a run is labelled like its pipeline is. */
+export function usePipelineLabeller() {
+  const { data } = usePipelines();
+  return useMemo(() => buildPipelineLabeller(data), [data]);
+}
 
 export const useAgents = () =>
   useQuery({ queryKey: ['agents'], queryFn: api.agents });
@@ -78,6 +85,34 @@ export function useDeleteConfiguration() {
   return useMutation({
     mutationFn: (key: string) => api.deleteConfiguration(key),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['configuration'] }),
+  });
+}
+
+export function useRemoveAgent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.removeAgent(id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['agents'] }),
+  });
+}
+
+export function useSetDisplayName() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pipelineId, displayName }: { pipelineId: string; displayName: string }) =>
+      api.setDisplayName(pipelineId, displayName),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['pipelines'] }),
+  });
+}
+
+export function useClearHistory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (pipelineId: string) => api.clearHistory(pipelineId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['pipelines'] });
+      void queryClient.invalidateQueries({ queryKey: ['runs'] });
+    },
   });
 }
 

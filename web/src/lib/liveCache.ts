@@ -46,6 +46,11 @@ export function applyRunEvent(queryClient: QueryClient, run: RunSummary): void {
   }
 }
 
+/** Applies an `agent-removed` event: the agent is no longer listed. */
+export function applyAgentRemoved(queryClient: QueryClient, agentId: string): void {
+  queryClient.setQueryData<Agent[]>(['agents'], (held) => held?.filter((a) => a.id !== agentId));
+}
+
 /** Applies an `agent` event: the agent is added to the agents on screen, or replaced there. */
 export function applyAgentEvent(queryClient: QueryClient, agent: Agent): void {
   queryClient.setQueryData<Agent[]>(['agents'], (held) => {

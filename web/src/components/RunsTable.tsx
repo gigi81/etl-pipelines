@@ -2,12 +2,13 @@ import { Anchor, Table, Text } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import type { RunSummary } from '../api/types';
 import { formatDateTime, formatDuration, formatNumber, formatRelative, isActive, runDurationMs } from '../lib/format';
-import { useNow } from '../api/hooks';
+import { useNow, usePipelineLabeller } from '../api/hooks';
 import { RunProgress } from './RunProgress';
 import { StatusBadge } from './StatusBadge';
 
 export function RunsTable({ runs, showProgress }: { runs: RunSummary[]; showProgress?: boolean }) {
   const now = useNow();
+  const label = usePipelineLabeller();
 
   return (
     <Table.ScrollContainer minWidth={760}>
@@ -30,7 +31,7 @@ export function RunsTable({ runs, showProgress }: { runs: RunSummary[]; showProg
             <Table.Tr key={run.id}>
               <Table.Td>
                 <Anchor component={Link} to={`/runs/${run.id}`} fw={500}>
-                  {run.pipelineName}
+                  {label(run.packageId, run.pipelineName)}
                 </Anchor>
                 <Text size="xs" c="dimmed">
                   {run.packageId} {run.packageVersion}

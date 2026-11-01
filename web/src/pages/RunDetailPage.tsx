@@ -1,7 +1,7 @@
 import { Alert, Anchor, Badge, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { IconAlertCircle, IconPlugConnectedX } from '@tabler/icons-react';
 import { Link, useParams } from 'react-router-dom';
-import { useNow, useRunStream } from '../api/hooks';
+import { useNow, usePipelineLabeller, useRunStream } from '../api/hooks';
 import { Stat } from '../components/Stat';
 import { ResourceCharts } from '../components/ResourceCharts';
 import { RunProgress } from '../components/RunProgress';
@@ -13,6 +13,7 @@ export function RunDetailPage() {
   const { runId = '' } = useParams();
   const { detail, notFound, reconnecting } = useRunStream(runId);
   const now = useNow();
+  const label = usePipelineLabeller();
 
   if (notFound) {
     return (
@@ -33,7 +34,7 @@ export function RunDetailPage() {
       <Group justify="space-between" align="flex-start">
         <div>
           <Group gap="sm">
-            <Title order={2}>{run.pipelineName}</Title>
+            <Title order={2}>{label(run.packageId, run.pipelineName)}</Title>
             <StatusBadge status={run.status} />
             {reconnecting && (
               <Badge color="yellow" variant="light" leftSection={<IconPlugConnectedX size={12} />}>

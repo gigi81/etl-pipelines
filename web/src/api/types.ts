@@ -25,11 +25,18 @@ export interface RunSummary {
 
 export interface Pipeline {
   id: string;
+  /** The pipeline's own name: what its package registers and an agent launches it by. */
   name: string;
+  /** A name a user gave it, shown in its place; null if none. */
+  displayName: string | null;
   packageId: string;
   packageVersion: string;
   activeRuns: number;
   lastRun: RunSummary | null;
+}
+
+export interface ClearedHistory {
+  deleted: number;
 }
 
 export interface Stage {

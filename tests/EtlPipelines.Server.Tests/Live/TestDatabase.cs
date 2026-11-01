@@ -53,7 +53,7 @@ internal sealed class TestDatabase : IAsyncDisposable
     {
         return await ReadAsync(async context =>
         {
-            var package = new Package { Id = Guid.NewGuid(), NugetPackageId = "Pkg", CreatedAt = DateTime.UtcNow };
+            var package = new Package { Id = Guid.NewGuid(), NugetPackageId = $"Pkg.{name}", CreatedAt = DateTime.UtcNow };
             var version = new PackageVersion { Id = Guid.NewGuid(), PackageId = package.Id, Version = "1.0.0", InstalledAt = DateTime.UtcNow, Status = "Installed" };
             var pipeline = new Pipeline { Id = Guid.NewGuid(), PackageVersionId = version.Id, Name = name, CreatedAt = DateTime.UtcNow };
             context.AddRange(package, version, pipeline);

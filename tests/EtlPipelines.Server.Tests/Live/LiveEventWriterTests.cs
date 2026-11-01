@@ -170,7 +170,7 @@ public class LiveEventWriterTests
         var live = await TestLiveState.CreateAsync(clock: clock);
 
         var agentId = await live.RegisterAgentAsync("agent-01", ["a"], "1", """{"k":"v"}""", CancellationToken.None);
-        var runId = await live.CreateRunAsync(pipelineId, "csv-to-db", "Pkg", "1.0.0", agentId, [], CancellationToken.None);
+        var runId = await live.CreateRunAsync(pipelineId, "csv-to-db", "Pkg.csv-to-db", "1.0.0", agentId, [], CancellationToken.None);
         clock.Advance(TimeSpan.FromSeconds(1));
         await live.StartRunAsync(runId, CancellationToken.None);
         clock.Advance(TimeSpan.FromSeconds(1));
@@ -194,6 +194,95 @@ public class LiveEventWriterTests
         reloaded.ResourceSamples.Select(s => (s.CpuPercent, s.WorkingSetBytes)).Should().Equal(inMemory.ResourceSamples.Select(s => (s.CpuPercent, s.WorkingSetBytes)));
         restarted.TryGetAgent(agentId)!.Info.Should().NotBeNull();
         restarted.TryGetAgent(agentId)!.MachineName.Should().Be("agent-01");
+    }
+
+    [Test]
+    public async Task A_removed_agent_is_marked_so_not_deleted_and_the_runs_it_carried_out_still_have_it()
+    {
+        //arrange
+        await using var database = await TestDatabase.CreateAsync();
+        var pipelineId = await database.SeedPipelineAsync();
+        var agentId = Guid.NewGuid();
+        var runId = Guid.NewGuid();
+
+        //act
+        await database.ReadAsync(async context => await LiveEventWriter.WriteAsync(
+            context,
+            [
+                new AgentRegisteredEvent(agentId, "agent-01", [], "1", null, T0),
+                new RunCreatedEvent(runId, pipelineId, "p", "Pkg", "1", agentId, [], T0.AddSeconds(1)),
+                new RunFinishedEvent(runId, "Succeeded", 0, 1, 1, 0, T0.AddSeconds(2)),
+                new AgentOfflineEvent(agentId, T0.AddSeconds(3)),
+                new AgentRemovedEvent(agentId, T0.AddSeconds(4)),
+            ],
+            CancellationToken.None));
+
+        //assert
+        (await database.ReadAsync(context => context.Agents.SingleAsync())).Status.Should().Be("Removed");
+        (await database.ReadAsync(context => context.Runs.SingleAsync())).AgentId.Should().Be(agentId);
+    }
+
+    [Test]
+    public async Task Clearing_history_deletes_the_finished_runs_stages_and_samples_of_that_pipeline_only()
+    {
+        //arrange - two pipelines, each with a finished run and one in flight, written in an earlier batch
+        await using var database = await TestDatabase.CreateAsync();
+        var pipeline = await database.SeedPipelineAsync("cleared");
+        var other = await database.SeedPipelineAsync("other");
+        var agentId = Guid.NewGuid();
+        var (finished, running, otherFinished) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        await database.ReadAsync(async context => await LiveEventWriter.WriteAsync(
+            context,
+            [
+                new AgentRegisteredEvent(agentId, "a", [], "1", null, T0),
+                new RunCreatedEvent(finished, pipeline, "cleared", "Pkg", "1", agentId, [], T0),
+                new StageCompletedEvent(finished, Guid.NewGuid(), new StageDto(0, "read", 0, 1, 0, 1, null, null), T0),
+                new ResourceSampledEvent(finished, agentId, Guid.NewGuid(), 1, 1, T0),
+                new RunFinishedEvent(finished, "Succeeded", 0, 1, 1, 0, T0.AddSeconds(1)),
+                new RunCreatedEvent(running, pipeline, "cleared", "Pkg", "1", agentId, [], T0),
+                new StageCompletedEvent(running, Guid.NewGuid(), new StageDto(0, "read", 0, 1, 0, 1, null, null), T0),
+                new RunCreatedEvent(otherFinished, other, "other", "Pkg", "1", agentId, [], T0),
+                new StageCompletedEvent(otherFinished, Guid.NewGuid(), new StageDto(0, "read", 0, 1, 0, 1, null, null), T0),
+                new RunFinishedEvent(otherFinished, "Failed", 1, 0, 0, 0, T0.AddSeconds(1)),
+            ],
+            CancellationToken.None));
+
+        //act
+        await database.ReadAsync(async context => await LiveEventWriter.WriteAsync(
+            context, [new PipelineHistoryClearedEvent(pipeline, T0.AddMinutes(1))], CancellationToken.None));
+
+        //assert
+        (await database.ReadAsync(context => context.Runs.Select(r => r.Id).ToListAsync())).Should().BeEquivalentTo([running, otherFinished]);
+        (await database.ReadAsync(context => context.StageResults.Select(s => s.RunId).ToListAsync())).Should().BeEquivalentTo([running, otherFinished]);
+        (await database.ReadAsync(context => context.AgentResourceSamples.CountAsync())).Should().Be(0, "the only sample was the cleared run's");
+    }
+
+    [Test]
+    public async Task A_run_that_finishes_earlier_in_the_same_batch_is_cleared_and_later_events_still_apply()
+    {
+        //arrange
+        await using var database = await TestDatabase.CreateAsync();
+        var pipeline = await database.SeedPipelineAsync();
+        var (first, second) = (Guid.NewGuid(), Guid.NewGuid());
+        await database.ReadAsync(async context => await LiveEventWriter.WriteAsync(
+            context, [new RunCreatedEvent(first, pipeline, "p", "Pkg", "1", null, [], T0)], CancellationToken.None));
+
+        //act - it finishes, the history is cleared, and a new run starts and reports, all in one batch
+        await database.ReadAsync(async context => await LiveEventWriter.WriteAsync(
+            context,
+            [
+                new RunFinishedEvent(first, "Succeeded", 0, 1, 1, 0, T0.AddSeconds(1)),
+                new PipelineHistoryClearedEvent(pipeline, T0.AddSeconds(2)),
+                new RunCreatedEvent(second, pipeline, "p", "Pkg", "1", null, [], T0.AddSeconds(3)),
+                new RunStartedEvent(second, T0.AddSeconds(4)),
+                new StageCompletedEvent(second, Guid.NewGuid(), new StageDto(0, "read", 0, 1, 0, 1, null, null), T0.AddSeconds(5)),
+            ],
+            CancellationToken.None));
+
+        //assert
+        var run = await database.ReadAsync(context => context.Runs.SingleAsync());
+        (run.Id, run.Status).Should().Be((second, "Running"));
+        (await database.ReadAsync(context => context.StageResults.CountAsync())).Should().Be(1);
     }
 
     private static DateTime Utc(DateTime value) => DateTime.SpecifyKind(value, DateTimeKind.Utc);

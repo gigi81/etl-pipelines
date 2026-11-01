@@ -29,7 +29,7 @@ sync by re-running the same command below rather than by hand-editing generated 
      --context-namespace EtlPipelines.Server.Database \
      --no-onconfiguring \
      --force \
-     --table Packages --table PackageVersions --table Pipelines --table Agents --table Runs \
+     --table Packages --table PackageVersions --table Pipelines --table PipelineDisplayNames --table Agents --table Runs \
      --table StageResults --table AgentResourceSamples --table ConfigurationEntries --table NuGetFeeds
    ```
    The explicit `--table` list matters: without it, scaffolding also reverse-engineers dbdeploy's

@@ -26,6 +26,8 @@ public partial class ServerDbContext : DbContext
 
     public virtual DbSet<Pipeline> Pipelines { get; set; }
 
+    public virtual DbSet<PipelineDisplayName> PipelineDisplayNames { get; set; }
+
     public virtual DbSet<Run> Runs { get; set; }
 
     public virtual DbSet<StageResult> StageResults { get; set; }
@@ -117,6 +119,16 @@ public partial class ServerDbContext : DbContext
                 .HasForeignKey(d => d.PackageVersionId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_Pipelines_PackageVersions");
+        });
+
+        modelBuilder.Entity<PipelineDisplayName>(entity =>
+        {
+            entity.HasKey(e => new { e.PackageId, e.PipelineName }).HasName("PipelineDisplayNames_pkey");
+
+            entity.HasOne(d => d.Package).WithMany(p => p.PipelineDisplayNames)
+                .HasForeignKey(d => d.PackageId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_PipelineDisplayNames_Packages");
         });
 
         modelBuilder.Entity<Run>(entity =>

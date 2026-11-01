@@ -1,5 +1,6 @@
 import type {
   Agent,
+  ClearedHistory,
   ConfigurationKey,
   InstallResult,
   PackagesResponse,
@@ -49,6 +50,15 @@ export const api = {
   },
   run: (runId: string) => request<RunDetail>(`/api/runs/${runId}`),
   agents: () => request<Agent[]>('/api/agents'),
+  removeAgent: (id: string) => request<void>(`/api/agents/${id}`, { method: 'DELETE' }),
+  /** An empty name goes back to the pipeline's own. */
+  setDisplayName: (pipelineId: string, displayName: string) =>
+    request<void>(`/api/pipelines/${pipelineId}/display-name`, {
+      method: 'PUT',
+      body: JSON.stringify({ displayName }),
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  clearHistory: (pipelineId: string) => request<ClearedHistory>(`/api/pipelines/${pipelineId}/runs`, { method: 'DELETE' }),
   packages: (search?: string) =>
     request<PackagesResponse>(`/api/packages${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   /** Installs on an agent, so it takes as long as the agent does (minutes, for a first install). */

@@ -300,6 +300,127 @@ public class LiveStateTests
         (await live.ExpectedStagesAsync(context, pipelineId, CancellationToken.None)).Should().Equal("mem-a", "mem-b");
     }
 
+    [Test]
+    public async Task Only_an_agent_that_has_stopped_heartbeating_can_be_removed()
+    {
+        //arrange - "gone" stops heartbeating; "online" keeps going
+        var clock = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var live = await TestLiveState.CreateAsync(clock: clock);
+        var online = await live.RegisterAgentAsync("online", [], "1", null, CancellationToken.None);
+        var gone = await live.RegisterAgentAsync("gone", [], "1", null, CancellationToken.None);
+        clock.Advance(TimeSpan.FromMinutes(5));
+        await live.AgentHeartbeatAsync(online, CancellationToken.None);
+        await live.SweepAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+        live.DrainPendingEvents();
+        using var changes = live.Subscribe(change => change.Kind == LiveChangeKind.AgentRemoved);
+
+        //act + assert
+        (await live.RemoveAgentAsync(online, CancellationToken.None)).Should().Be(AgentRemovalResult.StillOnline);
+        (await live.RemoveAgentAsync(Guid.NewGuid(), CancellationToken.None)).Should().Be(AgentRemovalResult.NotFound);
+        live.PendingEventCount.Should().Be(0, "a refusal is not an event");
+
+        (await live.RemoveAgentAsync(gone, CancellationToken.None)).Should().Be(AgentRemovalResult.Removed);
+        live.TryGetAgent(gone).Should().BeNull();
+        (await live.ListAgentsAsync(CancellationToken.None)).Select(a => a.MachineName).Should().Equal("online");
+        live.DrainPendingEvents().Should().ContainSingle().Which.Should().BeOfType<AgentRemovedEvent>();
+        (await changes.NextAsync(Brief, CancellationToken.None)).Should().Equal(new LiveChange(LiveChangeKind.AgentRemoved, gone));
+    }
+
+    [Test]
+    public async Task An_offline_agent_that_still_has_a_run_in_flight_is_not_removed()
+    {
+        //arrange - the sweep marks it offline and its runs lost, so make a run in flight afterwards
+        var clock = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var live = await TestLiveState.CreateAsync(clock: clock);
+        var agentId = await live.RegisterAgentAsync("a", [], "1", null, CancellationToken.None);
+        clock.Advance(TimeSpan.FromMinutes(5));
+        await live.SweepAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+        live.TryGetAgent(agentId)!.Status.Should().Be("Offline");
+        await live.CreateRunAsync(Guid.NewGuid(), "p", "Pkg", "1", agentId, [], CancellationToken.None);
+
+        //act
+        var result = await live.RemoveAgentAsync(agentId, CancellationToken.None);
+
+        //assert
+        result.Should().Be(AgentRemovalResult.HasActiveRuns);
+        live.TryGetAgent(agentId).Should().NotBeNull();
+    }
+
+    [Test]
+    public async Task A_removed_agent_is_not_loaded_again_after_a_restart()
+    {
+        //arrange
+        var context = SqliteServerDbContext.Create();
+        var kept = await SeedAgentAsync(context, "kept");
+        var removed = await SeedAgentAsync(context, "removed");
+        (await context.Agents.SingleAsync(a => a.Id == removed)).Status = "Removed";
+        await context.SaveChangesAsync();
+
+        //act
+        var live = await TestLiveState.CreateAsync(context);
+
+        //assert
+        (await live.ListAgentsAsync(CancellationToken.None)).Select(a => a.Id).Should().Equal(kept);
+    }
+
+    [Test]
+    public async Task Clearing_a_pipelines_history_drops_its_finished_runs_from_memory_and_keeps_the_rest()
+    {
+        //arrange
+        var live = await TestLiveState.CreateAsync();
+        var pipeline = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        var finished1 = await live.CreateRunAsync(pipeline, "p", "Pkg", "1", null, [], CancellationToken.None);
+        var finished2 = await live.CreateRunAsync(pipeline, "p", "Pkg", "1", null, [], CancellationToken.None);
+        var running = await live.CreateRunAsync(pipeline, "p", "Pkg", "1", null, [], CancellationToken.None);
+        var elsewhere = await live.CreateRunAsync(other, "q", "Pkg", "1", null, [], CancellationToken.None);
+        await live.FinishRunAsync(finished1, "Succeeded", 0, 1, 1, 0, CancellationToken.None);
+        await live.FinishRunAsync(finished2, "Failed", 1, 0, 0, 0, CancellationToken.None);
+        await live.FinishRunAsync(elsewhere, "Succeeded", 0, 1, 1, 0, CancellationToken.None);
+        using var changes = live.Subscribe(change => change.Kind == LiveChangeKind.Pipelines);
+
+        //act
+        await live.ClearHistoryAsync(pipeline, CancellationToken.None);
+
+        //assert
+        live.TryGetRun(finished1).Should().BeNull();
+        live.TryGetRun(finished2).Should().BeNull();
+        live.TryGetRun(running).Should().NotBeNull("a run in flight is not history");
+        live.TryGetRun(elsewhere).Should().NotBeNull("another pipeline's history is left alone");
+        live.DrainPendingEvents().Last().Should().BeOfType<PipelineHistoryClearedEvent>().Which.PipelineId.Should().Be(pipeline);
+        (await changes.NextAsync(Brief, CancellationToken.None)).Should().NotBeEmpty();
+    }
+
+    [Test]
+    public async Task What_the_database_still_has_of_a_cleared_history_stays_hidden_until_the_clear_is_written()
+    {
+        //arrange - an old finished run only the database has
+        var context = SqliteServerDbContext.Create();
+        var pipelineId = await SeedPipelineAsync(context);
+        var old = await SeedRunAsync(context, pipelineId, null, "Succeeded", requested: DateTime.UtcNow.AddDays(-3), completed: DateTime.UtcNow.AddDays(-3));
+        var live = await TestLiveState.CreateAsync(context);
+        (await live.GetRunAsync(context, old, CancellationToken.None)).Should().NotBeNull();
+
+        //act
+        await live.ClearHistoryAsync(pipelineId, CancellationToken.None);
+
+        //assert - gone from every read, though the row is still there
+        (await live.ListRunsAsync(context, false, pipelineId, 50, CancellationToken.None)).Should().BeEmpty();
+        (await live.GetRunAsync(context, old, CancellationToken.None)).Should().BeNull();
+        (await live.LastRunAsync(context, pipelineId, CancellationToken.None)).Should().BeNull();
+        (await context.Runs.CountAsync()).Should().Be(1);
+
+        // once the clear is written the rows really are gone, and nothing is being hidden any more
+        var events = live.DrainPendingEvents();
+        await LiveEventWriter.WriteAsync(context, events, CancellationToken.None);
+        live.MarkWritten(events);
+        (await context.Runs.CountAsync()).Should().Be(0);
+
+        var again = await live.CreateRunAsync(pipelineId, "p", "Pkg", "1", null, [], CancellationToken.None);
+        await live.FinishRunAsync(again, "Succeeded", 0, 0, 0, 0, CancellationToken.None);
+        (await live.ListRunsAsync(context, false, pipelineId, 50, CancellationToken.None)).Select(r => r.Id).Should().Equal(again);
+    }
+
     private static async Task<Guid> SeedPipelineAsync(ServerDbContext context)
     {
         var package = new Package { Id = Guid.NewGuid(), NugetPackageId = "Pkg", CreatedAt = DateTime.UtcNow };
