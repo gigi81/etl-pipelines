@@ -1,19 +1,37 @@
-import { Alert, Badge, Loader, Stack, Tabs, Text, Title } from '@mantine/core';
+import { Alert, Anchor, Badge, Group, Loader, Stack, Tabs, Text, Title } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { useState } from 'react';
-import { useRuns } from '../api/hooks';
+import { Link, useSearchParams } from 'react-router-dom';
+import { usePipelineLabeller, usePipelines, useRuns } from '../api/hooks';
 import { RunsTable } from '../components/RunsTable';
 
+/** The runs: those in flight, and the history - of everything, or (`/runs?pipeline=<id>`) of one pipeline. */
 export function RunsPage() {
   const [tab, setTab] = useState<string | null>('running');
-  const running = useRuns({ active: true });
-  const history = useRuns({ active: false, limit: 100 });
+  const [params] = useSearchParams();
+  const pipelineId = params.get('pipeline') ?? undefined;
+  const { data: pipelines } = usePipelines();
+  const label = usePipelineLabeller();
+  const pipeline = pipelines?.find((candidate) => candidate.id === pipelineId);
+
+  const running = useRuns({ active: true, pipelineId });
+  const history = useRuns({ active: false, limit: 100, pipelineId });
 
   const current = tab === 'history' ? history : running;
 
   return (
     <Stack>
       <Title order={2}>Runs</Title>
+      {pipelineId && (
+        <Group gap="xs">
+          <Text size="sm">
+            Runs of <b>{pipeline ? label(pipeline.packageId, pipeline.name) : 'one pipeline'}</b>
+          </Text>
+          <Anchor component={Link} to="/runs" size="sm">
+            Show all runs
+          </Anchor>
+        </Group>
+      )}
       <Tabs value={tab} onChange={setTab}>
         <Tabs.List>
           <Tabs.Tab

@@ -14,7 +14,7 @@ docker compose up --build -d
 |---|---|---|
 | `postgres` | `postgres:15.1` | Holds the Server's database, `etlpipelines_server`. Health-checked with `pg_isready`. |
 | `nuget` | `bagetter/bagetter` | The package feed, `http://nuget:8080/v3/index.json` inside the network. |
-| `server` | built from `docker/Dockerfile.server` | Starts once `postgres` is healthy. Its entrypoint runs `dbdeploy deploy` before starting the app, so an empty database gets its schema without any manual step, and an existing one is left as it is. Health-checked over HTTP/2 on port 5000. Publishes port 5080, the [WebUI](webui.md) and its REST API. The gRPC port is not published. |
+| `server` | built from `docker/Dockerfile.server` | Starts once `postgres` is healthy. Its entrypoint runs `dbdeploy deploy` before starting the app, so an empty database gets its schema without any manual step, and an existing one is left as it is. Health-checked over HTTP/2 on port 5000. Publishes port 5080, the [WebUI](webui.md) and its REST API, **on `127.0.0.1` only** (it has no authentication, and can run code on the agents). The gRPC port is not published. |
 | `agent` | built from `docker/Dockerfile.agent` | Starts once `server` is healthy. It ships the full .NET SDK, because installing a package means running `dotnet tool install` at run time. |
 | `seed` | built from `docker/Dockerfile.seed` | A one-shot job. It packs the six samples and pushes them to `nuget`, retrying until the feed answers, then exits. |
 
@@ -27,7 +27,7 @@ All long-running services use `restart: unless-stopped`.
 | `postgres-data` | `/var/lib/postgresql/data` | The database. |
 | `nuget-data` | `/data` | bagetter's packages. |
 | `server-cache` | `/var/lib/etlpipelines/server-cache` | The Data Protection key ring (`keys/`). **Back this volume up.** Without it, no stored configuration value can be decrypted again. |
-| `agent-cache` | `/var/lib/etlpipelines/agent-cache` | Installed tool packages, one directory per package version. |
+| `agent-cache` | `/var/lib/etlpipelines/agent-cache` | Installed tool packages, one directory per package version, and `agent-id`: the id that makes a restarted agent the same agent (see [Agent identity](operations.md#agent-identity)). |
 
 `docker compose down` keeps the volumes. `docker compose down --volumes` deletes them, and with them
 the key ring.
@@ -86,7 +86,21 @@ it.
 > Publishing the port exposes a Server with **no authentication** to whatever can reach the host.
 > Do this only on a trusted network.
 
-## A first run, end to end
+## A first run from the WebUI
+
+Open <http://localhost:5080> once the stack is healthy (the machine running Docker only: see above).
+
+1. **Packages** lists what the seed job put on the feed - the six samples. Choose **Install** on one
+   (for example `EtlPipelines.Samples.CsvToDatabase`) and wait: an agent runs `dotnet tool install`, which
+   takes a minute or so the first time.
+2. **Pipelines** now lists its pipelines. Choose **Run now** and watch the run page.
+3. To bring your own pipeline, build it as a [pipeline package](pipeline-packages.md), then **Upload a
+   package** on the Packages page and install it like any other. A pipeline that needs a connection string
+   or credentials reads it from **Configuration**: add `ConnectionStrings:<name>` there first.
+
+## A first run, end to end, with gRPC
+
+The same steps, scripted:
 
 The examples below use the port-publishing override above and run from the repository root.
 
@@ -131,5 +145,8 @@ replicas:
 docker compose up -d --scale agent=3
 ```
 
-Each replica gets its own agent id but, as written, shares the one `agent-cache` volume. Before
-scaling out, read the notes on multiple agents in [Known limitations](limitations.md).
+As written, the replicas share the one `agent-cache` volume, and with it the file that holds an
+agent's identity: they would all register as the same agent, and only one of them would be sent work.
+To run several agents, give each its own cache volume and its own `Agent__Name` (for example as extra
+services in a `docker-compose.override.yml`), rather than `--scale`. Read the notes on multiple agents
+in [Known limitations](limitations.md) too.

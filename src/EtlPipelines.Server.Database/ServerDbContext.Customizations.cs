@@ -19,15 +19,16 @@ public partial class ServerDbContext
 {
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
-        // Scaffolding correctly captured Agents.Tags' Postgres default ('{}'::text[]) from the
-        // live schema, but that array-literal syntax isn't valid SQLite - and
+        // Scaffolding correctly captured the Postgres default ('{}'::text[]) of Agents.Tags and
+        // Agents.AssignedTags from the live schema, but that array-literal syntax isn't valid SQLite - and
         // EtlPipelines.Server.Database.Tests' fast suite runs this exact model against SQLite
         // (EnsureCreated(), never dbdeploy - see SqliteServerDbContext's own remarks). Every row
-        // those tests insert sets Tags itself, so dropping the DB-side default for that one
+        // those tests insert sets both itself, so dropping the DB-side default for that one
         // provider costs nothing there while leaving the real Postgres default untouched.
         if (Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
         {
             modelBuilder.Entity<Agent>().Property(agent => agent.Tags).HasDefaultValueSql(null);
+            modelBuilder.Entity<Agent>().Property(agent => agent.AssignedTags).HasDefaultValueSql(null);
         }
     }
 }

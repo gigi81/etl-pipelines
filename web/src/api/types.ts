@@ -23,13 +23,30 @@ export interface RunSummary {
   stagesExpected: number | null;
 }
 
+/**
+ * Which agents may run a pipeline: any, when both lists are empty; otherwise an agent that has any of
+ * the tags, or is one of the agents named.
+ */
+export interface PipelineAssignment {
+  tags: string[];
+  agentIds: string[];
+}
+
 export interface Pipeline {
   id: string;
+  /** The pipeline's own name: what its package registers and an agent launches it by. */
   name: string;
+  /** A name a user gave it, shown in its place; null if none. */
+  displayName: string | null;
   packageId: string;
   packageVersion: string;
   activeRuns: number;
   lastRun: RunSummary | null;
+  assignment: PipelineAssignment;
+}
+
+export interface ClearedHistory {
+  deleted: number;
 }
 
 export interface Stage {
@@ -72,10 +89,54 @@ export interface AgentInfo {
   [key: string]: unknown;
 }
 
+/** A package on the feed and/or installed. */
+export interface PackageInfo {
+  id: string;
+  /** Every version the feed publishes, newest first; empty if the feed no longer has the package. */
+  versions: string[];
+  latestStableVersion: string | null;
+  installedVersion: string | null;
+  updateAvailable: boolean;
+  /** The pipelines the installed version provides. */
+  pipelines: string[];
+}
+
+export interface PackagesResponse {
+  packages: PackageInfo[];
+  /** Why the feed could not be browsed; the installed packages are listed regardless. */
+  feedError: string | null;
+}
+
+export interface InstallResult {
+  packageId: string;
+  version: string;
+  pipelineNames: string[];
+}
+
+export interface UploadedPackage {
+  id: string;
+  version: string;
+}
+
+/** A configuration entry: its key only - values are never sent back. */
+export interface ConfigurationKey {
+  key: string;
+  updatedAtUtc: string;
+}
+
+/** What `GET /api/info` says about the server. */
+export interface ServerInfo {
+  /** The version it was built as, e.g. `0.2.0.5+01d5a8c`. */
+  version: string;
+}
+
 export interface Agent {
   id: string;
   machineName: string;
+  /** Every tag it has: the ones it reports about itself (its configuration) and `assignedTags`. */
   tags: string[];
+  /** Only the tags a user gave it - the ones that can be changed here. */
+  assignedTags: string[];
   version: string;
   status: 'Online' | 'Offline';
   lastHeartbeatAtUtc: string;

@@ -1,11 +1,17 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Threading.Channels;
+using EtlPipelines.AgentExecution.V1;
 using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Api;
 using EtlPipelines.Server.Catalog;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
 using EtlPipelines.Server.Live;
+using EtlPipelines.Server.Secrets;
+using EtlPipelines.Server.Services;
+using Grpc.Core;
+using Moq.Protected;
 using EtlPipelines.Server.Runs;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -34,7 +40,7 @@ internal sealed class ApiTestHost : IAsyncDisposable
     private readonly string _connectionString;
     private readonly WebApplication _app;
 
-    private ApiTestHost(WebApplication app, SqliteConnection keepAlive, string connectionString, HttpClient client, AgentConnectionRegistry connections, LiveState live)
+    private ApiTestHost(WebApplication app, SqliteConnection keepAlive, string connectionString, HttpClient client, AgentConnectionRegistry connections, LiveState live, Mock<INuGetFeedClient> feed)
     {
         _app = app;
         _keepAlive = keepAlive;
@@ -42,11 +48,15 @@ internal sealed class ApiTestHost : IAsyncDisposable
         Client = client;
         Connections = connections;
         Live = live;
+        FeedClient = feed;
     }
 
     public HttpClient Client { get; }
 
     public AgentConnectionRegistry Connections { get; }
+
+    /// <summary>The package feed the server browses and pushes to - a mock the test scripts.</summary>
+    public Mock<INuGetFeedClient> FeedClient { get; }
 
     /// <summary>The server's in-memory state, which is what the API reads.</summary>
     public LiveState Live { get; }
@@ -67,8 +77,13 @@ internal sealed class ApiTestHost : IAsyncDisposable
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton(connections);
         builder.Services.AddSingleton(live);
-        builder.Services.AddSingleton(new Mock<INuGetFeedClient>().Object);
+        var feed = new Mock<INuGetFeedClient>();
+        builder.Services.AddSingleton(feed.Object);
+        builder.Services.AddSingleton<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>(new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider());
+        builder.Services.AddScoped<SecretsStore>();
         builder.Services.AddScoped<PackageCatalogService>();
+        builder.Services.AddScoped<PackageOperations>();
+        builder.Services.AddScoped<PackageUploader>();
         builder.Services.AddScoped(provider => new RunDispatcher(
             provider.GetRequiredService<ServerDbContext>(), connections, live, "http://server.test"));
 
@@ -86,7 +101,7 @@ internal sealed class ApiTestHost : IAsyncDisposable
         var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
         var client = new HttpClient { BaseAddress = new Uri(address), Timeout = TimeSpan.FromSeconds(30) };
 
-        return new ApiTestHost(app, keepAlive, connectionString, client, connections, live);
+        return new ApiTestHost(app, keepAlive, connectionString, client, connections, live, feed);
     }
 
     /// <summary>
@@ -100,6 +115,43 @@ internal sealed class ApiTestHost : IAsyncDisposable
         await Live.LoadAsync(context, CancellationToken.None);
     }
 
+    /// <summary>Gives the server a package feed to install from, as the seeded compose stack has.</summary>
+    public async Task SeedFeedAsync(string url = "http://feed.test/v3/index.json")
+    {
+        await using var context = NewContext();
+        context.NuGetFeeds.Add(new NuGetFeed { Id = Guid.NewGuid(), Url = url, Ordinal = 0 });
+        await context.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Plays the agent a package install was sent to: takes the work item it was given, installs
+    /// nothing, and reports back that it succeeded - with <paramref name="pipelineNames"/> - or failed.
+    /// Returns the work item, so a test can see what the Server asked for.
+    /// </summary>
+    public async Task<InstallPackageWorkItem> AnswerInstallAsync(
+        string agentId, Channel<WorkItem> channel, bool succeeded = true, params string[] pipelineNames)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var workItem = await channel.Reader.ReadAsync(timeout.Token);
+
+        await using var context = NewContext();
+        var agentService = new AgentServiceImpl(Connections, new PackageCatalogService(context, FeedClient.Object), Live);
+        var report = new ReportInstallResultRequest
+        {
+            AgentId = agentId,
+            WorkItemId = workItem.WorkItemId,
+            Succeeded = succeeded,
+            Error = succeeded ? string.Empty : "dotnet tool install failed",
+        };
+        report.PipelineNames.AddRange(pipelineNames);
+
+        var call = new Mock<ServerCallContext> { CallBase = true };
+        call.Protected().Setup<CancellationToken>("CancellationTokenCore").Returns(CancellationToken.None);
+        await agentService.ReportInstallResult(report, call.Object);
+
+        return workItem.InstallPackage;
+    }
+
     /// <summary>A fresh context on the same database the API reads.</summary>
     public ServerDbContext NewContext() =>
         new(new DbContextOptionsBuilder<ServerDbContext>().UseSqlite(_connectionString).Options);
@@ -107,30 +159,44 @@ internal sealed class ApiTestHost : IAsyncDisposable
     public async Task<T> GetAsync<T>(string path) =>
         (await Client.GetFromJsonAsync<T>(path, Json))!;
 
-    /// <summary>Installs a pipeline (package, version, pipeline rows) and returns its id.</summary>
+    /// <summary>Installs a pipeline (package, version, pipeline rows - reusing any that exist) and returns its id.</summary>
     public async Task<Guid> SeedPipelineAsync(string name, string packageId = "EtlPipelines.Samples.Test", string version = "1.0.0")
     {
         await using var context = NewContext();
-        var package = new Package { Id = Guid.NewGuid(), NugetPackageId = packageId, CreatedAt = DateTime.UtcNow };
-        var packageVersion = new PackageVersion
+
+        var package = await context.Packages.SingleOrDefaultAsync(p => p.NugetPackageId == packageId);
+        if (package is null)
         {
-            Id = Guid.NewGuid(), PackageId = package.Id, Version = version, InstalledAt = DateTime.UtcNow, Status = PackageVersionStatus.Installed,
-        };
+            package = new Package { Id = Guid.NewGuid(), NugetPackageId = packageId, CreatedAt = DateTime.UtcNow };
+            context.Packages.Add(package);
+        }
+
+        var packageVersion = await context.PackageVersions.SingleOrDefaultAsync(v => v.PackageId == package.Id && v.Version == version);
+        if (packageVersion is null)
+        {
+            packageVersion = new PackageVersion
+            {
+                Id = Guid.NewGuid(), PackageId = package.Id, Version = version, InstalledAt = DateTime.UtcNow, Status = PackageVersionStatus.Installed,
+            };
+            context.PackageVersions.Add(packageVersion);
+        }
+
         var pipeline = new Pipeline { Id = Guid.NewGuid(), PackageVersionId = packageVersion.Id, Name = name, CreatedAt = DateTime.UtcNow };
-        context.AddRange(package, packageVersion, pipeline);
+        context.Pipelines.Add(pipeline);
         await context.SaveChangesAsync();
         await ReloadAsync();
         return pipeline.Id;
     }
 
-    public async Task<Guid> SeedAgentAsync(string machineName = "agent-01", string status = "Online", DateTime? startedAt = null)
+    public async Task<Guid> SeedAgentAsync(
+        string machineName = "agent-01", string status = "Online", DateTime? startedAt = null, string[]? tags = null)
     {
         await using var context = NewContext();
         var agent = new Database.Entities.Agent
         {
             Id = Guid.NewGuid(),
             MachineName = machineName,
-            Tags = ["linux"],
+            Tags = [.. tags ?? ["linux"]], AssignedTags = [],
             Version = "1.2.3",
             Status = status,
             LastHeartbeatAt = DateTime.UtcNow,

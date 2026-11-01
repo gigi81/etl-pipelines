@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Contracts;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Live.Events;
@@ -46,6 +47,11 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
     private readonly TaskCompletionSource _loaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly object _subscriptionsGate = new();
     private readonly List<LiveSubscription> _subscriptions = [];
+
+    // Pipelines whose history was cleared and where the delete is not in the database yet, with how many
+    // such clears are waiting. Until then the database still has those runs, and anything read from it
+    // has to leave them out.
+    private readonly Dictionary<Guid, int> _pendingClears = [];
 
     private volatile ConcurrentDictionary<Guid, LiveRun> _runs = new();
     private volatile ConcurrentDictionary<Guid, LiveAgent> _agents = new();
@@ -117,7 +123,7 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
     public async Task LoadAsync(ServerDbContext db, CancellationToken cancellationToken)
     {
         var agents = new ConcurrentDictionary<Guid, LiveAgent>();
-        foreach (var agent in await db.Agents.AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false))
+        foreach (var agent in await db.Agents.AsNoTracking().Where(agent => agent.Status != "Removed").ToListAsync(cancellationToken).ConfigureAwait(false))
         {
             agents[agent.Id] = LiveAgent.From(agent);
         }
@@ -144,6 +150,7 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
             _agents = agents;
             _runs = runs;
             _outbox.Clear();
+            _pendingClears.Clear();
         }
 
         _loaded.TrySetResult();
@@ -155,15 +162,31 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
 
     // ---- commands -----------------------------------------------------------------------
 
-    /// <summary>An agent registers. Returns the id it is known by from now on.</summary>
+    /// <summary>
+    /// An agent registers. Returns the id it is known by from now on: <paramref name="requestedId"/> when the
+    /// agent brought the one it was issued before (it is then the same agent - same tags a user gave it, same
+    /// history - however many times it has restarted, and even if it had been removed), a new one when it
+    /// did not.
+    /// </summary>
     public async Task<Guid> RegisterAgentAsync(
-        string machineName, IReadOnlyList<string> tags, string version, string? infoJson, CancellationToken cancellationToken)
+        Guid? requestedId, string machineName, IReadOnlyList<string> tags, string version, string? infoJson, CancellationToken cancellationToken)
     {
         await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-        var agentId = Guid.NewGuid();
+        var agentId = requestedId ?? Guid.NewGuid();
         Append(new AgentRegisteredEvent(agentId, machineName, tags, version, infoJson, Now()));
         return agentId;
+    }
+
+    /// <summary>
+    /// Sets the tags a user gives an agent (replacing the earlier ones). The caller has normalized them
+    /// (<see cref="TagNames.TryNormalize"/>). False when no such agent is held.
+    /// </summary>
+    public async Task<bool> SetAgentTagsAsync(Guid agentId, IReadOnlyList<string> assignedTags, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        return Append(() => _agents.ContainsKey(agentId) ? [new AgentTagsChangedEvent(agentId, assignedTags, Now())] : []);
     }
 
     /// <summary>An agent heartbeated. False when no such agent is known (it is left alone).</summary>
@@ -209,6 +232,53 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
         });
 
         return result;
+    }
+
+    /// <summary>
+    /// Removes an agent that has stopped heartbeating, so it is no longer listed - the clean-up for the
+    /// registrations a restarted or retired agent leaves behind. An agent that is online, or still has
+    /// runs in flight, is refused. The runs it carried out keep its name.
+    /// </summary>
+    public async Task<AgentRemovalResult> RemoveAgentAsync(Guid agentId, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        var result = AgentRemovalResult.NotFound;
+        Append(() =>
+        {
+            if (!_agents.TryGetValue(agentId, out var agent))
+            {
+                return [];
+            }
+
+            if (agent.Status == "Online")
+            {
+                result = AgentRemovalResult.StillOnline;
+                return [];
+            }
+
+            if (_runs.Values.Any(run => run.IsActive && run.AgentId == agentId))
+            {
+                result = AgentRemovalResult.HasActiveRuns;
+                return [];
+            }
+
+            result = AgentRemovalResult.Removed;
+            return [new AgentRemovedEvent(agentId, Now())];
+        });
+
+        return result;
+    }
+
+    /// <summary>
+    /// Deletes the finished runs of a pipeline - with their stages and samples - from memory now and the
+    /// database at the next sync. Runs in flight are left alone.
+    /// </summary>
+    public async Task ClearHistoryAsync(Guid pipelineId, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        Append(new PipelineHistoryClearedEvent(pipelineId, Now()));
     }
 
     /// <summary>A run is created and dispatched. Returns its id.</summary>
@@ -346,8 +416,15 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
                     registered.Version,
                     "Online",
                     registered.AtUtc,
-                    LiveAgent.ParseInfo(registered.InfoJson));
+                    LiveAgent.ParseInfo(registered.InfoJson),
+                    // Registering again is the same agent starting over: what a user gave it stays.
+                    _agents.TryGetValue(registered.AgentId, out var before) ? before.AssignedTags : []);
                 changes.Add(new LiveChange(LiveChangeKind.Agent, registered.AgentId));
+                break;
+
+            case AgentTagsChangedEvent tagged when _agents.TryGetValue(tagged.AgentId, out var agent):
+                _agents[tagged.AgentId] = agent with { AssignedTags = tagged.AssignedTags };
+                changes.Add(new LiveChange(LiveChangeKind.Agent, tagged.AgentId));
                 break;
 
             case AgentHeartbeatEvent heartbeat when _agents.TryGetValue(heartbeat.AgentId, out var agent):
@@ -358,6 +435,25 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
             case AgentOfflineEvent offline when _agents.TryGetValue(offline.AgentId, out var agent):
                 _agents[offline.AgentId] = agent with { Status = "Offline" };
                 changes.Add(new LiveChange(LiveChangeKind.Agent, offline.AgentId));
+                break;
+
+            case AgentRemovedEvent removed:
+                _agents.TryRemove(removed.AgentId, out _);
+                changes.Add(new LiveChange(LiveChangeKind.AgentRemoved, removed.AgentId));
+                break;
+
+            case PipelineHistoryClearedEvent cleared:
+                _pendingClears[cleared.PipelineId] = _pendingClears.GetValueOrDefault(cleared.PipelineId) + 1;
+                foreach (var (runId, held) in _runs)
+                {
+                    if (held.PipelineId == cleared.PipelineId && !held.IsActive)
+                    {
+                        _runs.TryRemove(runId, out _);
+                    }
+                }
+
+                // The runs lists and the pipeline's last run changed, which is what listeners refetch on.
+                changes.Add(new LiveChange(LiveChangeKind.Pipelines, Guid.Empty));
                 break;
 
             case RunCreatedEvent created:
@@ -425,6 +521,35 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
         }
     }
 
+    /// <summary>Records that <paramref name="events"/> are now in the database (or have been given up on), so what they deleted need no longer be hidden.</summary>
+    public void MarkWritten(IReadOnlyList<LiveEvent> events)
+    {
+        lock (_gate)
+        {
+            foreach (var pipelineId in events.OfType<PipelineHistoryClearedEvent>().Select(cleared => cleared.PipelineId))
+            {
+                var remaining = _pendingClears.GetValueOrDefault(pipelineId) - 1;
+                if (remaining > 0)
+                {
+                    _pendingClears[pipelineId] = remaining;
+                }
+                else
+                {
+                    _pendingClears.Remove(pipelineId);
+                }
+            }
+        }
+    }
+
+    /// <summary>Whether a finished run of <paramref name="pipelineId"/> the database still has is one whose clear has not been written yet.</summary>
+    private bool IsDeletedPending(Guid pipelineId, string status)
+    {
+        lock (_gate)
+        {
+            return _pendingClears.ContainsKey(pipelineId) && !RunQueries.IsActive(status);
+        }
+    }
+
     /// <summary>Puts events that could not be written back, ahead of any that happened since.</summary>
     public void RequeuePendingEvents(IReadOnlyList<LiveEvent> events)
     {
@@ -470,7 +595,10 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
         var heldIds = _runs.Keys.ToHashSet();
         var stored = await RunQueries.ListAsync(db, active, pipelineId, limit, cancellationToken).ConfigureAwait(false);
 
-        return [.. held.Concat(stored.Where(run => !heldIds.Contains(run.Id))).OrderByDescending(run => run.RequestedAtUtc).Take(limit)];
+        return [.. held
+            .Concat(stored.Where(run => !heldIds.Contains(run.Id) && !IsDeletedPending(run.PipelineId, run.Status)))
+            .OrderByDescending(run => run.RequestedAtUtc)
+            .Take(limit)];
     }
 
     /// <summary>One run with its stages and samples: from memory if it is held, otherwise from the database.</summary>
@@ -478,7 +606,13 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
     {
         await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-        return TryGetRun(runId) ?? await RunQueries.LoadDetailAsync(db, runId, cancellationToken).ConfigureAwait(false);
+        if (TryGetRun(runId) is { } held)
+        {
+            return held;
+        }
+
+        var stored = await RunQueries.LoadDetailAsync(db, runId, cancellationToken).ConfigureAwait(false);
+        return stored is not null && IsDeletedPending(stored.Run.PipelineId, stored.Run.Status) ? null : stored;
     }
 
     /// <summary>Whether a run is held - which every run in flight is. Waits for the state to be loaded.</summary>
@@ -516,7 +650,13 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
             .OrderByDescending(run => run.RequestedAtUtc)
             .FirstOrDefault();
 
-        return held ?? await RunQueries.LastRunAsync(db, pipelineId, cancellationToken).ConfigureAwait(false);
+        if (held is not null)
+        {
+            return held;
+        }
+
+        var stored = await RunQueries.LastRunAsync(db, pipelineId, cancellationToken).ConfigureAwait(false);
+        return stored is not null && IsDeletedPending(pipelineId, stored.Status) ? null : stored;
     }
 
     /// <summary>
@@ -533,8 +673,14 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
             .Select(run => run.ToDetail())
             .FirstOrDefault();
 
-        return lastSucceeded is not null
-            ? lastSucceeded.Stages.Select(stage => stage.Name).ToList()
+        if (lastSucceeded is not null)
+        {
+            return lastSucceeded.Stages.Select(stage => stage.Name).ToList();
+        }
+
+        // The database's, unless its history was just cleared and the delete is still to be written.
+        return IsDeletedPending(pipelineId, "Succeeded")
+            ? []
             : await RunQueries.ExpectedStageNamesAsync(db, pipelineId, null, cancellationToken).ConfigureAwait(false);
     }
 
@@ -548,6 +694,24 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
             .OrderBy(agent => agent.MachineName, StringComparer.Ordinal)
             .ThenBy(agent => agent.LastHeartbeatAtUtc)
             .Select(agent => agent.ToDto(now, ActiveRunsOf(agent.Id)))
+            .ToList();
+    }
+
+    /// <summary>Whether <paramref name="agentId"/> is a known agent (one that was never registered, or was removed, is not).</summary>
+    public bool IsKnownAgent(Guid agentId) => _agents.ContainsKey(agentId);
+
+    /// <summary>The tags and current workload of every agent held - what choosing an agent for a run goes on.</summary>
+    public async Task<IReadOnlyList<AgentLoad>> AgentLoadsAsync(CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        var active = _runs.Values
+            .Where(run => run.IsActive && run.AgentId is not null)
+            .GroupBy(run => run.AgentId!.Value)
+            .ToDictionary(group => group.Key, group => group.Count());
+
+        return _agents.Values
+            .Select(agent => new AgentLoad(agent.Id, agent.AllTags, active.GetValueOrDefault(agent.Id)))
             .ToList();
     }
 

@@ -19,6 +19,8 @@ public partial class Agent
 
     public string? Info { get; set; }
 
+    public List<string> AssignedTags { get; set; } = null!;
+
     public virtual ICollection<AgentResourceSample> AgentResourceSamples { get; set; } = new List<AgentResourceSample>();
 
     public virtual ICollection<Run> Runs { get; set; } = new List<Run>();

@@ -26,7 +26,7 @@ internal static class LiveStreams
 
     /// <summary>
     /// Everything the lists show, as it changes: <c>run</c> (a <see cref="RunSummaryDto"/>), <c>agent</c>
-    /// (an <see cref="AgentDto"/>) and <c>pipelines</c> (the installed pipelines changed; refetch them).
+    /// (an <see cref="AgentDto"/>), <c>agent-removed</c> (an agent is no longer listed) and <c>pipelines</c> (the installed pipelines changed; refetch them).
     /// It sends changes only, not a starting point: a client fetches the lists itself, and again each
     /// time the stream (re)connects. The first event, <c>ready</c>, is sent at once: it makes the
     /// response start (ASP.NET holds the headers back until there is something to send) and tells the
@@ -58,6 +58,7 @@ internal static class LiveStreams
                     {
                         LiveChangeKind.Run => live.TryGetRunSummary(change.Id) is { } run ? Item("run", run) : null,
                         LiveChangeKind.Agent => live.TryGetAgent(change.Id) is { } agent ? Item("agent", agent) : null,
+                        LiveChangeKind.AgentRemoved => Item("agent-removed", new { id = change.Id }),
                         _ => new SseItem<string>("{}", "pipelines"),
                     };
 

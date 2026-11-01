@@ -27,7 +27,7 @@ public class LiveStateSyncTests
         var pipelineId = await database.SeedPipelineAsync();
         var (live, sync) = Create(database.ScopeFactory);
         await sync.StartAsync(CancellationToken.None);
-        var agentId = await live.RegisterAgentAsync("a", [], "1", null, CancellationToken.None);
+        var agentId = await live.RegisterAgentAsync(null, "a", [], "1", null, CancellationToken.None);
         var runId = await live.CreateRunAsync(pipelineId, "p", "Pkg", "1", agentId, [], CancellationToken.None);
         await live.StageCompletedAsync(runId, new StageDto(0, "read", 0, 1, 0, 1, null, null), CancellationToken.None);
 
@@ -53,7 +53,7 @@ public class LiveStateSyncTests
         await using var database = await TestDatabase.CreateAsync();
         await database.ReadAsync(async context =>
         {
-            context.Agents.Add(new Database.Entities.Agent { Id = Guid.NewGuid(), MachineName = "from-db", Tags = [], Version = "1", Status = "Online", LastHeartbeatAt = DateTime.UtcNow });
+            context.Agents.Add(new Database.Entities.Agent { Id = Guid.NewGuid(), MachineName = "from-db", Tags = [], AssignedTags = [], Version = "1", Status = "Online", LastHeartbeatAt = DateTime.UtcNow });
             await context.SaveChangesAsync();
             return 0;
         });
@@ -84,7 +84,7 @@ public class LiveStateSyncTests
         await Task.Delay(300);
         counted.Attempts.Should().Be(startupScopes, "with nothing to write the database is not touched");
 
-        await live.RegisterAgentAsync("a", [], "1", null, CancellationToken.None);
+        await live.RegisterAgentAsync(null, "a", [], "1", null, CancellationToken.None);
         await WaitUntilAsync(async () => await database.ReadAsync(context => context.Agents.CountAsync()) == 1);
         await sync.StopAsync(CancellationToken.None);
     }
@@ -158,7 +158,7 @@ public class LiveStateSyncTests
         await using var database = await TestDatabase.CreateAsync();
         var (live, sync) = Create(database.ScopeFactory, interval: TimeSpan.FromHours(1));
         await sync.StartAsync(CancellationToken.None);
-        await live.RegisterAgentAsync("last-words", [], "1", null, CancellationToken.None);
+        await live.RegisterAgentAsync(null, "last-words", [], "1", null, CancellationToken.None);
 
         //act
         await sync.StopAsync(CancellationToken.None);
@@ -175,7 +175,7 @@ public class LiveStateSyncTests
         var pipelineId = await database.SeedPipelineAsync();
         var (live, sync) = Create(database.ScopeFactory);
         await sync.StartAsync(CancellationToken.None);
-        var agentId = await live.RegisterAgentAsync("a", [], "1", null, CancellationToken.None);
+        var agentId = await live.RegisterAgentAsync(null, "a", [], "1", null, CancellationToken.None);
         var runId = await live.CreateRunAsync(pipelineId, "p", "Pkg", "1", agentId, [], CancellationToken.None);
         await live.StartRunAsync(runId, CancellationToken.None);
         await sync.FlushAsync(CancellationToken.None);

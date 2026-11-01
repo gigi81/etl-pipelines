@@ -18,7 +18,8 @@ db/
 | `Packages` | One row per NuGet package id ever installed. |
 | `PackageVersions` | One row per installed version: `Installing`, `Installed` or `Failed`. The pair (package, version) is unique. |
 | `Pipelines` | One row per pipeline name within a package version, as reported by the package's `list` verb. |
-| `Agents` | Every agent registration: machine name, tags, version, `Online`/`Offline`, `LastHeartbeatAt`. |
+| `Agents` | One row per agent, which keeps its id across restarts: machine name, `Tags` (what it reports about itself), `AssignedTags` (given in the WebUI), version, `Online`/`Offline`/`Removed`, `LastHeartbeatAt`, `Info`. |
+| `PipelineAgentTags`, `PipelineAgents` | Which agents may run a pipeline: the tags it is assigned to, and the agents named. Keyed by (package, pipeline name), so it survives updates. No rows means any agent. |
 | `Runs` | One row per execution. `Id` is the session id the pipeline process is given. Holds status, timestamps, exit code and row counts. |
 | `StageResults` | One row per completed stage of a run. |
 | `AgentResourceSamples` | CPU and working-set samples per run. Nothing writes to it yet. |

@@ -1,11 +1,13 @@
-import { ActionIcon, AppShell, Badge, Burger, Group, Loader, NavLink, Title, useComputedColorScheme, useMantineColorScheme } from '@mantine/core';
+import { ActionIcon, AppShell, Badge, Burger, Group, Loader, NavLink, Text, Title, useComputedColorScheme, useMantineColorScheme } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconMoon, IconPlayerPlay, IconServer, IconSun, IconTopologyStar3 } from '@tabler/icons-react';
+import { IconMoon, IconPackage, IconPlayerPlay, IconServer, IconSettings, IconSun, IconTopologyStar3 } from '@tabler/icons-react';
 import { Suspense, lazy } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { useRuns } from './api/hooks';
+import { useRuns, useServerInfo } from './api/hooks';
 import { useLiveUpdates } from './api/useLiveUpdates';
 import { AgentsPage } from './pages/AgentsPage';
+import { ConfigurationPage } from './pages/ConfigurationPage';
+import { PackagesPage } from './pages/PackagesPage';
 import { PipelinesPage } from './pages/PipelinesPage';
 import { RunsPage } from './pages/RunsPage';
 
@@ -19,6 +21,7 @@ export function App() {
   const scheme = useComputedColorScheme('light');
   const running = useRuns({ active: true });
   const live = useLiveUpdates();
+  const { data: server } = useServerInfo();
 
   const links = [
     { to: '/pipelines', label: 'Pipelines', icon: <IconTopologyStar3 size={18} />, match: '/pipelines' },
@@ -30,6 +33,8 @@ export function App() {
       badge: running.data?.length || undefined,
     },
     { to: '/agents', label: 'Agents', icon: <IconServer size={18} />, match: '/agents' },
+    { to: '/packages', label: 'Packages', icon: <IconPackage size={18} />, match: '/packages' },
+    { to: '/configuration', label: 'Configuration', icon: <IconSettings size={18} />, match: '/configuration' },
   ];
 
   return (
@@ -72,6 +77,11 @@ export function App() {
             onClick={close}
           />
         ))}
+        {server && (
+          <Text size="xs" c="dimmed" mt="auto" px="sm" py="xs" title="The version of the server">
+            Server {server.version}
+          </Text>
+        )}
       </AppShell.Navbar>
 
       <AppShell.Main>
@@ -82,6 +92,8 @@ export function App() {
           <Route path="/runs" element={<RunsPage />} />
           <Route path="/runs/:runId" element={<RunDetailPage />} />
           <Route path="/agents" element={<AgentsPage />} />
+          <Route path="/packages" element={<PackagesPage />} />
+          <Route path="/configuration" element={<ConfigurationPage />} />
           <Route path="*" element={<Navigate to="/pipelines" replace />} />
         </Routes>
         </Suspense>

@@ -17,6 +17,7 @@
       NU1510 (a warning-as-error here) refuses an explicit one as redundant.
     -->
     <PackageReference Include="NuGet.Protocol" />
+    <PackageReference Include="NuGet.Packaging" />
     <PackageReference Include="NuGet.Versioning" />
   </ItemGroup>
 

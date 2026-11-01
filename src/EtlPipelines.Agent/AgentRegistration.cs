@@ -25,18 +25,40 @@ public sealed class AgentRegistration(
     {
         var registerRequest = new RegisterAgentRequest
         {
-            MachineName = Environment.MachineName,
-            Version = typeof(AgentRegistration).Assembly.GetName().Version?.ToString() ?? "0.0.0",
+            MachineName = string.IsNullOrWhiteSpace(options.Value.Name) ? Environment.MachineName : options.Value.Name.Trim(),
+            Version = AgentVersion.Current,
         };
         registerRequest.Tags.AddRange(options.Value.Tags);
         registerRequest.HostInfo = HostInfo.Describe();
+
+        // The id from the last start, if there was one: the server then knows this as the same agent
+        // rather than issuing a new id (and a new entry in the agents list) every time it starts.
+        var previousId = AgentIdentity.Load(options.Value.CacheDirectory);
+        if (previousId is { } known)
+        {
+            registerRequest.AgentId = known.ToString();
+        }
 
         var registerResponse = await client
             .RegisterAgentAsync(registerRequest, cancellationToken: stoppingToken)
             .ConfigureAwait(false);
         var agentId = registerResponse.AgentId;
 
-        logger.LogInformation("Registered as agent {AgentId}", agentId);
+        if (Guid.TryParse(agentId, out var issued) && issued != previousId && !AgentIdentity.Save(options.Value.CacheDirectory, issued))
+        {
+            logger.LogWarning(
+                "Could not save the agent id under {CacheDirectory}; this agent will register as a new one the next time it starts.",
+                options.Value.CacheDirectory);
+        }
+
+        if (previousId is null)
+        {
+            logger.LogInformation("Registered as new agent {AgentId}", agentId);
+        }
+        else
+        {
+            logger.LogInformation("Registered again as agent {AgentId}", agentId);
+        }
 
         var heartbeatTask = SendHeartbeatsAsync(agentId, stoppingToken);
         await SubscribeAsync(agentId, stoppingToken).ConfigureAwait(false);

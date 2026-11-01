@@ -43,10 +43,15 @@ services:
         condition: service_healthy
       nuget:
         condition: service_started
-    # The WebUI and its REST API. gRPC (5000) stays inside the compose network - agents reach it as
-    # "server:5000" - so it is deliberately not published.
+    # The WebUI and its REST API, on this machine only. gRPC (5000) stays inside the compose network -
+    # agents reach it as "server:5000" - so it is deliberately not published.
+    #
+    # Loopback on purpose: with no authentication, whoever can reach this port can upload a package,
+    # have an agent install it and run it - arbitrary code on the agents. To reach the UI from another
+    # machine, put an authenticating reverse proxy in front of it (or change this to "5080:5080" on a
+    # network you fully trust).
     ports:
-      - "5080:5080"
+      - "127.0.0.1:5080:5080"
     volumes:
       - server-cache:/var/lib/etlpipelines/server-cache
     restart: unless-stopped
@@ -58,7 +63,17 @@ services:
     depends_on:
       server:
         condition: service_healthy
+    environment:
+      # How the WebUI names this agent. Without it, the container id: different every time the container
+      # is recreated (docker compose down/up, a rebuild), which would show as a new name each time.
+      Agent__Name: docker-agent
+      # Tags to match pipelines to this agent by (more can be added in the WebUI), e.g.:
+      # Agent__Tags__0: linux
     volumes:
+      # Also where the agent keeps its identity (the id the server gave it, in a file called agent-id), so a
+      # recreated container registers as the same agent. Keep this volume to keep the agent: `docker compose
+      # down --volumes` makes the next start a new one. Do not share it between agents (`--scale agent=N`
+      # would make every replica the same agent): give each its own volume and Agent__Name.
       - agent-cache:/var/lib/etlpipelines/agent-cache
     restart: unless-stopped
 

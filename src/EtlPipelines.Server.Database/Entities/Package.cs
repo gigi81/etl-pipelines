@@ -12,4 +12,10 @@ public partial class Package
     public DateTime CreatedAt { get; set; }
 
     public virtual ICollection<PackageVersion> PackageVersions { get; set; } = new List<PackageVersion>();
+
+    public virtual ICollection<PipelineAgentTag> PipelineAgentTags { get; set; } = new List<PipelineAgentTag>();
+
+    public virtual ICollection<PipelineAgent> PipelineAgents { get; set; } = new List<PipelineAgent>();
+
+    public virtual ICollection<PipelineDisplayName> PipelineDisplayNames { get; set; } = new List<PipelineDisplayName>();
 }

@@ -69,6 +69,97 @@ public class ApiEndpointsTests
     }
 
     [Test]
+    public async Task A_pipeline_assigned_to_a_tag_only_runs_on_an_agent_that_has_it()
+    {
+        //arrange - two connected agents, only one tagged gpu
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("train-model");
+        var plain = await host.SeedAgentAsync("plain");
+        var gpu = await host.SeedAgentAsync("gpu-box");
+        await host.Client.PutAsJsonAsync($"/api/agents/{gpu}/tags", new AgentTagsDto(["gpu"]));
+        var plainChannel = Channel.CreateUnbounded<WorkItem>();
+        var gpuChannel = Channel.CreateUnbounded<WorkItem>();
+        host.Connections.Connect(plain.ToString(), plainChannel);
+        host.Connections.Connect(gpu.ToString(), gpuChannel);
+        await host.Client.PutAsJsonAsync($"/api/pipelines/{pipelineId}/assignment", new PipelineAssignmentDto(["gpu"], []));
+
+        //act
+        var response = await host.Client.PostAsync($"/api/pipelines/{pipelineId}/runs", content: null);
+
+        //assert
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        gpuChannel.Reader.TryRead(out _).Should().BeTrue();
+        plainChannel.Reader.TryRead(out _).Should().BeFalse("it does not have the tag");
+    }
+
+    [Test]
+    public async Task A_pipeline_assigned_to_an_agent_by_name_runs_there()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("load");
+        var first = await host.SeedAgentAsync("first");
+        var chosen = await host.SeedAgentAsync("chosen");
+        var firstChannel = Channel.CreateUnbounded<WorkItem>();
+        var chosenChannel = Channel.CreateUnbounded<WorkItem>();
+        host.Connections.Connect(first.ToString(), firstChannel);
+        host.Connections.Connect(chosen.ToString(), chosenChannel);
+        await host.Client.PutAsJsonAsync($"/api/pipelines/{pipelineId}/assignment", new PipelineAssignmentDto([], [chosen]));
+
+        //act
+        var response = await host.Client.PostAsync($"/api/pipelines/{pipelineId}/runs", content: null);
+
+        //assert
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        chosenChannel.Reader.TryRead(out _).Should().BeTrue();
+        firstChannel.Reader.TryRead(out _).Should().BeFalse();
+        var body = (await response.Content.ReadFromJsonAsync<TriggerRunResponse>(ApiTestHost.Json))!;
+        host.Live.TryGetRunSummary(body.RunId)!.AgentId.Should().Be(chosen);
+    }
+
+    [Test]
+    public async Task When_agents_are_connected_but_none_fits_the_assignment_the_409_says_which_is_wanted()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("train-model");
+        var agentId = await host.SeedAgentAsync();
+        var channel = Channel.CreateUnbounded<WorkItem>();
+        host.Connections.Connect(agentId.ToString(), channel);
+        await host.Client.PutAsJsonAsync($"/api/pipelines/{pipelineId}/assignment", new PipelineAssignmentDto(["gpu"], []));
+
+        //act
+        var response = await host.Client.PostAsync($"/api/pipelines/{pipelineId}/runs", content: null);
+
+        //assert
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var detail = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetString();
+        detail.Should().Contain("train-model").And.Contain("tagged 'gpu'").And.Contain("no connected agent matches");
+        channel.Reader.TryRead(out _).Should().BeFalse("nothing was sent");
+        host.Live.ActiveRunsAsync(null, CancellationToken.None).Result.Should().BeEmpty("and no run was created");
+    }
+
+    [Test]
+    public async Task Runs_spread_over_the_agents_a_pipeline_may_run_on()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("load");
+        var one = await host.SeedAgentAsync("one");
+        var two = await host.SeedAgentAsync("two");
+        host.Connections.Connect(one.ToString(), Channel.CreateUnbounded<WorkItem>());
+        host.Connections.Connect(two.ToString(), Channel.CreateUnbounded<WorkItem>());
+
+        //act - the first run goes to either; the second must go to the other, which is idle
+        var firstRun = (await (await host.Client.PostAsync($"/api/pipelines/{pipelineId}/runs", null)).Content.ReadFromJsonAsync<TriggerRunResponse>(ApiTestHost.Json))!;
+        var secondRun = (await (await host.Client.PostAsync($"/api/pipelines/{pipelineId}/runs", null)).Content.ReadFromJsonAsync<TriggerRunResponse>(ApiTestHost.Json))!;
+
+        //assert
+        var agents = new[] { host.Live.TryGetRunSummary(firstRun.RunId)!.AgentId, host.Live.TryGetRunSummary(secondRun.RunId)!.AgentId };
+        agents.Should().Contain(one).And.Contain(two);
+    }
+
+    [Test]
     public async Task Triggering_an_unknown_pipeline_is_a_404()
     {
         await using var host = await ApiTestHost.StartAsync();

@@ -48,6 +48,13 @@ public sealed class AgentConnectionRegistry
     public void MarkInstalled(string agentId, string packageId, string version) =>
         _knownInstalls.GetOrAdd(agentId, static _ => new())[(packageId, version)] = 0;
 
+    /// <summary>The ids of the agents connected now.</summary>
+    public IReadOnlyList<string> ConnectedAgentIds() => [.. _connections.Keys];
+
+    /// <summary>Whether <paramref name="agentId"/> is known to have <paramref name="packageId"/> <paramref name="version"/> in its cache.</summary>
+    public bool HasInstalled(string agentId, string packageId, string version) =>
+        _knownInstalls.TryGetValue(agentId, out var installs) && installs.ContainsKey((packageId, version));
+
     /// <summary>
     /// A connected agent to run <paramref name="packageId"/> <paramref name="version"/> on:
     /// one known to have it installed if there is one, otherwise any connected agent (which

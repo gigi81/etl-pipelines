@@ -30,12 +30,15 @@ these is in [docs/articles/server/limitations.md](docs/articles/server/limitatio
 - [x] **Install-aware agent selection.** `ExecutePipeline` prefers an agent known to have the version
   (tracked in memory per connection), and an agent without it installs it on demand from the feed
   URLs the work item now carries.
-- [ ] **Use `Agents.Tags` for selection.** Tags are recorded at registration and never used.
+- [x] **Use tags for selection.** Agents have tags (reported by `Agent:Tags`, plus ones given in the WebUI), and
+  a pipeline can be assigned to tags and/or named agents; a run goes to the least busy allowed agent.
+  Not done: `InstallPackage` still goes to any connected agent, assignments are "any of" (no "all of"
+  or exclusions), and load means runs in flight, not CPU or memory.
 - [ ] **Concurrent work items per agent.** `AgentRegistration` handles its `Subscribe` stream one
   item at a time, so a long run blocks installs, which time out after 5 minutes, and other runs.
-- [ ] **In-process reconnect.** A dropped `Subscribe` stream ends the agent process, which relies on
-  `restart: unless-stopped` to come back as a new registration. Reconnect instead, keeping the
-  same agent id.
+- [ ] **In-process reconnect.** A dropped `Subscribe` stream (a Server restart, say) ends the agent process,
+  which relies on `restart: unless-stopped` to start again - as the same agent, since it keeps its id in
+  `agent-cache`. Reconnect in the same process instead.
 - [ ] **Per-run liveness.** `PipelineExecutionService.Heartbeat` records nothing, so a hung pipeline
   process on a healthy agent stays `Running` forever. It needs a column (e.g.
   `Runs.LastHeartbeatAt`) and a sweep like `AgentLivenessMonitor`'s.
@@ -67,13 +70,23 @@ these is in [docs/articles/server/limitations.md](docs/articles/server/limitatio
   progress and CPU/memory charts, and agents with their OS, IP and uptime. It talks to a REST API
   (`/api`) on a second, HTTP/1.1 port, since browsers cannot call the gRPC services. See
   [docs/articles/server/webui.md](docs/articles/server/webui.md).
-- [ ] **WebUI: manage packages and configuration.** It is read-only apart from starting runs. Installing,
-  updating and uninstalling packages, and setting configuration entries, are still gRPC-only.
+- [x] **WebUI: manage packages and configuration.** Install, update and uninstall packages, upload a
+  `.nupkg` to the feed, and set or delete configuration entries, all from the UI.
+- [ ] **WebUI: authentication.** The REST API can now upload a package, have an agent install it and run it
+  (arbitrary code on the agents), so port 5080 is published on `127.0.0.1` only. It needs real
+  authentication and roles (who may upload, install, run, see configuration) before it can be exposed.
+- [ ] **WebUI: per-pipeline configuration.** The configuration page sets global entries, and every run
+  receives every entry. See *Scope configuration entries* above.
+- [ ] **WebUI: watch an install.** An install is one long request; progress (downloading, installing,
+  listing pipelines) is not shown, and navigating away loses the result notification.
 - [ ] **WebUI: a stage-by-stage view for a run that has not reported yet.** Stages are only known once
   they complete, so a pipeline's first run draws no stages ahead of time. The pipeline process could
   report its stage plan when it starts.
-- [ ] **Prune stale agents.** Every agent restart registers a new row, so the agents page accumulates
-  `Offline` duplicates. Reconnecting under the same agent id (see above) would fix it at the source.
+- [x] **Prune stale agents.** An agent that has stopped responding can be removed from the WebUI, singly or
+  all at once, so the duplicates a restart leaves behind don't pile up. (Reconnecting under the same agent
+  id, above, would stop them being created in the first place.)
+- [ ] **Delete a single run, and cancel a run in progress.** History can only be cleared per pipeline, and
+  a run can't be stopped from the UI.
 
 ## Caches
 

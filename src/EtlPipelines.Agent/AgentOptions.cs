@@ -14,6 +14,12 @@ public sealed class AgentOptions
     /// <summary>The gRPC endpoint <c>AgentService</c> is reachable at.</summary>
     public string ServerUrl { get; set; } = "http://localhost:5000";
 
+    /// <summary>
+    /// The name this agent is shown by. Defaults to the machine name, which in Docker is a container id
+    /// that changes whenever the container is recreated - set a name to keep it stable.
+    /// </summary>
+    public string? Name { get; set; }
+
     /// <summary>Free-form tags this agent registers with, e.g. <c>"linux"</c>, <c>"gpu"</c>. Empty by default.</summary>
     public IReadOnlyList<string> Tags { get; set; } = [];
 

@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
 import type { Agent, RunSummary } from '../api/types';
-import { applyAgentEvent, applyRunEvent } from './liveCache';
+import { applyAgentEvent, applyAgentRemoved, applyRunEvent } from './liveCache';
 
 const run = (id: string, over: Partial<RunSummary> = {}): RunSummary => ({
   id,
@@ -28,6 +28,7 @@ const agent = (id: string, machineName: string): Agent => ({
   id,
   machineName,
   tags: [],
+  assignedTags: [],
   version: '1',
   status: 'Online',
   lastHeartbeatAtUtc: '2026-01-01T00:00:00Z',
@@ -100,6 +101,25 @@ describe('applyAgentEvent', () => {
     const client = new QueryClient();
 
     applyAgentEvent(client, agent('1', 'a'));
+
+    expect(client.getQueryData(['agents'])).toBeUndefined();
+  });
+});
+
+describe('applyAgentRemoved', () => {
+  it('drops the agent from the list and leaves the others', () => {
+    const client = new QueryClient();
+    client.setQueryData(['agents'], [agent('1', 'a'), agent('2', 'b')]);
+
+    applyAgentRemoved(client, '1');
+
+    expect(client.getQueryData<Agent[]>(['agents'])!.map((a) => a.id)).toEqual(['2']);
+  });
+
+  it('does nothing when the agents have not been fetched yet', () => {
+    const client = new QueryClient();
+
+    applyAgentRemoved(client, '1');
 
     expect(client.getQueryData(['agents'])).toBeUndefined();
   });

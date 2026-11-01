@@ -1,11 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, runStreamUrl } from './client';
-import type { RunDetail } from './types';
+import type { PipelineAssignment, RunDetail } from './types';
 import { isActive } from '../lib/format';
+import { buildPipelineLabeller } from '../lib/pipelineLabels';
 
 // The lists below are fetched once and then kept current by `useLiveUpdates` (the server pushes
 // every change), so none of them polls.
+/** The server's version. Refetched when the live feed reconnects, which is what happens when the server is upgraded. */
+export const useServerInfo = () => useQuery({ queryKey: ['info'], queryFn: api.info });
+
 export const usePipelines = () =>
   useQuery({ queryKey: ['pipelines'], queryFn: api.pipelines });
 
@@ -16,8 +20,121 @@ export const useRuns = (query: { active?: boolean; pipelineId?: string; limit?: 
     placeholderData: keepPreviousData,
   });
 
+/** `(packageId, pipelineName) => the name to show`, so a run is labelled like its pipeline is. */
+export function usePipelineLabeller() {
+  const { data } = usePipelines();
+  return useMemo(() => buildPipelineLabeller(data), [data]);
+}
+
 export const useAgents = () =>
   useQuery({ queryKey: ['agents'], queryFn: api.agents });
+
+/**
+ * The feed's packages and the installed ones. Unlike the lists above nothing pushes the feed's
+ * contents, so this is fetched fresh each time the page is opened (and after every change made here).
+ */
+export const usePackages = (search: string) =>
+  useQuery({
+    queryKey: ['packages', search],
+    queryFn: () => api.packages(search || undefined),
+    staleTime: 0,
+    placeholderData: keepPreviousData,
+  });
+
+export const useConfigurationKeys = () => useQuery({ queryKey: ['configuration'], queryFn: api.configurationKeys });
+
+/** What changes when packages are installed, updated, removed or uploaded. */
+function usePackagesChanged() {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: ['packages'] });
+    void queryClient.invalidateQueries({ queryKey: ['pipelines'] });
+  };
+}
+
+export function useInstallPackage() {
+  const changed = usePackagesChanged();
+  return useMutation({
+    mutationFn: ({ id, version }: { id: string; version?: string }) => api.installPackage(id, version),
+    onSuccess: changed,
+  });
+}
+
+export function useUpdatePackage() {
+  const changed = usePackagesChanged();
+  return useMutation({ mutationFn: (id: string) => api.updatePackage(id), onSuccess: changed });
+}
+
+export function useUninstallPackage() {
+  const changed = usePackagesChanged();
+  return useMutation({ mutationFn: (id: string) => api.uninstallPackage(id), onSuccess: changed });
+}
+
+export function useUploadPackage() {
+  const changed = usePackagesChanged();
+  return useMutation({ mutationFn: (file: File) => api.uploadPackage(file), onSuccess: changed });
+}
+
+export function useSetConfiguration() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) => api.setConfiguration(key, value),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['configuration'] }),
+  });
+}
+
+export function useDeleteConfiguration() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (key: string) => api.deleteConfiguration(key),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['configuration'] }),
+  });
+}
+
+export function useRemoveAgent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.removeAgent(id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['agents'] }),
+  });
+}
+
+export function useSetAgentTags() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, tags }: { agentId: string; tags: string[] }) => api.setAgentTags(agentId, tags),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['agents'] }),
+  });
+}
+
+export function useSetAssignment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pipelineId, assignment }: { pipelineId: string; assignment: PipelineAssignment }) =>
+      api.setAssignment(pipelineId, assignment),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['pipelines'] }),
+  });
+}
+
+export function useSetDisplayName() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pipelineId, displayName }: { pipelineId: string; displayName: string }) =>
+      api.setDisplayName(pipelineId, displayName),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['pipelines'] }),
+  });
+}
+
+export function useClearHistory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (pipelineId: string) => api.clearHistory(pipelineId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['pipelines'] });
+      void queryClient.invalidateQueries({ queryKey: ['runs'] });
+    },
+  });
+}
 
 export function useTriggerRun() {
   const queryClient = useQueryClient();

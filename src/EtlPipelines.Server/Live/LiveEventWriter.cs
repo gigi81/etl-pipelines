@@ -21,12 +21,20 @@ public static class LiveEventWriter
     /// <summary>Writes <paramref name="events"/> to <paramref name="db"/> and saves. Returns how many were skipped.</summary>
     public static async Task<int> WriteAsync(ServerDbContext db, IReadOnlyList<LiveEvent> events, CancellationToken cancellationToken)
     {
-        var registered = events.OfType<AgentRegisteredEvent>().Select(e => e.AgentId).ToHashSet();
         var created = events.OfType<RunCreatedEvent>().Select(e => e.RunId).ToHashSet();
 
         var agentIds = events
-            .Select(e => e switch { AgentHeartbeatEvent h => h.AgentId, AgentOfflineEvent o => o.AgentId, _ => Guid.Empty })
-            .Where(id => id != Guid.Empty && !registered.Contains(id))
+            .Select(e => e switch
+            {
+                // A registration is for an agent the database may already have: one starting over.
+                AgentRegisteredEvent g => g.AgentId,
+                AgentHeartbeatEvent h => h.AgentId,
+                AgentOfflineEvent o => o.AgentId,
+                AgentRemovedEvent r => r.AgentId,
+                AgentTagsChangedEvent t => t.AgentId,
+                _ => Guid.Empty,
+            })
+            .Where(id => id != Guid.Empty)
             .Distinct()
             .ToList();
         var runIds = events
@@ -55,17 +63,33 @@ public static class LiveEventWriter
                 .ToDictionaryAsync(stage => (stage.RunId, stage.Sequence), cancellationToken)
                 .ConfigureAwait(false);
 
+        // One transaction for the whole batch: the saves between its events (below) and the set-based
+        // deletes all commit together, or not at all.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
         var skipped = 0;
         foreach (var liveEvent in events)
         {
             switch (liveEvent)
             {
+                case AgentRegisteredEvent e when agents.TryGetValue(e.AgentId, out var returning):
+                    // The same agent starting over (or one that had been removed): the row is updated in
+                    // place, so what a user gave it and the runs it carried out stay with it.
+                    returning.MachineName = e.MachineName;
+                    returning.Tags = [.. e.Tags];
+                    returning.Version = e.Version;
+                    returning.Status = "Online";
+                    returning.LastHeartbeatAt = e.AtUtc;
+                    returning.Info = e.InfoJson;
+                    break;
+
                 case AgentRegisteredEvent e:
                     var newAgent = new Agent
                     {
                         Id = e.AgentId,
                         MachineName = e.MachineName,
                         Tags = [.. e.Tags],
+                        AssignedTags = [],
                         Version = e.Version,
                         Status = "Online",
                         LastHeartbeatAt = e.AtUtc,
@@ -75,6 +99,10 @@ public static class LiveEventWriter
                     agents[e.AgentId] = newAgent;
                     break;
 
+                case AgentTagsChangedEvent e when agents.TryGetValue(e.AgentId, out var tagged):
+                    tagged.AssignedTags = [.. e.AssignedTags];
+                    break;
+
                 case AgentHeartbeatEvent e when agents.TryGetValue(e.AgentId, out var agent):
                     agent.Status = "Online";
                     agent.LastHeartbeatAt = e.AtUtc;
@@ -82,6 +110,17 @@ public static class LiveEventWriter
 
                 case AgentOfflineEvent e when agents.TryGetValue(e.AgentId, out var agent):
                     agent.Status = "Offline";
+                    break;
+
+                case AgentRemovedEvent e when agents.TryGetValue(e.AgentId, out var agent):
+                    // Marked, not deleted: the runs it carried out still point at it. Whoever it was set up
+                    // as is forgotten with it.
+                    agent.Status = "Removed";
+                    agent.AssignedTags = [];
+                    break;
+
+                case PipelineHistoryClearedEvent e:
+                    await ClearHistoryAsync(db, e.PipelineId, runs, stages, cancellationToken).ConfigureAwait(false);
                     break;
 
                 case RunCreatedEvent e:
@@ -152,6 +191,46 @@ public static class LiveEventWriter
         }
 
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return skipped;
+    }
+
+    /// <summary>
+    /// Deletes a pipeline's finished runs and what hangs off them. The changes made by the events before
+    /// this one are saved first, so a run that finished earlier in the same batch is finished in the
+    /// database when the delete looks for it; the runs deleted are then forgotten, so a later event
+    /// cannot try to change a row that is gone.
+    /// </summary>
+    private static async Task ClearHistoryAsync(
+        ServerDbContext db,
+        Guid pipelineId,
+        Dictionary<Guid, Run> runs,
+        Dictionary<(Guid RunId, int Sequence), StageResult> stages,
+        CancellationToken cancellationToken)
+    {
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        var finished = RunQueries.TerminalStatuses;
+        await db.AgentResourceSamples
+            .Where(sample => sample.Run.PipelineId == pipelineId && finished.Contains(sample.Run.Status))
+            .ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
+        await db.StageResults
+            .Where(stage => stage.Run.PipelineId == pipelineId && finished.Contains(stage.Run.Status))
+            .ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
+        await db.Runs
+            .Where(run => run.PipelineId == pipelineId && finished.Contains(run.Status))
+            .ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var (runId, run) in runs.Where(held => held.Value.PipelineId == pipelineId && finished.Contains(held.Value.Status)).ToList())
+        {
+            db.Entry(run).State = EntityState.Detached;
+            runs.Remove(runId);
+        }
+
+        foreach (var key in stages.Keys.Where(key => !runs.ContainsKey(key.RunId)).ToList())
+        {
+            db.Entry(stages[key]).State = EntityState.Detached;
+            stages.Remove(key);
+        }
     }
 }

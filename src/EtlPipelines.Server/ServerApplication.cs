@@ -98,6 +98,8 @@ public static class ServerApplication
 
         builder.Services.AddSingleton<INuGetFeedClient, NuGetFeedClient>();
         builder.Services.AddScoped<PackageCatalogService>();
+        builder.Services.AddScoped<PackageOperations>();
+        builder.Services.AddScoped<PackageUploader>();
         builder.Services.AddScoped<SecretsStore>();
         builder.Services.AddHostedService<NuGetFeedSeeder>();
 

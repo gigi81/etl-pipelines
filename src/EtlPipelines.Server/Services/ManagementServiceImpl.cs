@@ -38,16 +38,11 @@ public sealed class ManagementServiceImpl(
     ServerDbContext dbContext,
     PackageCatalogService catalogService,
     SecretsStore secretsStore,
-    AgentConnectionRegistry connections,
+    PackageOperations packageOperations,
     RunDispatcher runDispatcher,
     LiveState liveState)
     : ManagementService.ManagementServiceBase
 {
-    // How long InstallPackage waits for the dispatched agent to report back before giving up -
-    // generous, since a real `dotnet tool install` can mean a genuine NuGet restore, not just a
-    // cached instant.
-    private static readonly TimeSpan InstallTimeout = TimeSpan.FromMinutes(5);
-
     /// <inheritdoc />
     public override async Task<ListInstalledPipelinesResponse> ListInstalledPipelines(Empty request, ServerCallContext context)
     {
@@ -98,11 +93,7 @@ public sealed class ManagementServiceImpl(
     /// <inheritdoc />
     public override async Task<InstallPackageResponse> InstallPackage(InstallPackageRequest request, ServerCallContext context)
     {
-        var version = await catalogService
-            .ResolveVersionAsync(request.PackageId, request.Version, context.CancellationToken)
-            .ConfigureAwait(false);
-
-        var installed = await InstallOnAnAgentAsync(request.PackageId, version, context.CancellationToken).ConfigureAwait(false);
+        var installed = await packageOperations.InstallAsync(request.PackageId, request.Version, context.CancellationToken).ConfigureAwait(false);
 
         var response = new InstallPackageResponse
         {
@@ -116,43 +107,14 @@ public sealed class ManagementServiceImpl(
     /// <inheritdoc />
     public override async Task<Ack> UninstallPackage(UninstallPackageRequest request, ServerCallContext context)
     {
-        if (!await catalogService.UninstallAsync(request.PackageId, context.CancellationToken).ConfigureAwait(false))
-        {
-            throw new RpcException(new Status(StatusCode.NotFound, $"No version of '{request.PackageId}' is installed."));
-        }
-
-        liveState.PipelinesChanged();
+        await packageOperations.UninstallAsync(request.PackageId, context.CancellationToken).ConfigureAwait(false);
         return new Ack();
     }
 
     /// <inheritdoc />
     public override async Task<UpdatePackageResponse> UpdatePackage(UpdatePackageRequest request, ServerCallContext context)
     {
-        if (!await catalogService.IsInstalledAsync(request.PackageId, context.CancellationToken).ConfigureAwait(false))
-        {
-            throw new RpcException(new Status(
-                StatusCode.FailedPrecondition, $"'{request.PackageId}' is not installed - install it before updating it."));
-        }
-
-        var latest = await catalogService
-            .ResolveVersionAsync(request.PackageId, requestedVersion: null, context.CancellationToken)
-            .ConfigureAwait(false);
-
-        // Already on the latest version: nothing to send to an agent, so this works with none
-        // connected - only retiring the older versions below still applies.
-        var current = latest is null
-            ? null
-            : await catalogService.FindInstalledVersionAsync(request.PackageId, latest, context.CancellationToken).ConfigureAwait(false);
-
-        var installed = current is not null
-            ? new InstalledPackage(current.PackageVersionId, latest!, current.PipelineNames)
-            : await InstallOnAnAgentAsync(request.PackageId, latest, context.CancellationToken).ConfigureAwait(false);
-
-        await catalogService
-            .SupersedeOtherVersionsAsync(request.PackageId, installed.Version, context.CancellationToken)
-            .ConfigureAwait(false);
-
-        liveState.PipelinesChanged();
+        var installed = await packageOperations.UpdateAsync(request.PackageId, context.CancellationToken).ConfigureAwait(false);
 
         var response = new UpdatePackageResponse
         {
@@ -290,47 +252,6 @@ public sealed class ManagementServiceImpl(
         return new Ack();
     }
 
-    /// <summary>
-    /// Sends an install of <paramref name="packageId"/> <paramref name="version"/> to a connected
-    /// agent and waits for its result - <see cref="InstallPackage"/> and <see cref="UpdatePackage"/>'s
-    /// shared path. <paramref name="version"/> is null when nothing installable was resolved.
-    /// </summary>
-    private async Task<InstalledPackage> InstallOnAnAgentAsync(string packageId, string? version, CancellationToken cancellationToken)
-    {
-        if (!connections.TryGetAnyConnectedAgentId(out var agentId))
-        {
-            throw ServiceScaffolding.NoAgentsAvailable();
-        }
-
-        if (version is null)
-        {
-            throw new RpcException(new Status(
-                StatusCode.NotFound, $"No installable version of '{packageId}' was found on the configured feed."));
-        }
-
-        var feedUrls = await catalogService.GetFeedUrlsAsync(cancellationToken).ConfigureAwait(false);
-
-        InstallDispatchResult result;
-        try
-        {
-            result = await connections
-                .DispatchInstallPackageAsync(agentId, packageId, version, feedUrls, InstallTimeout, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new RpcException(new Status(
-                StatusCode.DeadlineExceeded, $"Agent '{agentId}' did not report an install result within {InstallTimeout}."));
-        }
-
-        if (!result.Succeeded)
-        {
-            throw new RpcException(new Status(StatusCode.Internal, $"Install failed on agent '{agentId}': {result.Error}"));
-        }
-
-        return new InstalledPackage(result.PackageVersionId!.Value, version, result.PipelineNames);
-    }
-
     /// <summary>An agent's reported host details as a <see cref="Struct"/>; <see langword="null"/> when it reported none.</summary>
     private static Struct? ParseInfo(System.Text.Json.JsonElement? info)
     {
@@ -358,6 +279,3 @@ public sealed class ManagementServiceImpl(
         _ => null,
     };
 }
-
-/// <summary>What <c>InstallPackage</c>/<c>UpdatePackage</c> answer with.</summary>
-internal sealed record InstalledPackage(Guid PackageVersionId, string Version, IReadOnlyList<string> PipelineNames);
