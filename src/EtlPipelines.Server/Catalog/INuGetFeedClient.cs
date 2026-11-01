@@ -18,9 +18,10 @@ public interface INuGetFeedClient
     Task<IReadOnlyList<AvailableFeedPackage>> SearchAsync(
         string feedUrl, string? searchTerm, CancellationToken cancellationToken);
 
+    /// <summary>Pushes the package file at <paramref name="packagePath"/> to the feed, using <paramref name="apiKey"/>.</summary>
+    /// <exception cref="HttpRequestException">The feed refused it - a version that already exists answers <see cref="System.Net.HttpStatusCode.Conflict"/>.</exception>
+    Task PushAsync(string feedUrl, string packagePath, string apiKey, CancellationToken cancellationToken);
+
     /// <summary>The latest stable version of <paramref name="packageId"/> on the feed, or null if it isn't there.</summary>
     Task<NuGetVersion?> GetLatestVersionAsync(string feedUrl, string packageId, CancellationToken cancellationToken);
 }
-
-/// <summary>One package on a feed, with every version it publishes.</summary>
-public sealed record AvailableFeedPackage(string PackageId, IReadOnlyList<string> Versions);

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using NuGet.Common;
+using NuGet.Configuration;
 using NuGet.Protocol;
 using NuGet.Protocol.Core.Types;
 using NuGet.Versioning;
@@ -15,7 +16,10 @@ namespace EtlPipelines.Server.Catalog;
 /// </remarks>
 public sealed class NuGetFeedClient : INuGetFeedClient
 {
-    private static readonly SourceCacheContext CacheContext = new();
+    // Looked up when someone installs or updates, which is rare - and exactly when a package may have
+    // just been uploaded. NuGet would otherwise answer from its on-disk cache of the version list for
+    // half an hour, so an update would be told the package is already current.
+    private static readonly SourceCacheContext CacheContext = new() { NoCache = true };
 
     private readonly ConcurrentDictionary<string, SourceRepository> _repositories = new();
 
@@ -67,6 +71,38 @@ public sealed class NuGetFeedClient : INuGetFeedClient
             .FirstOrDefault();
     }
 
+    /// <inheritdoc />
+    public async Task PushAsync(string feedUrl, string packagePath, string apiKey, CancellationToken cancellationToken)
+    {
+        var resource = await GetRepository(feedUrl)
+            .GetResourceAsync<PackageUpdateResource>(cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"'{feedUrl}' does not accept pushed packages.");
+
+        var log = new NuGetErrorLogger();
+
+        // The feed is the deployment's own (the compose network's bagetter, plain http), and NuGet
+        // refuses to push to an http source unless it is told that is intended.
+        await resource.Push(
+            [packagePath],
+            symbolSource: null,
+            timeoutInSecond: 600,
+            disableBuffering: false,
+            getApiKey: _ => apiKey,
+            getSymbolApiKey: _ => null,
+            noServiceEndpoint: false,
+            skipDuplicate: false,
+            symbolPackageUpdateResource: null,
+            allowInsecureConnections: true,
+            log).ConfigureAwait(false);
+
+        // NuGet reports some refusals by logging them and returning, not by throwing.
+        if (log.Errors.Count > 0)
+        {
+            throw new InvalidOperationException(string.Join(' ', log.Errors));
+        }
+    }
+
     private SourceRepository GetRepository(string feedUrl) =>
-        _repositories.GetOrAdd(feedUrl, Repository.Factory.GetCoreV3);
+        _repositories.GetOrAdd(feedUrl, url => Repository.Factory.GetCoreV3(new PackageSource(url) { AllowInsecureConnections = true }));
 }

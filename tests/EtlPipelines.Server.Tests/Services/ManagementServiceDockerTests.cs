@@ -197,11 +197,13 @@ public class ManagementServiceDockerTests(PostgreSqlFixture fixture)
         // These tests only use the catalog and the secrets, which are the database's, never runs or agents.
         var liveState = new LiveState(TimeProvider.System, NullLogger<LiveState>.Instance);
 
+        var catalog = new PackageCatalogService(context, feedClient ?? Mock.Of<INuGetFeedClient>());
+
         return new ManagementServiceImpl(
             context,
-            new PackageCatalogService(context, feedClient ?? Mock.Of<INuGetFeedClient>()),
+            catalog,
             new SecretsStore(context, dataProtectionProvider ?? Mock.Of<IDataProtectionProvider>()),
-            registry,
+            new PackageOperations(catalog, registry, liveState),
             new RunDispatcher(context, registry, liveState, "http://localhost:5000"),
             liveState);
     }

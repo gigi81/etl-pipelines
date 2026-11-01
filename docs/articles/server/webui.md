@@ -12,6 +12,8 @@ with the [Docker Compose stack](deployment.md) up, open <http://localhost:5080>.
 | **Pipelines** | Every installed pipeline with its package and version, how many runs of it are in flight, how its last run went, and a **Run now** button. Starting a run sends it to an agent, exactly as `ManagementService.ExecutePipeline` does, and opens the run's page. If nothing can take it, such as no agent being connected, the reason is shown. |
 | **Runs** | Two tabs: the runs in flight, with a progress bar, and the finished ones, newest first. It changes as runs start, progress and finish, with no refresh. |
 | **Run** | One run, live. The steps are drawn left to right as a flow: each completed stage shows the rows it took in and passed on, the rows that failed, and its elapsed time. The stages still to come are drawn too, from the stages of the pipeline's last successful run, with the running one highlighted. Below are CPU and memory charts, sampled by the agent running the process. A failed run shows the failing stage's error code and description. |
+| **Packages** | What the package feed offers and what is installed, one row per package. **Install** a package at its latest stable version or any version the feed has; **Update** one that has a newer stable version (its older versions are retired, runs in flight finish); **Uninstall** one (after a confirmation). **Upload a package** pushes a built `.nupkg` to the feed, after which it is listed here to install. Installing and updating are done by an agent (`dotnet tool install`), so they can take minutes; the row shows it is working. A search box filters by id. If the feed cannot be reached, the installed packages are still listed, with the reason. |
+| **Configuration** | The entries pipelines read as configuration - `ConnectionStrings:<name>`, `Sftp:<name>:Host`, and so on. Set or replace one, or delete it. Values are encrypted at rest and **never shown**: the page lists keys and when they were last set. |
 | **Agents** | Every agent that has registered: its status, OS and architecture, IP addresses, CPU count, uptime, last heartbeat, version and tags, and the runs it is working on right now. |
 
 Nothing in the UI polls. The Server pushes every change to the browser as it happens, and a small
@@ -62,6 +64,14 @@ second port, `Server:HttpPort` (5080), over HTTP/1.1, and exposes the same data 
 | `GET /api/runs/{id}/stream` | The same payload as server-sent events (`event: run`), once on connect and again on every change. |
 | `GET /api/events` | The change feed for the lists, as server-sent events. See [How updates reach the browser](#how-updates-reach-the-browser). |
 | `GET /api/agents` | Agents with their host details, `uptimeSeconds` (online agents only) and `activeRuns`. |
+| `GET /api/packages?search=` | The feed's packages and the installed ones, by id: `versions` (newest first), `latestStableVersion`, `installedVersion`, `updateAvailable`, and the installed version's `pipelines`. If the feed cannot be browsed, `feedError` says why and only the installed packages are listed. Not pushed - fetched when asked. |
+| `POST /api/packages/{id}/install?version=` | Installs on a connected agent, at `version` or the latest stable one, and answers when the agent has: `200` with the version and the pipelines it registered. `404` for a package the feed has no version of, `409` when no agent is connected, `502` with the agent's reason when its install fails, `504` if it does not answer within five minutes. |
+| `POST /api/packages/{id}/update` | Installs the latest stable version, then retires the older ones. `409` if the package is not installed. Needs no agent when it is already current. |
+| `DELETE /api/packages/{id}` | Uninstalls every version: its pipelines are no longer listed or run. `204`; `404` if none is installed. |
+| `POST /api/packages/upload` | The `.nupkg` as the raw request body (up to 512 MB). The Server checks it is a .NET tool package and pushes it to the feed: `201` with its `id` and `version`; `400` if it is not a valid package or not a tool; `409` if the feed already has that version; `502` if the feed refuses it. Nothing is installed. |
+| `GET /api/configuration` | The keys and when each was last set (`updatedAtUtc`) - never the values. |
+| `PUT /api/configuration` | `{ "key": ..., "value": ... }`: creates or replaces an entry. `400` for a key that is not a colon-separated path of letters, digits, `.`, `-` and `_`, or an empty value. |
+| `DELETE /api/configuration?key=` | Removes an entry. `204`; `404` if there is none. |
 
 The response shapes are plain records in `src/EtlPipelines.Server.Contracts`; `web/src/api/types.ts`
 mirrors them by hand.
@@ -94,8 +104,12 @@ UTC, with the `Utc` postfix on the key. To report something more, add a key in
 `src/EtlPipelines.Agent/HostInfo.cs`: the Server passes it through, and the agents page lists any key
 it has no dedicated row for. Agents registered before this existed have no `info`, and show `-`.
 
-> **There is no authentication.** Port 5080 can start any installed pipeline. Like the gRPC port, it
-> belongs on a trusted network. See [Known limitations](limitations.md).
+> [!WARNING]
+> **There is no authentication, and this API can run code.** Whoever can reach port 5080 can upload a
+> package, have an agent install it and run it - arbitrary code on the agents - and can set the
+> configuration pipelines receive. That is why the compose file publishes the port on `127.0.0.1` only.
+> Put an authenticating reverse proxy in front of it before exposing it to anyone else. See
+> [Known limitations](limitations.md).
 
 ## Developing the UI
 

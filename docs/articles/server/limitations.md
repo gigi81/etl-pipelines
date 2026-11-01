@@ -9,8 +9,10 @@ candidate for a later piece of work.
 
 - **No authentication or authorization.** Anyone who can reach port 5000 can install packages, run
   pipelines, and read or overwrite configuration. Anyone who can reach port 5080, the WebUI and its
-  REST API, can start any installed pipeline and see every run and agent. Agents are not authenticated either, so anything
-  that can reach the Server can register as an agent and receive work.
+  REST API, can do all of that too - including **uploading a package, installing it on an agent and
+  running it, which is arbitrary code execution on the agents** - and can see every run and agent.
+  The compose file therefore publishes 5080 on `127.0.0.1` only. Agents are not authenticated either,
+  so anything that can reach the Server can register as an agent and receive work.
 - **No TLS.** gRPC is served over cleartext HTTP/2, and bagetter over plain HTTP.
 - **Configuration entries are global.** Every run receives every entry, so any installed package can
   read every stored secret.

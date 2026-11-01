@@ -58,6 +58,36 @@ public sealed class SecretsStore
         await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>The keys of every entry and when each last changed - never the values.</summary>
+    public async Task<IReadOnlyList<(string Key, DateTime UpdatedAt)>> ListKeysAsync(CancellationToken cancellationToken)
+    {
+        var entries = await _context.ConfigurationEntries
+            .AsNoTracking()
+            .OrderBy(entry => entry.Key)
+            .Select(entry => new { entry.Key, entry.UpdatedAt })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return entries.Select(entry => (entry.Key, entry.UpdatedAt)).ToList();
+    }
+
+    /// <summary>Removes the entry under <paramref name="key"/>. False if there was none.</summary>
+    public async Task<bool> DeleteAsync(string key, CancellationToken cancellationToken)
+    {
+        var existing = await _context.ConfigurationEntries
+            .SingleOrDefaultAsync(entry => entry.Key == key, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (existing is null)
+        {
+            return false;
+        }
+
+        _context.ConfigurationEntries.Remove(existing);
+        await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
     /// <summary>Reads and decrypts the value stored under <paramref name="key"/>, or null if it has none.</summary>
     public async Task<string?> GetAsync(string key, CancellationToken cancellationToken)
     {
