@@ -26,7 +26,7 @@ public sealed class AgentRegistration(
         var registerRequest = new RegisterAgentRequest
         {
             MachineName = string.IsNullOrWhiteSpace(options.Value.Name) ? Environment.MachineName : options.Value.Name.Trim(),
-            Version = typeof(AgentRegistration).Assembly.GetName().Version?.ToString() ?? "0.0.0",
+            Version = AgentVersion.Current,
         };
         registerRequest.Tags.AddRange(options.Value.Tags);
         registerRequest.HostInfo = HostInfo.Describe();
