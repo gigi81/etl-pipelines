@@ -1,4 +1,13 @@
-import type { Agent, Pipeline, RunDetail, RunSummary } from './types';
+import type {
+  Agent,
+  ConfigurationKey,
+  InstallResult,
+  PackagesResponse,
+  Pipeline,
+  RunDetail,
+  RunSummary,
+  UploadedPackage,
+} from './types';
 
 /** A non-2xx answer from the server; `detail` is the ProblemDetails text when there is one. */
 export class ApiError extends Error {
@@ -22,6 +31,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(response.status, message);
   }
+  // 204 No Content: nothing to read.
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -38,6 +49,33 @@ export const api = {
   },
   run: (runId: string) => request<RunDetail>(`/api/runs/${runId}`),
   agents: () => request<Agent[]>('/api/agents'),
+  packages: (search?: string) =>
+    request<PackagesResponse>(`/api/packages${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  /** Installs on an agent, so it takes as long as the agent does (minutes, for a first install). */
+  installPackage: (id: string, version?: string) =>
+    request<InstallResult>(
+      `/api/packages/${encodeURIComponent(id)}/install${version ? `?version=${encodeURIComponent(version)}` : ''}`,
+      { method: 'POST' },
+    ),
+  updatePackage: (id: string) =>
+    request<InstallResult>(`/api/packages/${encodeURIComponent(id)}/update`, { method: 'POST' }),
+  uninstallPackage: (id: string) => request<void>(`/api/packages/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  /** The .nupkg is the raw request body. */
+  uploadPackage: (file: File) =>
+    request<UploadedPackage>('/api/packages/upload', {
+      method: 'POST',
+      body: file,
+      headers: { 'Content-Type': 'application/octet-stream' },
+    }),
+  configurationKeys: () => request<ConfigurationKey[]>('/api/configuration'),
+  setConfiguration: (key: string, value: string) =>
+    request<void>('/api/configuration', {
+      method: 'PUT',
+      body: JSON.stringify({ key, value }),
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  deleteConfiguration: (key: string) =>
+    request<void>(`/api/configuration?key=${encodeURIComponent(key)}`, { method: 'DELETE' }),
 };
 
 /** The URL of the server-sent-events stream that follows one run. */

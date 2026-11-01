@@ -32,7 +32,13 @@ export function PipelinesPage() {
         </Alert>
       )}
       {pipelines?.length === 0 && (
-        <Text c="dimmed">No pipelines are installed yet. Install a package from the feed to see its pipelines here.</Text>
+        <Text c="dimmed">
+          No pipelines are installed yet. A pipeline comes from a package:{' '}
+          <Text component={Link} to="/packages" c="blue" inherit>
+            install or upload one
+          </Text>{' '}
+          and its pipelines appear here, ready to run.
+        </Text>
       )}
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
         {pipelines?.map((pipeline) => (

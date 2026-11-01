@@ -19,6 +19,68 @@ export const useRuns = (query: { active?: boolean; pipelineId?: string; limit?: 
 export const useAgents = () =>
   useQuery({ queryKey: ['agents'], queryFn: api.agents });
 
+/**
+ * The feed's packages and the installed ones. Unlike the lists above nothing pushes the feed's
+ * contents, so this is fetched fresh each time the page is opened (and after every change made here).
+ */
+export const usePackages = (search: string) =>
+  useQuery({
+    queryKey: ['packages', search],
+    queryFn: () => api.packages(search || undefined),
+    staleTime: 0,
+    placeholderData: keepPreviousData,
+  });
+
+export const useConfigurationKeys = () => useQuery({ queryKey: ['configuration'], queryFn: api.configurationKeys });
+
+/** What changes when packages are installed, updated, removed or uploaded. */
+function usePackagesChanged() {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: ['packages'] });
+    void queryClient.invalidateQueries({ queryKey: ['pipelines'] });
+  };
+}
+
+export function useInstallPackage() {
+  const changed = usePackagesChanged();
+  return useMutation({
+    mutationFn: ({ id, version }: { id: string; version?: string }) => api.installPackage(id, version),
+    onSuccess: changed,
+  });
+}
+
+export function useUpdatePackage() {
+  const changed = usePackagesChanged();
+  return useMutation({ mutationFn: (id: string) => api.updatePackage(id), onSuccess: changed });
+}
+
+export function useUninstallPackage() {
+  const changed = usePackagesChanged();
+  return useMutation({ mutationFn: (id: string) => api.uninstallPackage(id), onSuccess: changed });
+}
+
+export function useUploadPackage() {
+  const changed = usePackagesChanged();
+  return useMutation({ mutationFn: (file: File) => api.uploadPackage(file), onSuccess: changed });
+}
+
+export function useSetConfiguration() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) => api.setConfiguration(key, value),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['configuration'] }),
+  });
+}
+
+export function useDeleteConfiguration() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (key: string) => api.deleteConfiguration(key),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['configuration'] }),
+  });
+}
+
 export function useTriggerRun() {
   const queryClient = useQueryClient();
   return useMutation({

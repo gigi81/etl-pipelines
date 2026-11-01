@@ -29,6 +29,8 @@ public static class ApiEndpoints
         api.MapGet("/runs/{runId:guid}/stream", StreamRunAsync);
         api.MapGet("/events", StreamEvents);
         api.MapGet("/agents", ListAgentsAsync);
+        PackageEndpoints.Map(api);
+        ConfigurationEndpoints.Map(api);
 
         // An unknown /api path is a 404, not the UI's index.html the SPA fallback would otherwise serve.
         api.MapFallback(() => Results.NotFound());
@@ -68,15 +70,7 @@ public static class ApiEndpoints
         }
         catch (RpcException exception)
         {
-            var status = exception.StatusCode switch
-            {
-                StatusCode.NotFound => StatusCodes.Status404NotFound,
-                StatusCode.InvalidArgument => StatusCodes.Status400BadRequest,
-                StatusCode.FailedPrecondition => StatusCodes.Status409Conflict,
-                _ => StatusCodes.Status500InternalServerError,
-            };
-
-            return TypedResults.Problem(detail: exception.Status.Detail, statusCode: status);
+            return ApiProblems.From(exception);
         }
     }
 

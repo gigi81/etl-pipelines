@@ -14,7 +14,7 @@ docker compose up --build -d
 |---|---|---|
 | `postgres` | `postgres:15.1` | Holds the Server's database, `etlpipelines_server`. Health-checked with `pg_isready`. |
 | `nuget` | `bagetter/bagetter` | The package feed, `http://nuget:8080/v3/index.json` inside the network. |
-| `server` | built from `docker/Dockerfile.server` | Starts once `postgres` is healthy. Its entrypoint runs `dbdeploy deploy` before starting the app, so an empty database gets its schema without any manual step, and an existing one is left as it is. Health-checked over HTTP/2 on port 5000. Publishes port 5080, the [WebUI](webui.md) and its REST API. The gRPC port is not published. |
+| `server` | built from `docker/Dockerfile.server` | Starts once `postgres` is healthy. Its entrypoint runs `dbdeploy deploy` before starting the app, so an empty database gets its schema without any manual step, and an existing one is left as it is. Health-checked over HTTP/2 on port 5000. Publishes port 5080, the [WebUI](webui.md) and its REST API, **on `127.0.0.1` only** (it has no authentication, and can run code on the agents). The gRPC port is not published. |
 | `agent` | built from `docker/Dockerfile.agent` | Starts once `server` is healthy. It ships the full .NET SDK, because installing a package means running `dotnet tool install` at run time. |
 | `seed` | built from `docker/Dockerfile.seed` | A one-shot job. It packs the six samples and pushes them to `nuget`, retrying until the feed answers, then exits. |
 
@@ -86,7 +86,21 @@ it.
 > Publishing the port exposes a Server with **no authentication** to whatever can reach the host.
 > Do this only on a trusted network.
 
-## A first run, end to end
+## A first run from the WebUI
+
+Open <http://localhost:5080> once the stack is healthy (the machine running Docker only: see above).
+
+1. **Packages** lists what the seed job put on the feed - the six samples. Choose **Install** on one
+   (for example `EtlPipelines.Samples.CsvToDatabase`) and wait: an agent runs `dotnet tool install`, which
+   takes a minute or so the first time.
+2. **Pipelines** now lists its pipelines. Choose **Run now** and watch the run page.
+3. To bring your own pipeline, build it as a [pipeline package](pipeline-packages.md), then **Upload a
+   package** on the Packages page and install it like any other. A pipeline that needs a connection string
+   or credentials reads it from **Configuration**: add `ConnectionStrings:<name>` there first.
+
+## A first run, end to end, with gRPC
+
+The same steps, scripted:
 
 The examples below use the port-publishing override above and run from the repository root.
 

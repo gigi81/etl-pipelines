@@ -43,10 +43,15 @@ services:
         condition: service_healthy
       nuget:
         condition: service_started
-    # The WebUI and its REST API. gRPC (5000) stays inside the compose network - agents reach it as
-    # "server:5000" - so it is deliberately not published.
+    # The WebUI and its REST API, on this machine only. gRPC (5000) stays inside the compose network -
+    # agents reach it as "server:5000" - so it is deliberately not published.
+    #
+    # Loopback on purpose: with no authentication, whoever can reach this port can upload a package,
+    # have an agent install it and run it - arbitrary code on the agents. To reach the UI from another
+    # machine, put an authenticating reverse proxy in front of it (or change this to "5080:5080" on a
+    # network you fully trust).
     ports:
-      - "5080:5080"
+      - "127.0.0.1:5080:5080"
     volumes:
       - server-cache:/var/lib/etlpipelines/server-cache
     restart: unless-stopped

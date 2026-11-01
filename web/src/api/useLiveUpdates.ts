@@ -37,7 +37,11 @@ export function useLiveUpdates(): boolean {
       source.addEventListener('agent', (event) =>
         applyAgentEvent(queryClient, JSON.parse((event as MessageEvent<string>).data) as Agent),
       );
-      source.addEventListener('pipelines', () => void queryClient.invalidateQueries({ queryKey: ['pipelines'] }));
+      // A package was installed, updated or removed (by anyone): the pipelines and the packages page change.
+      source.addEventListener('pipelines', () => {
+        void queryClient.invalidateQueries({ queryKey: ['pipelines'] });
+        void queryClient.invalidateQueries({ queryKey: ['packages'] });
+      });
 
       source.onerror = () => {
         setConnected(false);

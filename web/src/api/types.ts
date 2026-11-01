@@ -72,6 +72,41 @@ export interface AgentInfo {
   [key: string]: unknown;
 }
 
+/** A package on the feed and/or installed. */
+export interface PackageInfo {
+  id: string;
+  /** Every version the feed publishes, newest first; empty if the feed no longer has the package. */
+  versions: string[];
+  latestStableVersion: string | null;
+  installedVersion: string | null;
+  updateAvailable: boolean;
+  /** The pipelines the installed version provides. */
+  pipelines: string[];
+}
+
+export interface PackagesResponse {
+  packages: PackageInfo[];
+  /** Why the feed could not be browsed; the installed packages are listed regardless. */
+  feedError: string | null;
+}
+
+export interface InstallResult {
+  packageId: string;
+  version: string;
+  pipelineNames: string[];
+}
+
+export interface UploadedPackage {
+  id: string;
+  version: string;
+}
+
+/** A configuration entry: its key only - values are never sent back. */
+export interface ConfigurationKey {
+  key: string;
+  updatedAtUtc: string;
+}
+
 export interface Agent {
   id: string;
   machineName: string;
