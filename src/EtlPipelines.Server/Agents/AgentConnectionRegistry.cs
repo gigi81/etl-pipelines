@@ -34,14 +34,39 @@ public sealed class AgentConnectionRegistry
     // reinstall.
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<(string PackageId, string Version), byte>> _knownInstalls = new();
 
-    /// <summary>Registers <paramref name="agentId"/> as connected, with <paramref name="channel"/> as its outbound work-item queue.</summary>
-    public void Connect(string agentId, Channel<WorkItem> channel) => _connections[agentId] = channel;
+    /// <summary>
+    /// Registers <paramref name="agentId"/> as connected, with <paramref name="channel"/> as its outbound work-item queue.
+    /// An agent that connects again (it lost the connection and reconnected, perhaps before this server noticed the
+    /// old one was gone) replaces its earlier connection, which is ended.
+    /// </summary>
+    public void Connect(string agentId, Channel<WorkItem> channel)
+    {
+        if (_connections.TryGetValue(agentId, out var earlier) && !ReferenceEquals(earlier, channel))
+        {
+            earlier.Writer.TryComplete();
+        }
 
-    /// <summary>Removes <paramref name="agentId"/> - its <c>Subscribe</c> call has ended (client disconnect, cancellation, or fault).</summary>
+        _connections[agentId] = channel;
+    }
+
+    /// <summary>Removes <paramref name="agentId"/> whatever connection it is on - it has been removed, say.</summary>
     public void Disconnect(string agentId)
     {
         _connections.TryRemove(agentId, out _);
         _knownInstalls.TryRemove(agentId, out _);
+    }
+
+    /// <summary>
+    /// Removes <paramref name="agentId"/> because its <c>Subscribe</c> call on <paramref name="channel"/> has ended (client
+    /// disconnect, cancellation, or fault) - but only if that is still the connection it has. An agent that has already
+    /// reconnected has a newer one, which the end of the old call must not take away.
+    /// </summary>
+    public void Disconnect(string agentId, Channel<WorkItem> channel)
+    {
+        if (((ICollection<KeyValuePair<string, Channel<WorkItem>>>)_connections).Remove(new(agentId, channel)))
+        {
+            _knownInstalls.TryRemove(agentId, out _);
+        }
     }
 
     /// <summary>Records that <paramref name="agentId"/> has <paramref name="packageId"/> <paramref name="version"/> in its cache.</summary>

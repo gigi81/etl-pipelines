@@ -55,6 +55,24 @@ recreated - the compose file sets `Agent:Name` for that reason. An agent re-regi
 name, version and host details, and brings back an agent that had been removed (without the tags it was
 given).
 
+## Reconnecting
+
+An agent does not stop when it loses the Server (a restart, a network failure): it connects again, pausing
+1 second after the first failure and doubling the pause each time up to 30 seconds. Each time it registers
+again with its saved id, so it is the same agent, then reopens the stream of work items. Heartbeats show it
+when the connection is dead without having said so: three in a row failing end the connection, and a
+heartbeat the Server answers with `NOT_FOUND` - the agent was removed, or the Server lost it in a restart -
+makes the agent register again.
+
+Work belongs to the agent, not to a connection. A run in progress goes on while the agent reconnects, and
+when it ends the agent keeps trying to tell the Server for about 90 seconds. Runs wait for a free slot
+(`Agent:MaxConcurrentRuns`, 4 by default); installs run alongside them, one at a time.
+
+After the Server starts, the liveness sweep waits `AgentLiveness:Timeout` before it first judges anyone:
+agents were last heard from before the restart, and need that long to connect again and heartbeat, or
+every restart would mark them all `Offline` and every run still going on them `AgentLost`. For those
+seconds the agents list shows each agent as it was left.
+
 ## Agent liveness
 
 An agent's `Agents.Status` is `Online` or `Offline` (set by this sweep, and back to `Online` by its next

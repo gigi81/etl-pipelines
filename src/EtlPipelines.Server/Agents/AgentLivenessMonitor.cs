@@ -28,6 +28,12 @@ public sealed class AgentLivenessMonitor(
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Agents were last heard from before this server started, which may be long ago: they reconnect and
+        // heartbeat again within a few seconds of it being back. Judging them straight away would mark every one
+        // offline, and every run still going on them lost, on each restart of the server. So they are given as long
+        // as the timeout to be heard from first.
+        await Task.Delay(options.Value.Timeout, timeProvider, stoppingToken).ConfigureAwait(false);
+
         using var timer = new PeriodicTimer(options.Value.PollInterval, timeProvider);
 
         do

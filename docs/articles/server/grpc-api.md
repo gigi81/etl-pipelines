@@ -54,7 +54,7 @@ call it.
 | RPC | What it does |
 |---|---|
 | `RegisterAgent(machine_name, tags, version, host_info, agent_id)` | Returns the agent's id. An agent registers once each time it starts. With no `agent_id` (its first start, or an older agent) the Server issues a new one; with the `agent_id` the agent was issued before, it is the same agent starting over: its row is updated in place, keeping the tags a user gave it and the runs it carried out (`INVALID_ARGUMENT` if the id is not a GUID). The agent keeps the id in a file in its cache directory. |
-| `Heartbeat(agent_id)` | Updates `Agents.LastHeartbeatAt`. Agents call it every 10 seconds, and it is what the liveness sweep watches. |
+| `Heartbeat(agent_id)` | Updates `Agents.LastHeartbeatAt`. Agents call it every 10 seconds, and it is what the liveness sweep watches. `NOT_FOUND` when the Server does not know the agent (it was removed, or lost in a restart): the agent then registers again. `INVALID_ARGUMENT` for an id that is not a GUID. |
 | `Subscribe(agent_id)` | A long-lived server stream of `WorkItem`s, each either an `InstallPackageWorkItem` or an `ExecutePipelineWorkItem`. The agent counts as connected, and can be dispatched to, for as long as this stream is open. |
 | `ReportInstallResult(work_item_id, succeeded, pipeline_names, error)` | Resolves a pending `InstallPackage`. |
 | `ReportExecutionStatus(session_id, status, exit_code, ...)` | `STARTED` when the process launches and `EXITED` with its exit code when it ends. While the process runs, the agent also sends `RESOURCE_SAMPLE` (CPU and working set) every `Agent:ResourceSampleInterval`, stored in `AgentResourceSamples`. |

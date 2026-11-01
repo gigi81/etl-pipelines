@@ -57,6 +57,32 @@ public class PackageInstallerTests
     }
 
     [Test]
+    public async Task Installing_a_version_that_is_already_installed_returns_it_instead_of_installing_it_again()
+    {
+        //arrange - two runs of one package arriving together each ask for the install: the second must find the first's
+        var work = Directory.CreateTempSubdirectory("EtlPipelines.Agent.Tests.");
+
+        try
+        {
+            var installDirectory = Path.Combine(work.FullName, "agent-cache", "Some.Package", "1.0.0");
+            var shim = Fakes.FakeShim.Write(installDirectory);
+            var installer = new PackageInstaller(Options.Create(new AgentOptions { CacheDirectory = Path.Combine(work.FullName, "agent-cache") }));
+
+            //act - the feed is nowhere: nothing is downloaded, which is the point
+            var results = await Task.WhenAll(
+                installer.InstallAsync("Some.Package", "1.0.0", ["http://127.0.0.1:1/v3/index.json"], CancellationToken.None),
+                installer.InstallAsync("Some.Package", "1.0.0", ["http://127.0.0.1:1/v3/index.json"], CancellationToken.None));
+
+            //assert
+            results.Should().OnlyContain(path => path == shim);
+        }
+        finally
+        {
+            Directory.Delete(work.FullName, recursive: true);
+        }
+    }
+
+    [Test]
     public async Task GetInstalledShimPath_finds_a_package_this_agent_already_installed()
     {
         //arrange

@@ -38,6 +38,31 @@ public sealed class AgentOptions
     /// </summary>
     public TimeSpan ResourceSampleInterval { get; set; } = TimeSpan.FromSeconds(15);
 
+    /// <summary>
+    /// How many pipeline runs this agent carries out at once; further ones wait their turn. 4 by default. Installing a
+    /// package is not counted: installs run alongside runs (one at a time among themselves).
+    /// </summary>
+    public int MaxConcurrentRuns { get; set; } = 4;
+
+    /// <summary>How often the agent tells the Server it is alive. 10 seconds by default; the Server's timeout is 30.</summary>
+    public TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// How long the agent waits before reconnecting after losing the Server. 1 second by default, doubling at every
+    /// failed attempt up to <see cref="ReconnectMaxDelay"/>.
+    /// </summary>
+    public TimeSpan ReconnectInitialDelay { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>The longest the agent waits between attempts to reconnect. 30 seconds by default.</summary>
+    public TimeSpan ReconnectMaxDelay { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How long the agent waits before trying again to tell the Server a run started or ended, when it cannot be
+    /// reached (a restart, say). 1 second by default, doubling up to 30 seconds, for up to 8 attempts - about 90
+    /// seconds in all.
+    /// </summary>
+    public TimeSpan ReportRetryDelay { get; set; } = TimeSpan.FromSeconds(1);
+
     /// <summary>How often <see cref="CacheEvictor"/> checks <see cref="CacheDirectory"/> against <see cref="CacheSizeCapBytes"/>.</summary>
     public TimeSpan CacheEvictionInterval { get; set; } = TimeSpan.FromMinutes(30);
 }

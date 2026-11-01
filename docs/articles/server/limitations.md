@@ -35,13 +35,16 @@ Run the stack only on a network you trust.
   installs it from the feed before running it, so the first run on a new agent takes longer. Agent
   replicas that share one `agent-cache` volume (as `docker compose up --scale agent=N` does) see each
   other's installs. Agents on separate machines do not.
-- **One work item at a time per agent.** An agent handles its `Subscribe` stream sequentially, so a
-  long run holds up every install and run queued behind it on that agent. An `InstallPackage` stuck
-  behind a run longer than five minutes times out.
-- **Agents do not reconnect by themselves.** If the `Subscribe` stream drops, for example because the
-  Server restarted, the agent process exits and relies on its restart policy
-  (`restart: unless-stopped` in compose) to come back. It then registers as a new agent with a new id.
-  The old id is marked `Offline` by the liveness sweep.
+- **A fixed number of runs at once per agent.** An agent carries out up to `Agent:MaxConcurrentRuns`
+  (4 by default) pipeline runs at the same time; further ones wait on that agent, showing as
+  `Dispatched`, until a slot frees. The Server prefers the least busy agent, so this only bites when
+  every allowed agent is full. The limit counts runs, not what they use: nothing measures CPU or memory.
+  Installs run alongside runs, one at a time among themselves, so a long run no longer holds one up.
+- **Reconnecting is the agent's job, with limits.** An agent that loses the Server connects again by itself
+  (see [Operations](operations.md#reconnecting)), and a run in progress carries on meanwhile. But a
+  pending `InstallPackage` call is lost with the connection, and the agent retries telling the Server a
+  run started or ended for only about 90 seconds; a pipeline process reports its own progress to the
+  Server separately, and the agent does not retry that.
 - **No per-run liveness.** Liveness is tracked per agent. A pipeline process that hangs, never
   exiting and never reporting, while its agent keeps heartbeating stays `Running` indefinitely.
   `PipelineExecutionService.Heartbeat` exists, but nothing records it yet.

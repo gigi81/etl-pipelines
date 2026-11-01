@@ -30,6 +30,7 @@ public static class AgentApplication
         builder.Services.AddAgentGrpcClient(agentOptions.ServerUrl);
 
         builder.Services.AddSingleton<PackageInstaller>();
+        builder.Services.AddSingleton<IWorkItemProcessor, WorkItemProcessor>();
         builder.Services.AddHostedService<AgentRegistration>();
 
         // agent-cache grows unboundedly through Phase 7 (one directory per installed package
