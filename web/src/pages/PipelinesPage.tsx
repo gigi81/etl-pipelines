@@ -1,9 +1,11 @@
 import { Alert, Badge, Button, Card, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
-import { IconAlertCircle, IconPlayerPlay } from '@tabler/icons-react';
+import { IconAlertCircle, IconPackage, IconPlayerPlay, IconUpload } from '@tabler/icons-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useNow, usePipelines, useTriggerRun } from '../api/hooks';
 import { StatusBadge } from '../components/StatusBadge';
+import { UploadPackageModal } from '../components/UploadPackageModal';
 import { formatRelative } from '../lib/format';
 
 export function PipelinesPage() {
@@ -11,6 +13,7 @@ export function PipelinesPage() {
   const trigger = useTriggerRun();
   const navigate = useNavigate();
   const now = useNow(5000);
+  const [uploading, { open, close }] = useDisclosure();
 
   const run = (pipelineId: string, name: string) =>
     trigger.mutate(pipelineId, {
@@ -24,7 +27,18 @@ export function PipelinesPage() {
 
   return (
     <Stack>
-      <Title order={2}>Pipelines</Title>
+      <Group justify="space-between">
+        <Title order={2}>Pipelines</Title>
+        {/* Always here, not only when the list is empty: a pipeline comes from a package, and more can always be added. */}
+        <Group gap="xs">
+          <Button variant="default" leftSection={<IconUpload size={16} />} onClick={open}>
+            Upload a package
+          </Button>
+          <Button component={Link} to="/packages" leftSection={<IconPackage size={16} />}>
+            Add pipelines
+          </Button>
+        </Group>
+      </Group>
       {isLoading && <Loader />}
       {error && (
         <Alert color="red" icon={<IconAlertCircle />} title="Could not load the pipelines">
@@ -86,6 +100,12 @@ export function PipelinesPage() {
           </Card>
         ))}
       </SimpleGrid>
+
+      <UploadPackageModal
+        opened={uploading}
+        onClose={close}
+        onUploaded={(packageId) => navigate(`/packages?search=${encodeURIComponent(packageId)}`)}
+      />
     </Stack>
   );
 }

@@ -2,7 +2,7 @@ import { Alert, Button, Group, Loader, Stack, Table, Text, TextInput, Title } fr
 import { useDebouncedValue, useDisclosure } from '@mantine/hooks';
 import { IconAlertCircle, IconSearch, IconUpload } from '@tabler/icons-react';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { usePackages } from '../api/hooks';
 import { PackageRow } from '../components/PackageRow';
 import { UploadPackageModal } from '../components/UploadPackageModal';
@@ -12,7 +12,9 @@ import { UploadPackageModal } from '../components/UploadPackageModal';
  * is where pipelines are added - installed from the feed, or uploaded to it first.
  */
 export function PackagesPage() {
-  const [search, setSearch] = useState('');
+  // /packages?search=Contoso.Orders opens the page already filtered (an upload from elsewhere lands there).
+  const [params] = useSearchParams();
+  const [search, setSearch] = useState(params.get('search') ?? '');
   const [debounced] = useDebouncedValue(search.trim(), 300);
   const { data, error, isLoading } = usePackages(debounced);
   const [uploading, { open, close }] = useDisclosure();
