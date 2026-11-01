@@ -9,12 +9,12 @@ with the [Docker Compose stack](deployment.md) up, open <http://localhost:5080>.
 
 | Page | |
 |---|---|
-| **Pipelines** | Every installed pipeline with its package and version, how many runs of it are in flight, how its last run went, and a **Run now** button. Starting a run sends it to an agent, exactly as `ManagementService.ExecutePipeline` does, and opens the run's page. If nothing can take it, such as no agent being connected, the reason is shown. Each pipeline has a **⋯ menu**: *Run history* (the Runs page filtered to it), *Rename*, *Go to the package*, and *Clear history…* (deletes its finished runs, after a confirmation; a run in progress is left alone). |
+| **Pipelines** | Every installed pipeline with its package and version, how many runs of it are in flight, how its last run went, and a **Run now** button. Starting a run sends it to an agent, exactly as `ManagementService.ExecutePipeline` does, and opens the run's page. If nothing can take it, such as no agent being connected, the reason is shown. Each pipeline has a **⋯ menu**: *Run history* (the Runs page filtered to it), *Rename*, *Choose agents…* (which agents may run it, see [Which agent runs a pipeline](#which-agent-runs-a-pipeline)), *Go to the package*, and *Clear history…* (deletes its finished runs, after a confirmation; a run in progress is left alone). |
 | **Runs** | Two tabs: the runs in flight, with a progress bar, and the finished ones, newest first. It changes as runs start, progress and finish, with no refresh. |
 | **Run** | One run, live. The steps are drawn left to right as a flow: each completed stage shows the rows it took in and passed on, the rows that failed, and its elapsed time. The stages still to come are drawn too, from the stages of the pipeline's last successful run, with the running one highlighted. Below are CPU and memory charts, sampled by the agent running the process. A failed run shows the failing stage's error code and description. |
 | **Packages** | What the package feed offers and what is installed, one row per package. **Install** a package at its latest stable version or any version the feed has; **Update** one that has a newer stable version (its older versions are retired, runs in flight finish); **Uninstall** one (after a confirmation). **Upload a package** pushes a built `.nupkg` to the feed, after which it is listed here to install. Installing and updating are done by an agent (`dotnet tool install`), so they can take minutes; the row shows it is working. A search box filters by id. If the feed cannot be reached, the installed packages are still listed, with the reason. |
 | **Configuration** | The entries pipelines read as configuration - `ConnectionStrings:<name>`, `Sftp:<name>:Host`, and so on. Set or replace one, or delete it. Values are encrypted at rest and **never shown**: the page lists keys and when they were last set. |
-| **Agents** | Every agent that has registered: its status, OS and architecture, IP addresses, CPU count, uptime, last heartbeat, version and tags, and the runs it is working on right now. An agent that has stopped responding can be **removed** from its card, or all of them at once (*Remove offline agents*): it stops being listed, and the runs it carried out keep its name. An agent that is online, or still has a run in progress, cannot be removed. |
+| **Agents** | Every agent that has registered: its status, OS and architecture, IP addresses, CPU count, uptime, last heartbeat, version and tags, and the runs it is working on right now. **Edit** its tags to give it labels pipelines can be assigned to. An agent that has stopped responding can be **removed** from its card, or all of them at once (*Remove offline agents*): it stops being listed, and the runs it carried out keep its name. An agent that is online, or still has a run in progress, cannot be removed. |
 
 Nothing in the UI polls. The Server pushes every change to the browser as it happens, and a small
 **Live** badge in the header shows the connection is up. If it drops (a Server restart, say), the
@@ -62,6 +62,29 @@ own name shown beneath it on the card, so the two are never confused. Display na
 They exist only in the UI and its REST API (`displayName`); gRPC, the agents and the database's `Pipelines`
 table keep using the pipeline's own name.
 
+## Which agent runs a pipeline
+
+By default a run goes to any connected agent. Two things change that, both from the UI.
+
+**Tags on agents.** A tag is a short label such as `gpu`, `eu-west` or `env:prod` (lower case; letters,
+digits and `. _ : / -`). An agent has two kinds: the ones it reports about itself, from its `Agent:Tags`
+setting, which come back every time it starts; and the ones you give it with *Edit* on its card, which are
+kept. Both count when pipelines are matched.
+
+**Where a pipeline may run.** *Choose agents…* in a pipeline's menu takes tags and/or named agents. A
+pipeline may then run on an agent that has **any** of the tags, or is one of the named agents. Choosing
+nothing at all means any agent again. The dialog shows who that comes to, and warns when no agent that is
+online matches; the card shows `Runs on: …` for a pipeline that has a choice. It is kept per
+(package, pipeline name), so it survives the package being updated.
+
+When a run starts, the Server picks among the connected agents that are allowed: the one with the fewest
+runs going (an agent carries out one work item at a time, so a second run would otherwise wait behind the
+first while another agent sat idle), and among equally busy ones one that already has the package
+installed, then the lowest id so the choice is repeatable. If agents are connected but none is allowed,
+the run is refused with the assignment named (`409`), rather than sent somewhere it should not go.
+Installing a package is not restricted: it goes to any connected agent, and the agent that runs a pipeline
+installs the package on demand.
+
 ## Why there is a REST API
 
 A browser cannot call the gRPC services: they are served over cleartext HTTP/2 only, which browsers
@@ -77,9 +100,11 @@ second port, `Server:HttpPort` (5080), over HTTP/1.1, and exposes the same data 
 | `GET /api/runs/{id}` | One run with its completed `stages`, the `expectedStages` names, and the latest `resourceSamples`. |
 | `GET /api/runs/{id}/stream` | The same payload as server-sent events (`event: run`), once on connect and again on every change. |
 | `GET /api/events` | The change feed for the lists, as server-sent events. See [How updates reach the browser](#how-updates-reach-the-browser). |
-| `GET /api/agents` | Agents with their host details, `uptimeSeconds` (online agents only) and `activeRuns`. |
-| `DELETE /api/agents/{id}` | Removes an agent that has stopped heartbeating, so it is no longer listed. `204`; `404` if unknown; `409` if it is online or still has a run in progress. Its row is kept (`Status = Removed`) so its past runs keep its name; an agent that comes back has to be restarted to register again. |
+| `GET /api/agents` | Agents with their host details, `tags` (all of them: what the agent reports plus what a user gave it), `assignedTags` (only the latter), `uptimeSeconds` (online agents only) and `activeRuns`. |
+| `DELETE /api/agents/{id}` | Removes an agent that has stopped heartbeating, so it is no longer listed. `204`; `404` if unknown; `409` if it is online or still has a run in progress. Its row is kept (`Status = Removed`) so its past runs keep its name; the tags it was given are forgotten. If the agent process is still alive somewhere and registers again, it is the same agent and is listed again. |
+| `PUT /api/agents/{id}/tags` | `{ "tags": [...] }`: the tags a user gives the agent, replacing the earlier ones (the ones the agent reports about itself are not touched). Lower-cased; letters, digits and `. _ : / -`, at most 50 characters each and 20 tags. `204`; `400` for an invalid tag; `404` if unknown. |
 | `PUT /api/pipelines/{id}/display-name` | `{ "displayName": ... }`: the name the UI shows for the pipeline (at most 100 characters); empty or null goes back to its own. `204`; `404` if unknown. |
+| `PUT /api/pipelines/{id}/assignment` | `{ "tags": [...], "agentIds": [...] }`: which agents may run the pipeline. Both empty means any agent. `204`; `400` for an invalid tag or an agent that does not exist; `404` if the pipeline is unknown. `GET /api/pipelines` returns it as `assignment`. |
 | `DELETE /api/pipelines/{id}/runs` | Deletes the pipeline's finished runs with their stages and samples: `200` with `{ "deleted": n }`. Runs in progress are not touched. `404` if unknown. |
 | `GET /api/packages?search=` | The feed's packages and the installed ones, by id: `versions` (newest first), `latestStableVersion`, `installedVersion`, `updateAvailable`, and the installed version's `pipelines`. If the feed cannot be browsed, `feedError` says why and only the installed packages are listed. Not pushed - fetched when asked. |
 | `POST /api/packages/{id}/install?version=` | Installs on a connected agent, at `version` or the latest stable one, and answers when the agent has: `200` with the version and the pipelines it registered. `404` for a package the feed has no version of, `409` when no agent is connected, `502` with the agent's reason when its install fails, `504` if it does not answer within five minutes. |

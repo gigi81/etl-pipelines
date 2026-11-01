@@ -169,7 +169,7 @@ public class LiveEventWriterTests
         var clock = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var live = await TestLiveState.CreateAsync(clock: clock);
 
-        var agentId = await live.RegisterAgentAsync("agent-01", ["a"], "1", """{"k":"v"}""", CancellationToken.None);
+        var agentId = await live.RegisterAgentAsync(null, "agent-01", ["a"], "1", """{"k":"v"}""", CancellationToken.None);
         var runId = await live.CreateRunAsync(pipelineId, "csv-to-db", "Pkg.csv-to-db", "1.0.0", agentId, [], CancellationToken.None);
         clock.Advance(TimeSpan.FromSeconds(1));
         await live.StartRunAsync(runId, CancellationToken.None);
@@ -220,6 +220,70 @@ public class LiveEventWriterTests
         //assert
         (await database.ReadAsync(context => context.Agents.SingleAsync())).Status.Should().Be("Removed");
         (await database.ReadAsync(context => context.Runs.SingleAsync())).AgentId.Should().Be(agentId);
+    }
+
+    [Test]
+    public async Task An_agent_registering_again_is_the_same_row_updated_and_keeps_the_tags_a_user_gave_it_and_its_runs()
+    {
+        //arrange - the agent registered, was given a tag, carried out a run, and was removed
+        await using var database = await TestDatabase.CreateAsync();
+        var pipelineId = await database.SeedPipelineAsync();
+        var agentId = Guid.NewGuid();
+        var runId = Guid.NewGuid();
+        await database.ReadAsync(async context => await LiveEventWriter.WriteAsync(
+            context,
+            [
+                new AgentRegisteredEvent(agentId, "container-1", ["old"], "1", null, T0),
+                new AgentTagsChangedEvent(agentId, ["gpu"], T0.AddSeconds(1)),
+                new RunCreatedEvent(runId, pipelineId, "p", "Pkg", "1", agentId, [], T0.AddSeconds(2)),
+                new RunFinishedEvent(runId, "Succeeded", 0, 1, 1, 0, T0.AddSeconds(3)),
+            ],
+            CancellationToken.None));
+
+        //act - it starts again (new container, same id), in a later batch
+        await database.ReadAsync(async context => await LiveEventWriter.WriteAsync(
+            context, [new AgentRegisteredEvent(agentId, "container-2", ["new"], "2", """{"k":1}""", T0.AddMinutes(5))], CancellationToken.None));
+
+        //assert
+        var agent = await database.ReadAsync(context => context.Agents.SingleAsync());
+        (agent.MachineName, agent.Version, agent.Status).Should().Be(("container-2", "2", "Online"));
+        agent.Tags.Should().Equal("new");
+        agent.AssignedTags.Should().Equal("gpu");
+        agent.Info.Should().Be("""{"k":1}""");
+        (await database.ReadAsync(context => context.Runs.SingleAsync())).AgentId.Should().Be(agentId);
+    }
+
+    [Test]
+    public async Task An_agent_registering_twice_in_one_batch_and_one_that_was_removed_coming_back_are_one_row()
+    {
+        //arrange - removed in an earlier batch
+        await using var database = await TestDatabase.CreateAsync();
+        var agentId = Guid.NewGuid();
+        await database.ReadAsync(async context => await LiveEventWriter.WriteAsync(
+            context,
+            [
+                new AgentRegisteredEvent(agentId, "a", [], "1", null, T0),
+                new AgentTagsChangedEvent(agentId, ["gpu"], T0.AddSeconds(1)),
+                new AgentOfflineEvent(agentId, T0.AddSeconds(2)),
+                new AgentRemovedEvent(agentId, T0.AddSeconds(3)),
+            ],
+            CancellationToken.None));
+        (await database.ReadAsync(context => context.Agents.SingleAsync())).AssignedTags.Should().BeEmpty("removing forgets who it was set up as");
+
+        //act - it comes back, and (quickly) registers again before the next sync
+        await database.ReadAsync(async context => await LiveEventWriter.WriteAsync(
+            context,
+            [
+                new AgentRegisteredEvent(agentId, "a", [], "1", null, T0.AddMinutes(1)),
+                new AgentRegisteredEvent(agentId, "a", ["x"], "2", null, T0.AddMinutes(2)),
+                new AgentTagsChangedEvent(agentId, ["eu"], T0.AddMinutes(3)),
+            ],
+            CancellationToken.None));
+
+        //assert
+        var agent = await database.ReadAsync(context => context.Agents.SingleAsync());
+        (agent.Status, agent.Version).Should().Be(("Online", "2"));
+        agent.AssignedTags.Should().Equal("eu");
     }
 
     [Test]

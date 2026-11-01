@@ -143,4 +143,104 @@ public class PipelineEndpointsTests
 
     private static Task<HttpResponseMessage> SetName(ApiTestHost host, Guid pipelineId, string? name) =>
         host.Client.PutAsJsonAsync($"/api/pipelines/{pipelineId}/display-name", new PipelineDisplayNameDto(name), ApiTestHost.Json);
+
+    [Test]
+    public async Task A_pipeline_is_assigned_to_agents_by_tag_and_by_name_and_it_is_listed_that_way()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("orders-load");
+        await host.SeedPipelineAsync("orders-archive");
+        var agentId = await host.SeedAgentAsync("build-01");
+        using var announced = host.Live.Subscribe(change => change.Kind == LiveChangeKind.Pipelines);
+
+        //act
+        var response = await Assign(host, pipelineId, ["GPU", "eu"], [agentId]);
+
+        //assert
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var pipelines = await host.GetAsync<List<PipelineDto>>("/api/pipelines");
+        var assigned = pipelines.Single(p => p.Id == pipelineId).Assignment;
+        assigned.Tags.Should().Equal("eu", "gpu");
+        assigned.AgentIds.Should().Equal(agentId);
+        var other = pipelines.Single(p => p.Name == "orders-archive").Assignment;
+        other.Tags.Should().BeEmpty("any agent may run the one nobody assigned");
+        other.AgentIds.Should().BeEmpty();
+        (await announced.NextAsync(TimeSpan.FromSeconds(1), CancellationToken.None)).Should().NotBeEmpty("others showing the list are told");
+    }
+
+    [Test]
+    public async Task Assigning_replaces_what_was_assigned_and_assigning_nothing_means_any_agent_again()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("orders-load");
+        var first = await host.SeedAgentAsync("one");
+        var second = await host.SeedAgentAsync("two");
+        await Assign(host, pipelineId, ["gpu", "eu"], [first]);
+
+        //act + assert - a different set, overlapping the first
+        await Assign(host, pipelineId, ["eu", "us"], [first, second]);
+        var assignment = (await host.GetAsync<List<PipelineDto>>("/api/pipelines")).Single().Assignment;
+        assignment.Tags.Should().Equal("eu", "us");
+        assignment.AgentIds.Should().BeEquivalentTo([first, second]);
+
+        await Assign(host, pipelineId, [], []);
+        var cleared = (await host.GetAsync<List<PipelineDto>>("/api/pipelines")).Single().Assignment;
+        (cleared.Tags.Count, cleared.AgentIds.Count).Should().Be((0, 0));
+        await using var context = host.NewContext();
+        (await context.PipelineAgentTags.CountAsync()).Should().Be(0);
+        (await context.PipelineAgents.CountAsync()).Should().Be(0);
+    }
+
+    [Test]
+    public async Task An_assignment_survives_the_package_being_updated_and_does_not_list_an_agent_that_is_gone()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var v1 = await host.SeedPipelineAsync("orders-load", "Contoso.Orders", "1.0.0");
+        var staying = await host.SeedAgentAsync("staying");
+        var leaving = await host.SeedAgentAsync("leaving", status: "Offline");
+        await Assign(host, v1, ["gpu"], [staying, leaving]);
+
+        //act - v2 replaces v1, and one of the agents is removed
+        await host.SeedPipelineAsync("orders-load", "Contoso.Orders", "2.0.0");
+        await using (var context = host.NewContext())
+        {
+            (await context.PackageVersions.SingleAsync(v => v.Version == "1.0.0")).Status = EtlPipelines.Server.Catalog.PackageVersionStatus.Superseded;
+            await context.SaveChangesAsync();
+        }
+
+        await host.Client.DeleteAsync($"/api/agents/{leaving}");
+
+        //assert
+        var pipeline = (await host.GetAsync<List<PipelineDto>>("/api/pipelines")).Single();
+        pipeline.PackageVersion.Should().Be("2.0.0");
+        pipeline.Assignment.Tags.Should().Equal("gpu");
+        pipeline.Assignment.AgentIds.Should().Equal(staying);
+    }
+
+    [Test]
+    public async Task An_assignment_with_an_invalid_tag_an_unknown_agent_or_for_an_unknown_pipeline_is_refused()
+    {
+        //arrange
+        await using var host = await ApiTestHost.StartAsync();
+        var pipelineId = await host.SeedPipelineAsync("orders-load");
+
+        //act
+        var badTag = await Assign(host, pipelineId, ["no good"], []);
+        var unknownAgent = await Assign(host, pipelineId, [], [Guid.NewGuid()]);
+        var unknownPipeline = await Assign(host, Guid.NewGuid(), ["gpu"], []);
+
+        //assert
+        badTag.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        unknownAgent.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await unknownAgent.Content.ReadAsStringAsync()).Should().Contain("No such agent");
+        unknownPipeline.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var unchanged = (await host.GetAsync<List<PipelineDto>>("/api/pipelines")).Single().Assignment;
+        (unchanged.Tags.Count, unchanged.AgentIds.Count).Should().Be((0, 0));
+    }
+
+    private static Task<HttpResponseMessage> Assign(ApiTestHost host, Guid pipelineId, string[] tags, Guid[] agentIds) =>
+        host.Client.PutAsJsonAsync($"/api/pipelines/{pipelineId}/assignment", new PipelineAssignmentDto(tags, agentIds));
 }

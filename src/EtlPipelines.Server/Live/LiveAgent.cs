@@ -1,4 +1,5 @@
 using System.Text.Json;
+using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Contracts;
 using EtlPipelines.Server.Database.Entities;
 
@@ -12,8 +13,15 @@ internal sealed record LiveAgent(
     string Version,
     string Status,
     DateTime LastHeartbeatAtUtc,
-    JsonElement? Info)
+    JsonElement? Info,
+    IReadOnlyList<string> AssignedTags)
 {
+    /// <summary>
+    /// Every tag the agent has: what it reports about itself (<see cref="Tags"/>, replaced each time it
+    /// registers) and what a user gave it (<see cref="AssignedTags"/>, kept).
+    /// </summary>
+    public IReadOnlyList<string> AllTags => TagNames.Union(Tags, AssignedTags);
+
     /// <summary>Copies <paramref name="agent"/> (a database row).</summary>
     public static LiveAgent From(Agent agent) =>
         new(
@@ -23,7 +31,8 @@ internal sealed record LiveAgent(
             agent.Version,
             agent.Status,
             DateTime.SpecifyKind(agent.LastHeartbeatAt, DateTimeKind.Utc),
-            ParseInfo(agent.Info));
+            ParseInfo(agent.Info),
+            agent.AssignedTags);
 
     /// <summary>The stored <c>Agents.Info</c> as JSON; <see langword="null"/> when there is none, or it is not a JSON object.</summary>
     internal static JsonElement? ParseInfo(string? json)
@@ -49,7 +58,8 @@ internal sealed record LiveAgent(
         new(
             Id,
             MachineName,
-            Tags,
+            AllTags,
+            AssignedTags,
             Version,
             Status,
             LastHeartbeatAtUtc,

@@ -1,3 +1,5 @@
 server,_Init
 server,AgentHostInfo
 server,PipelineDisplayNames
+server,AgentAssignedTags
+server,PipelineAssignments

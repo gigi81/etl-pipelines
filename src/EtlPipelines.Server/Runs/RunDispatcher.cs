@@ -60,10 +60,7 @@ public sealed class RunDispatcher(
         var packageId = pipeline.PackageVersion.Package.NugetPackageId;
         var version = pipeline.PackageVersion.Version;
 
-        if (!connections.TryGetConnectedAgentIdFor(packageId, version, out var agentId))
-        {
-            throw ServiceScaffolding.NoAgentsAvailable();
-        }
+        var agentId = await ChooseAgentAsync(pipeline, packageId, version, cancellationToken).ConfigureAwait(false);
 
         var feedUrls = await dbContext.NuGetFeeds
             .AsNoTracking()
@@ -96,5 +93,40 @@ public sealed class RunDispatcher(
         connections.MarkInstalled(agentId, packageId, version);
 
         return runId;
+    }
+
+    /// <summary>
+    /// The connected agent the pipeline's assignment allows (any, when it has none): one that already has the
+    /// package installed first, then the least busy.
+    /// </summary>
+    private async Task<string> ChooseAgentAsync(Database.Entities.Pipeline pipeline, string packageId, string version, CancellationToken cancellationToken)
+    {
+        var connected = connections.ConnectedAgentIds();
+        if (connected.Count == 0)
+        {
+            throw ServiceScaffolding.NoAgentsAvailable();
+        }
+
+        var assignment = await PipelineAssignmentStore
+            .LoadAsync(dbContext, pipeline.PackageVersion.PackageId, pipeline.Name, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Connected, and known to the live state (an agent it does not know - removed, say - is not sent work).
+        var loads = (await liveState.AgentLoadsAsync(cancellationToken).ConfigureAwait(false)).ToDictionary(load => load.Id);
+        var candidates = connected
+            .Where(id => Guid.TryParse(id, out var guid) && loads.ContainsKey(guid))
+            .Select(id =>
+            {
+                var load = loads[Guid.Parse(id)];
+                return new AgentCandidate(load.Id, load.Tags, connections.HasInstalled(id, packageId, version), load.ActiveRuns);
+            })
+            .ToList();
+
+        var chosen = AgentSelector.Choose(candidates, assignment)
+            ?? throw (assignment.IsAny
+                ? ServiceScaffolding.NoAgentsAvailable()
+                : ServiceScaffolding.NoEligibleAgent(pipeline.Name, assignment.Describe()));
+
+        return chosen.Id.ToString();
     }
 }

@@ -30,6 +30,7 @@ public static class ApiEndpoints
         api.MapGet("/runs/{runId:guid}/stream", StreamRunAsync);
         api.MapGet("/events", StreamEvents);
         api.MapGet("/agents", ListAgentsAsync);
+        api.MapPut("/agents/{agentId:guid}/tags", SetAgentTagsAsync);
         api.MapDelete("/agents/{agentId:guid}", RemoveAgentAsync);
         PipelineEndpoints.Map(api);
         PackageEndpoints.Map(api);
@@ -56,6 +57,9 @@ public static class ApiEndpoints
                 .ConfigureAwait(false))
             .ToDictionary(entry => (entry.NugetPackageId, entry.PipelineName), entry => entry.DisplayName);
 
+        // Where each pipeline may run - leaving out agents that are gone, which are never chosen anyway.
+        var assignments = await PipelineAssignmentStore.LoadAllAsync(db, cancellationToken).ConfigureAwait(false);
+
         var result = new List<PipelineDto>(pipelines.Count);
         foreach (var pipeline in pipelines)
         {
@@ -66,11 +70,16 @@ public static class ApiEndpoints
                 pipeline.PackageId,
                 pipeline.PackageVersion,
                 await live.ActiveRunCountAsync(pipeline.PipelineId, cancellationToken).ConfigureAwait(false),
-                await live.LastRunAsync(db, pipeline.PipelineId, cancellationToken).ConfigureAwait(false)));
+                await live.LastRunAsync(db, pipeline.PipelineId, cancellationToken).ConfigureAwait(false),
+                ToDto(assignments.GetValueOrDefault((pipeline.PackageId, pipeline.Name)) ?? PipelineAssignment.Any, live)));
         }
 
         return TypedResults.Ok(result.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList());
     }
+
+    /// <summary>The assignment as the API shows it: only the agents that exist.</summary>
+    internal static PipelineAssignmentDto ToDto(PipelineAssignment assignment, LiveState live) =>
+        new(assignment.Tags, [.. assignment.AgentIds.Where(live.IsKnownAgent)]);
 
     private static async Task<Results<Accepted<TriggerRunResponse>, ProblemHttpResult>> TriggerRunAsync(
         Guid pipelineId, RunDispatcher dispatcher, CancellationToken cancellationToken)
@@ -106,6 +115,20 @@ public static class ApiEndpoints
 
     private static async Task<Ok<IReadOnlyList<AgentDto>>> ListAgentsAsync(LiveState live, CancellationToken cancellationToken) =>
         TypedResults.Ok(await live.ListAgentsAsync(cancellationToken).ConfigureAwait(false));
+
+    /// <summary>Gives an agent tags (replacing the ones a user gave it before), which pipelines can be assigned by.</summary>
+    private static async Task<Results<NoContent, ProblemHttpResult>> SetAgentTagsAsync(
+        Guid agentId, AgentTagsDto body, LiveState live, CancellationToken cancellationToken)
+    {
+        if (!TagNames.TryNormalize(body.Tags, out var tags, out var error))
+        {
+            return TypedResults.Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        return await live.SetAgentTagsAsync(agentId, tags, cancellationToken).ConfigureAwait(false)
+            ? TypedResults.NoContent()
+            : TypedResults.Problem(detail: $"No agent '{agentId}' is known to this server.", statusCode: StatusCodes.Status404NotFound);
+    }
 
     /// <summary>Removes an agent that has stopped heartbeating, so it is no longer listed. Its past runs keep its name.</summary>
     private static async Task<Results<NoContent, ProblemHttpResult>> RemoveAgentAsync(

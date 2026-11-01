@@ -23,6 +23,15 @@ export interface RunSummary {
   stagesExpected: number | null;
 }
 
+/**
+ * Which agents may run a pipeline: any, when both lists are empty; otherwise an agent that has any of
+ * the tags, or is one of the agents named.
+ */
+export interface PipelineAssignment {
+  tags: string[];
+  agentIds: string[];
+}
+
 export interface Pipeline {
   id: string;
   /** The pipeline's own name: what its package registers and an agent launches it by. */
@@ -33,6 +42,7 @@ export interface Pipeline {
   packageVersion: string;
   activeRuns: number;
   lastRun: RunSummary | null;
+  assignment: PipelineAssignment;
 }
 
 export interface ClearedHistory {
@@ -117,7 +127,10 @@ export interface ConfigurationKey {
 export interface Agent {
   id: string;
   machineName: string;
+  /** Every tag it has: the ones it reports about itself (its configuration) and `assignedTags`. */
   tags: string[];
+  /** Only the tags a user gave it - the ones that can be changed here. */
+  assignedTags: string[];
   version: string;
   status: 'Online' | 'Offline';
   lastHeartbeatAtUtc: string;

@@ -57,6 +57,35 @@ public class AgentServiceImplTests
     }
 
     [Test]
+    public async Task An_agent_that_brings_the_id_it_was_issued_is_the_same_agent_and_one_that_does_not_is_new()
+    {
+        //arrange
+        var live = await TestLiveState.CreateAsync();
+        var service = Create(live);
+        var first = await service.RegisterAgent(new RegisterAgentRequest { MachineName = "container-1", Version = "1" }, CallContext());
+
+        //act - the agent starts again, with the id it kept
+        var again = await service.RegisterAgent(
+            new RegisterAgentRequest { MachineName = "container-2", Version = "1", AgentId = first.AgentId }, CallContext());
+        var other = await service.RegisterAgent(new RegisterAgentRequest { MachineName = "elsewhere", Version = "1" }, CallContext());
+
+        //assert
+        again.AgentId.Should().Be(first.AgentId);
+        other.AgentId.Should().NotBe(first.AgentId);
+        (await live.ListAgentsAsync(CancellationToken.None)).Select(agent => agent.MachineName).Should().BeEquivalentTo("container-2", "elsewhere");
+    }
+
+    [Test]
+    public async Task An_agent_id_that_is_not_an_id_is_refused()
+    {
+        var service = Create(await TestLiveState.CreateAsync());
+
+        var act = () => service.RegisterAgent(new RegisterAgentRequest { MachineName = "a", AgentId = "not-a-guid" }, CallContext());
+
+        (await act.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [Test]
     public async Task What_an_agent_reports_about_a_run_updates_it_in_the_live_state()
     {
         //arrange

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Contracts;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Live.Events;
@@ -161,15 +162,31 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
 
     // ---- commands -----------------------------------------------------------------------
 
-    /// <summary>An agent registers. Returns the id it is known by from now on.</summary>
+    /// <summary>
+    /// An agent registers. Returns the id it is known by from now on: <paramref name="requestedId"/> when the
+    /// agent brought the one it was issued before (it is then the same agent - same tags a user gave it, same
+    /// history - however many times it has restarted, and even if it had been removed), a new one when it
+    /// did not.
+    /// </summary>
     public async Task<Guid> RegisterAgentAsync(
-        string machineName, IReadOnlyList<string> tags, string version, string? infoJson, CancellationToken cancellationToken)
+        Guid? requestedId, string machineName, IReadOnlyList<string> tags, string version, string? infoJson, CancellationToken cancellationToken)
     {
         await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-        var agentId = Guid.NewGuid();
+        var agentId = requestedId ?? Guid.NewGuid();
         Append(new AgentRegisteredEvent(agentId, machineName, tags, version, infoJson, Now()));
         return agentId;
+    }
+
+    /// <summary>
+    /// Sets the tags a user gives an agent (replacing the earlier ones). The caller has normalized them
+    /// (<see cref="TagNames.TryNormalize"/>). False when no such agent is held.
+    /// </summary>
+    public async Task<bool> SetAgentTagsAsync(Guid agentId, IReadOnlyList<string> assignedTags, CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        return Append(() => _agents.ContainsKey(agentId) ? [new AgentTagsChangedEvent(agentId, assignedTags, Now())] : []);
     }
 
     /// <summary>An agent heartbeated. False when no such agent is known (it is left alone).</summary>
@@ -399,8 +416,15 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
                     registered.Version,
                     "Online",
                     registered.AtUtc,
-                    LiveAgent.ParseInfo(registered.InfoJson));
+                    LiveAgent.ParseInfo(registered.InfoJson),
+                    // Registering again is the same agent starting over: what a user gave it stays.
+                    _agents.TryGetValue(registered.AgentId, out var before) ? before.AssignedTags : []);
                 changes.Add(new LiveChange(LiveChangeKind.Agent, registered.AgentId));
+                break;
+
+            case AgentTagsChangedEvent tagged when _agents.TryGetValue(tagged.AgentId, out var agent):
+                _agents[tagged.AgentId] = agent with { AssignedTags = tagged.AssignedTags };
+                changes.Add(new LiveChange(LiveChangeKind.Agent, tagged.AgentId));
                 break;
 
             case AgentHeartbeatEvent heartbeat when _agents.TryGetValue(heartbeat.AgentId, out var agent):
@@ -670,6 +694,24 @@ public sealed class LiveState(TimeProvider timeProvider, ILogger<LiveState> logg
             .OrderBy(agent => agent.MachineName, StringComparer.Ordinal)
             .ThenBy(agent => agent.LastHeartbeatAtUtc)
             .Select(agent => agent.ToDto(now, ActiveRunsOf(agent.Id)))
+            .ToList();
+    }
+
+    /// <summary>Whether <paramref name="agentId"/> is a known agent (one that was never registered, or was removed, is not).</summary>
+    public bool IsKnownAgent(Guid agentId) => _agents.ContainsKey(agentId);
+
+    /// <summary>The tags and current workload of every agent held - what choosing an agent for a run goes on.</summary>
+    public async Task<IReadOnlyList<AgentLoad>> AgentLoadsAsync(CancellationToken cancellationToken)
+    {
+        await WhenLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        var active = _runs.Values
+            .Where(run => run.IsActive && run.AgentId is not null)
+            .GroupBy(run => run.AgentId!.Value)
+            .ToDictionary(group => group.Key, group => group.Count());
+
+        return _agents.Values
+            .Select(agent => new AgentLoad(agent.Id, agent.AllTags, active.GetValueOrDefault(agent.Id)))
             .ToList();
     }
 

@@ -28,6 +28,7 @@ const agent = (id: string, machineName: string): Agent => ({
   id,
   machineName,
   tags: [],
+  assignedTags: [],
   version: '1',
   status: 'Online',
   lastHeartbeatAtUtc: '2026-01-01T00:00:00Z',

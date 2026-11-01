@@ -39,6 +39,22 @@ hold agents' per-heartbeat history. Anything that must see the present state (th
 WebUI) reads memory; the *History* list merges the two. `LiveStateSync` has a public `FlushAsync` for
 anything that needs the database caught up now (the end-to-end tests call it).
 
+## Agent identity
+
+The first time an agent starts, the Server issues it an id. The agent writes that id to a file,
+`agent-id`, in its cache directory (`Agent:CacheDirectory`) and sends it back whenever it registers, so
+a restart - a crash and `restart: unless-stopped`, a `docker compose down` and `up`, a rebuilt image - is
+the same agent: one entry in the agents list, with its tags, the pipelines assigned to it and its run
+history. Without the file (a first start, or a lost volume) it is a new agent, and the old entry stays
+`Offline` until it is removed in the WebUI.
+
+In Docker the file lives in the `agent-cache` volume, so keep that volume; `docker compose down
+--volumes` deletes it. The agent's *name* is a separate matter: it is the machine name unless
+`Agent:Name` is set, and the container id (the machine name in Docker) changes when a container is
+recreated - the compose file sets `Agent:Name` for that reason. An agent re-registering also updates its
+name, version and host details, and brings back an agent that had been removed (without the tags it was
+given).
+
 ## Agent liveness
 
 An agent's `Agents.Status` is `Online` or `Offline` (set by this sweep, and back to `Online` by its next

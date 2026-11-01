@@ -29,4 +29,14 @@ internal static class ServiceScaffolding
         new(new Status(
             StatusCode.FailedPrecondition,
             $"{method} needs an agent to delegate to, and none is connected."));
+
+    /// <summary>
+    /// What <see cref="ManagementServiceImpl.ExecutePipeline"/> gives when agents are connected but none of
+    /// them is one the pipeline is assigned to - <see cref="StatusCode.FailedPrecondition"/>, like
+    /// <see cref="NoAgentsAvailable"/>: nothing is wrong with the request, there is just nowhere to run it.
+    /// </summary>
+    public static RpcException NoEligibleAgent(string pipelineName, string assignment) =>
+        new(new Status(
+            StatusCode.FailedPrecondition,
+            $"Pipeline '{pipelineName}' is assigned to {assignment}, and no connected agent matches. Connect one, or change where the pipeline may run."));
 }

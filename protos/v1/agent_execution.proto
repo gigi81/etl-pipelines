@@ -29,6 +29,11 @@ message RegisterAgentRequest {
   // IPv4 and IPv6 addresses) and startedAtUtc (ISO 8601, always UTC: when the agent process started). Unset by an
   // older agent.
   google.protobuf.Struct host_info = 4;
+  // The id this agent was issued the first time it registered, which it keeps (in its cache directory)
+  // and sends back on every later start - so a restarted agent is the same agent, with the same tags,
+  // pipeline assignments and run history, rather than a new one each time. Empty on the very first
+  // start, and from an older agent: the server then issues a new id (RegisterAgentResponse.agent_id).
+  string agent_id = 5;
 }
 
 message RegisterAgentResponse {

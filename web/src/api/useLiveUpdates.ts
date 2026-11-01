@@ -37,9 +37,11 @@ export function useLiveUpdates(): boolean {
       source.addEventListener('agent', (event) =>
         applyAgentEvent(queryClient, JSON.parse((event as MessageEvent<string>).data) as Agent),
       );
-      source.addEventListener('agent-removed', (event) =>
-        applyAgentRemoved(queryClient, (JSON.parse((event as MessageEvent<string>).data) as { id: string }).id),
-      );
+      source.addEventListener('agent-removed', (event) => {
+        applyAgentRemoved(queryClient, (JSON.parse((event as MessageEvent<string>).data) as { id: string }).id);
+        // A pipeline assigned to the agent no longer lists it.
+        void queryClient.invalidateQueries({ queryKey: ['pipelines'] });
+      });
 
       // A package was installed, updated or removed, a pipeline was renamed or had its history cleared (by
       // anyone): the pipelines, the packages and the runs lists change.

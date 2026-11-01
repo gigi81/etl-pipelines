@@ -27,7 +27,7 @@ All long-running services use `restart: unless-stopped`.
 | `postgres-data` | `/var/lib/postgresql/data` | The database. |
 | `nuget-data` | `/data` | bagetter's packages. |
 | `server-cache` | `/var/lib/etlpipelines/server-cache` | The Data Protection key ring (`keys/`). **Back this volume up.** Without it, no stored configuration value can be decrypted again. |
-| `agent-cache` | `/var/lib/etlpipelines/agent-cache` | Installed tool packages, one directory per package version. |
+| `agent-cache` | `/var/lib/etlpipelines/agent-cache` | Installed tool packages, one directory per package version, and `agent-id`: the id that makes a restarted agent the same agent (see [Agent identity](operations.md#agent-identity)). |
 
 `docker compose down` keeps the volumes. `docker compose down --volumes` deletes them, and with them
 the key ring.
@@ -145,5 +145,8 @@ replicas:
 docker compose up -d --scale agent=3
 ```
 
-Each replica gets its own agent id but, as written, shares the one `agent-cache` volume. Before
-scaling out, read the notes on multiple agents in [Known limitations](limitations.md).
+As written, the replicas share the one `agent-cache` volume, and with it the file that holds an
+agent's identity: they would all register as the same agent, and only one of them would be sent work.
+To run several agents, give each its own cache volume and its own `Agent__Name` (for example as extra
+services in a `docker-compose.override.yml`), rather than `--scale`. Read the notes on multiple agents
+in [Known limitations](limitations.md) too.

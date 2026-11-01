@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, runStreamUrl } from './client';
-import type { RunDetail } from './types';
+import type { PipelineAssignment, RunDetail } from './types';
 import { isActive } from '../lib/format';
 import { buildPipelineLabeller } from '../lib/pipelineLabels';
 
@@ -93,6 +93,23 @@ export function useRemoveAgent() {
   return useMutation({
     mutationFn: (id: string) => api.removeAgent(id),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['agents'] }),
+  });
+}
+
+export function useSetAgentTags() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, tags }: { agentId: string; tags: string[] }) => api.setAgentTags(agentId, tags),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['agents'] }),
+  });
+}
+
+export function useSetAssignment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pipelineId, assignment }: { pipelineId: string; assignment: PipelineAssignment }) =>
+      api.setAssignment(pipelineId, assignment),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['pipelines'] }),
   });
 }
 

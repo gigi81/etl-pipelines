@@ -10,6 +10,7 @@ const pipeline = (over: Partial<Pipeline>): Pipeline => ({
   packageVersion: '1.0.0',
   activeRuns: 0,
   lastRun: null,
+  assignment: { tags: [], agentIds: [] },
   ...over,
 });
 

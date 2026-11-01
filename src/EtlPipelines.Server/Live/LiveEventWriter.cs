@@ -21,18 +21,20 @@ public static class LiveEventWriter
     /// <summary>Writes <paramref name="events"/> to <paramref name="db"/> and saves. Returns how many were skipped.</summary>
     public static async Task<int> WriteAsync(ServerDbContext db, IReadOnlyList<LiveEvent> events, CancellationToken cancellationToken)
     {
-        var registered = events.OfType<AgentRegisteredEvent>().Select(e => e.AgentId).ToHashSet();
         var created = events.OfType<RunCreatedEvent>().Select(e => e.RunId).ToHashSet();
 
         var agentIds = events
             .Select(e => e switch
             {
+                // A registration is for an agent the database may already have: one starting over.
+                AgentRegisteredEvent g => g.AgentId,
                 AgentHeartbeatEvent h => h.AgentId,
                 AgentOfflineEvent o => o.AgentId,
                 AgentRemovedEvent r => r.AgentId,
+                AgentTagsChangedEvent t => t.AgentId,
                 _ => Guid.Empty,
             })
-            .Where(id => id != Guid.Empty && !registered.Contains(id))
+            .Where(id => id != Guid.Empty)
             .Distinct()
             .ToList();
         var runIds = events
@@ -70,12 +72,24 @@ public static class LiveEventWriter
         {
             switch (liveEvent)
             {
+                case AgentRegisteredEvent e when agents.TryGetValue(e.AgentId, out var returning):
+                    // The same agent starting over (or one that had been removed): the row is updated in
+                    // place, so what a user gave it and the runs it carried out stay with it.
+                    returning.MachineName = e.MachineName;
+                    returning.Tags = [.. e.Tags];
+                    returning.Version = e.Version;
+                    returning.Status = "Online";
+                    returning.LastHeartbeatAt = e.AtUtc;
+                    returning.Info = e.InfoJson;
+                    break;
+
                 case AgentRegisteredEvent e:
                     var newAgent = new Agent
                     {
                         Id = e.AgentId,
                         MachineName = e.MachineName,
                         Tags = [.. e.Tags],
+                        AssignedTags = [],
                         Version = e.Version,
                         Status = "Online",
                         LastHeartbeatAt = e.AtUtc,
@@ -83,6 +97,10 @@ public static class LiveEventWriter
                     };
                     db.Agents.Add(newAgent);
                     agents[e.AgentId] = newAgent;
+                    break;
+
+                case AgentTagsChangedEvent e when agents.TryGetValue(e.AgentId, out var tagged):
+                    tagged.AssignedTags = [.. e.AssignedTags];
                     break;
 
                 case AgentHeartbeatEvent e when agents.TryGetValue(e.AgentId, out var agent):
@@ -95,8 +113,10 @@ public static class LiveEventWriter
                     break;
 
                 case AgentRemovedEvent e when agents.TryGetValue(e.AgentId, out var agent):
-                    // Marked, not deleted: the runs it carried out still point at it.
+                    // Marked, not deleted: the runs it carried out still point at it. Whoever it was set up
+                    // as is forgotten with it.
                     agent.Status = "Removed";
+                    agent.AssignedTags = [];
                     break;
 
                 case PipelineHistoryClearedEvent e:

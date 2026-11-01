@@ -54,7 +54,7 @@ public class LiveStateTests
 
         //act
         var agents = live.ListAgentsAsync(CancellationToken.None);
-        var registering = live.RegisterAgentAsync("late", [], "1", null, CancellationToken.None);
+        var registering = live.RegisterAgentAsync(null, "late", [], "1", null, CancellationToken.None);
         await Task.Delay(100);
 
         //assert - nothing is answered, or changed, before the database has been read
@@ -75,7 +75,7 @@ public class LiveStateTests
         var pipelineId = Guid.NewGuid();
 
         //act
-        var agentId = await live.RegisterAgentAsync("a", ["linux"], "1.0", """{"x":1}""", CancellationToken.None);
+        var agentId = await live.RegisterAgentAsync(null, "a", ["linux"], "1.0", """{"x":1}""", CancellationToken.None);
         var runId = await live.CreateRunAsync(pipelineId, "p", "Pkg", "2.0", agentId, ["read", "load"], CancellationToken.None);
         await live.StartRunAsync(runId, CancellationToken.None);
         await live.StageCompletedAsync(runId, new StageDto(0, "read", 0, 5, 0, 10, null, null), CancellationToken.None);
@@ -171,7 +171,7 @@ public class LiveStateTests
     {
         //arrange
         var live = await TestLiveState.CreateAsync();
-        var agentId = await live.RegisterAgentAsync("a", [], "1", null, CancellationToken.None);
+        var agentId = await live.RegisterAgentAsync(null, "a", [], "1", null, CancellationToken.None);
         var runId = await live.CreateRunAsync(Guid.NewGuid(), "p", "Pkg", "1", agentId, [], CancellationToken.None);
         var other = await live.CreateRunAsync(Guid.NewGuid(), "q", "Pkg", "1", null, [], CancellationToken.None);
 
@@ -199,7 +199,7 @@ public class LiveStateTests
         //arrange
         var clock = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var live = await TestLiveState.CreateAsync(clock: clock);
-        var agentId = await live.RegisterAgentAsync("a", [], "1", null, CancellationToken.None);
+        var agentId = await live.RegisterAgentAsync(null, "a", [], "1", null, CancellationToken.None);
         var first = await live.CreateRunAsync(Guid.NewGuid(), "p", "Pkg", "1", agentId, [], CancellationToken.None);
         var second = await live.CreateRunAsync(Guid.NewGuid(), "p", "Pkg", "1", agentId, [], CancellationToken.None);
         (await live.ListAgentsAsync(CancellationToken.None)).Single().ActiveRuns.Should().HaveCount(2);
@@ -227,7 +227,7 @@ public class LiveStateTests
         var live = await TestLiveState.CreateAsync(clock: clock);
 
         //act + assert
-        var agentId = await live.RegisterAgentAsync("a", [], "1", $$"""{"startedAtUtc":"{{now.AddHours(-1):O}}"}""", CancellationToken.None);
+        var agentId = await live.RegisterAgentAsync(null, "a", [], "1", $$"""{"startedAtUtc":"{{now.AddHours(-1):O}}"}""", CancellationToken.None);
         live.TryGetAgent(agentId)!.UptimeSeconds.Should().BeInRange(3599, 3601);
 
         clock.Advance(TimeSpan.FromSeconds(31));
@@ -306,8 +306,8 @@ public class LiveStateTests
         //arrange - "gone" stops heartbeating; "online" keeps going
         var clock = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var live = await TestLiveState.CreateAsync(clock: clock);
-        var online = await live.RegisterAgentAsync("online", [], "1", null, CancellationToken.None);
-        var gone = await live.RegisterAgentAsync("gone", [], "1", null, CancellationToken.None);
+        var online = await live.RegisterAgentAsync(null, "online", [], "1", null, CancellationToken.None);
+        var gone = await live.RegisterAgentAsync(null, "gone", [], "1", null, CancellationToken.None);
         clock.Advance(TimeSpan.FromMinutes(5));
         await live.AgentHeartbeatAsync(online, CancellationToken.None);
         await live.SweepAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
@@ -332,7 +332,7 @@ public class LiveStateTests
         //arrange - the sweep marks it offline and its runs lost, so make a run in flight afterwards
         var clock = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var live = await TestLiveState.CreateAsync(clock: clock);
-        var agentId = await live.RegisterAgentAsync("a", [], "1", null, CancellationToken.None);
+        var agentId = await live.RegisterAgentAsync(null, "a", [], "1", null, CancellationToken.None);
         clock.Advance(TimeSpan.FromMinutes(5));
         await live.SweepAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
         live.TryGetAgent(agentId)!.Status.Should().Be("Offline");
@@ -431,11 +431,116 @@ public class LiveStateTests
         return pipeline.Id;
     }
 
+    [Test]
+    public async Task An_agent_that_registers_again_with_its_id_is_the_same_agent_with_its_tags_kept()
+    {
+        //arrange
+        var live = await TestLiveState.CreateAsync();
+        var first = await live.RegisterAgentAsync(null, "container-1", ["linux"], "1", null, CancellationToken.None);
+        await live.SetAgentTagsAsync(first, ["gpu"], CancellationToken.None);
+        using var changes = live.Subscribe();
+
+        //act
+        var second = await live.RegisterAgentAsync(first, "container-2", ["linux", "arm"], "2", null, CancellationToken.None);
+
+        //assert
+        second.Should().Be(first);
+        var agents = await live.ListAgentsAsync(CancellationToken.None);
+        var agent = agents.Should().ContainSingle().Subject;
+        (agent.MachineName, agent.Version, agent.Status).Should().Be(("container-2", "2", "Online"));
+        agent.AssignedTags.Should().Equal("gpu");
+        agent.Tags.Should().BeEquivalentTo(["linux", "arm", "gpu"], "what it reports plus what a user gave it");
+        (await changes.NextAsync(TimeSpan.FromSeconds(1), CancellationToken.None)).Should().Contain(new LiveChange(LiveChangeKind.Agent, first));
+    }
+
+    [Test]
+    public async Task An_agent_that_does_not_bring_an_id_gets_a_new_one_each_time()
+    {
+        var live = await TestLiveState.CreateAsync();
+
+        var first = await live.RegisterAgentAsync(null, "a", [], "1", null, CancellationToken.None);
+        var second = await live.RegisterAgentAsync(null, "a", [], "1", null, CancellationToken.None);
+
+        second.Should().NotBe(first);
+        (await live.ListAgentsAsync(CancellationToken.None)).Should().HaveCount(2);
+    }
+
+    [Test]
+    public async Task Tags_given_to_an_agent_are_listed_with_the_ones_it_reports_and_announced_and_queued_for_the_database()
+    {
+        //arrange
+        var live = await TestLiveState.CreateAsync();
+        var agentId = await live.RegisterAgentAsync(null, "a", ["linux", "GPU"], "1", null, CancellationToken.None);
+        using var changes = live.Subscribe();
+        var pending = live.PendingEventCount;
+
+        //act
+        var set = await live.SetAgentTagsAsync(agentId, ["gpu", "eu"], CancellationToken.None);
+        var unknown = await live.SetAgentTagsAsync(Guid.NewGuid(), ["x"], CancellationToken.None);
+
+        //assert
+        set.Should().BeTrue();
+        unknown.Should().BeFalse();
+        var agent = live.TryGetAgent(agentId)!;
+        agent.AssignedTags.Should().Equal("gpu", "eu");
+        agent.Tags.Should().Equal(["linux", "GPU", "eu"], "the same tag in a different case is one tag");
+        live.PendingEventCount.Should().Be(pending + 1);
+        (await changes.NextAsync(TimeSpan.FromSeconds(1), CancellationToken.None)).Should().Contain(new LiveChange(LiveChangeKind.Agent, agentId));
+    }
+
+    [Test]
+    public async Task What_a_user_gave_an_agent_comes_back_after_a_restart_and_goes_when_it_is_removed()
+    {
+        //arrange
+        await using var database = await TestDatabase.CreateAsync();
+        var live = await TestLiveState.CreateAsync();
+        var kept = await live.RegisterAgentAsync(null, "kept", [], "1", null, CancellationToken.None);
+        var removed = await live.RegisterAgentAsync(null, "removed", [], "1", null, CancellationToken.None);
+        await live.SetAgentTagsAsync(kept, ["gpu"], CancellationToken.None);
+        await live.SetAgentTagsAsync(removed, ["gpu"], CancellationToken.None);
+        await live.SweepAsync(TimeSpan.Zero, CancellationToken.None);
+        await live.RemoveAgentAsync(removed, CancellationToken.None);
+
+        //act - what is queued is written; a restarted server loads it
+        await database.ReadAsync(async context => await LiveEventWriter.WriteAsync(context, live.DrainPendingEvents(), CancellationToken.None));
+        var restarted = await database.ReadAsync(async context => await TestLiveState.CreateAsync(context));
+
+        //assert
+        restarted.TryGetAgent(kept)!.AssignedTags.Should().Equal("gpu");
+        restarted.TryGetAgent(removed).Should().BeNull();
+
+        // and a removed agent that comes back is a fresh start
+        await restarted.RegisterAgentAsync(removed, "removed", [], "1", null, CancellationToken.None);
+        restarted.TryGetAgent(removed)!.AssignedTags.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task The_load_of_each_agent_is_its_tags_and_the_runs_it_has_going()
+    {
+        //arrange
+        var live = await TestLiveState.CreateAsync();
+        var busy = await live.RegisterAgentAsync(null, "busy", ["linux"], "1", null, CancellationToken.None);
+        var idle = await live.RegisterAgentAsync(null, "idle", [], "1", null, CancellationToken.None);
+        await live.SetAgentTagsAsync(idle, ["gpu"], CancellationToken.None);
+        await live.CreateRunAsync(Guid.NewGuid(), "p", "Pkg", "1", busy, [], CancellationToken.None);
+        var done = await live.CreateRunAsync(Guid.NewGuid(), "p", "Pkg", "1", busy, [], CancellationToken.None);
+        await live.FinishRunAsync(done, "Succeeded", 0, 1, 1, 0, CancellationToken.None);
+
+        //act
+        var loads = (await live.AgentLoadsAsync(CancellationToken.None)).ToDictionary(load => load.Id);
+
+        //assert
+        loads[busy].Should().BeEquivalentTo(new AgentLoad(busy, ["linux"], 1));
+        loads[idle].Should().BeEquivalentTo(new AgentLoad(idle, ["gpu"], 0));
+        live.IsKnownAgent(busy).Should().BeTrue();
+        live.IsKnownAgent(Guid.NewGuid()).Should().BeFalse();
+    }
+
     private static async Task<Guid> SeedAgentAsync(ServerDbContext context, string name = "agent-01")
     {
         var agent = new Database.Entities.Agent
         {
-            Id = Guid.NewGuid(), MachineName = name, Tags = [], Version = "1.0.0", Status = "Online", LastHeartbeatAt = DateTime.UtcNow,
+            Id = Guid.NewGuid(), MachineName = name, Tags = [], AssignedTags = [], Version = "1.0.0", Status = "Online", LastHeartbeatAt = DateTime.UtcNow,
         };
         context.Agents.Add(agent);
         await context.SaveChangesAsync();

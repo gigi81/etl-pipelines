@@ -23,10 +23,14 @@ Run the stack only on a network you trust.
 
 ## Scheduling and agents
 
-- **Agent selection only looks at installs.** `ExecutePipeline` prefers a connected agent the Server
-  knows has the package version (it installed it, or ran it, since connecting); otherwise any connected
-  agent takes it. `InstallPackage` goes to any connected agent. `Agent:Tags` are recorded but not used,
-  and load is not taken into account.
+- **Agent selection.** `ExecutePipeline` sends a run to a connected agent the pipeline is allowed on
+  (see [Which agent runs a pipeline](webui.md#which-agent-runs-a-pipeline): any, unless tags or agents
+  were chosen), the one with the fewest runs going, and among equals one the Server knows has the
+  package version. It is the load the Server sees, not the machine's: nothing measures CPU or memory when
+  choosing. `InstallPackage` goes to any connected agent, whatever a pipeline is assigned to.
+- **An agent is its cache directory.** The id an agent keeps lives in `Agent:CacheDirectory`, so two
+  agents sharing one cache directory are the same agent to the Server and only one of them is sent work.
+  Give each agent its own.
 - **Installs are per agent.** An agent that receives a run for a package version it does not have
   installs it from the feed before running it, so the first run on a new agent takes longer. Agent
   replicas that share one `agent-cache` volume (as `docker compose up --scale agent=N` does) see each

@@ -87,7 +87,7 @@ public class ManagementServiceImplTests
         var agentGuid = Guid.NewGuid();
         context.Agents.Add(new Database.Entities.Agent
         {
-            Id = agentGuid, MachineName = "agent-01", Tags = [], Version = "1.0.0", Status = "Online", LastHeartbeatAt = DateTime.UtcNow,
+            Id = agentGuid, MachineName = "agent-01", Tags = [], AssignedTags = [], Version = "1.0.0", Status = "Online", LastHeartbeatAt = DateTime.UtcNow,
         });
         await context.SaveChangesAsync();
         context.ChangeTracker.Clear();
@@ -417,11 +417,11 @@ public class ManagementServiceImplTests
         var heartbeat = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
         context.Agents.Add(new Database.Entities.Agent
         {
-            Id = onlineId, MachineName = "agent-01", Tags = ["linux", "gpu"], Version = "1.2.3", Status = "Online", LastHeartbeatAt = heartbeat,
+            Id = onlineId, MachineName = "agent-01", Tags = ["linux", "gpu"], AssignedTags = [], Version = "1.2.3", Status = "Online", LastHeartbeatAt = heartbeat,
         });
         context.Agents.Add(new Database.Entities.Agent
         {
-            Id = Guid.NewGuid(), MachineName = "agent-02", Tags = [], Version = "1.2.3", Status = "Offline", LastHeartbeatAt = heartbeat,
+            Id = Guid.NewGuid(), MachineName = "agent-02", Tags = [], AssignedTags = [], Version = "1.2.3", Status = "Offline", LastHeartbeatAt = heartbeat,
         });
         await context.SaveChangesAsync();
         context.ChangeTracker.Clear();
@@ -558,7 +558,7 @@ public class ManagementServiceImplTests
         var id = Guid.NewGuid();
         context.Agents.Add(new Database.Entities.Agent
         {
-            Id = id, MachineName = "agent", Tags = [], Version = "1.0.0", Status = "Online", LastHeartbeatAt = DateTime.UtcNow,
+            Id = id, MachineName = "agent", Tags = [], AssignedTags = [], Version = "1.0.0", Status = "Online", LastHeartbeatAt = DateTime.UtcNow,
         });
         await context.SaveChangesAsync();
         context.ChangeTracker.Clear();

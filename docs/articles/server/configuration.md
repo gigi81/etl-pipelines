@@ -25,8 +25,9 @@ The defaults in each project's `appsettings.json` are the ones the compose netwo
 | Key | Default | |
 |---|---|---|
 | `Agent:ServerUrl` | `http://server:5000` | Where `AgentService` is reachable. |
-| `Agent:CacheDirectory` | `/var/lib/etlpipelines/agent-cache` | Where packages are installed, as `<CacheDirectory>/<packageId>/<version>`. |
-| `Agent:Tags` | `[]` | Free-form tags the agent registers with. They are recorded but not yet used to choose an agent. |
+| `Agent:CacheDirectory` | `/var/lib/etlpipelines/agent-cache` | Where packages are installed, as `<CacheDirectory>/<packageId>/<version>`. It also holds the file `agent-id`, the id the Server gave this agent, so a restart registers as the same agent: see [Operations](operations.md#agent-identity). |
+| `Agent:Name` | the machine name | How the WebUI names this agent. In Docker the machine name is the container id, which changes whenever the container is recreated; set a name to keep it stable (the compose file sets `docker-agent`). |
+| `Agent:Tags` | `[]` | Free-form tags the agent registers with, such as `linux` or `gpu`. A pipeline can be assigned to agents by tag (see [the WebUI](webui.md#which-agent-runs-a-pipeline)). More tags can be given to an agent in the WebUI; these are reported again at every start. |
 | `Agent:CacheSizeCapBytes` | `5368709120` (5 GiB) | Once the cache is larger than this, the least recently used package versions are deleted until it fits. |
 | `Agent:CacheEvictionInterval` | `00:30:00` | How often the cache is checked against its cap. |
 | `Agent:ResourceSampleInterval` | `00:00:15` | How often a running pipeline process's CPU and working set are sampled and reported to the Server. |

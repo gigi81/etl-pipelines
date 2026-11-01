@@ -5,6 +5,7 @@ import type {
   InstallResult,
   PackagesResponse,
   Pipeline,
+  PipelineAssignment,
   RunDetail,
   RunSummary,
   UploadedPackage,
@@ -50,6 +51,20 @@ export const api = {
   },
   run: (runId: string) => request<RunDetail>(`/api/runs/${runId}`),
   agents: () => request<Agent[]>('/api/agents'),
+  /** Replaces the tags a user gave the agent; the ones it reports about itself are not affected. */
+  setAgentTags: (id: string, tags: string[]) =>
+    request<void>(`/api/agents/${id}/tags`, {
+      method: 'PUT',
+      body: JSON.stringify({ tags }),
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  /** Which agents may run the pipeline; both lists empty means any agent. */
+  setAssignment: (pipelineId: string, assignment: PipelineAssignment) =>
+    request<void>(`/api/pipelines/${pipelineId}/assignment`, {
+      method: 'PUT',
+      body: JSON.stringify(assignment),
+      headers: { 'Content-Type': 'application/json' },
+    }),
   removeAgent: (id: string) => request<void>(`/api/agents/${id}`, { method: 'DELETE' }),
   /** An empty name goes back to the pipeline's own. */
   setDisplayName: (pipelineId: string, displayName: string) =>

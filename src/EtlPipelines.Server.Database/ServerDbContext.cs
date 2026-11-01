@@ -26,6 +26,10 @@ public partial class ServerDbContext : DbContext
 
     public virtual DbSet<Pipeline> Pipelines { get; set; }
 
+    public virtual DbSet<PipelineAgent> PipelineAgents { get; set; }
+
+    public virtual DbSet<PipelineAgentTag> PipelineAgentTags { get; set; }
+
     public virtual DbSet<PipelineDisplayName> PipelineDisplayNames { get; set; }
 
     public virtual DbSet<Run> Runs { get; set; }
@@ -39,6 +43,7 @@ public partial class ServerDbContext : DbContext
             entity.HasKey(e => e.Id).HasName("Agents_pkey");
 
             entity.Property(e => e.Id).ValueGeneratedNever();
+            entity.Property(e => e.AssignedTags).HasDefaultValueSql("'{}'::text[]");
             entity.Property(e => e.Info).HasColumnType("jsonb");
             entity.Property(e => e.Tags).HasDefaultValueSql("'{}'::text[]");
         });
@@ -119,6 +124,26 @@ public partial class ServerDbContext : DbContext
                 .HasForeignKey(d => d.PackageVersionId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_Pipelines_PackageVersions");
+        });
+
+        modelBuilder.Entity<PipelineAgent>(entity =>
+        {
+            entity.HasKey(e => new { e.PackageId, e.PipelineName, e.AgentId }).HasName("PipelineAgents_pkey");
+
+            entity.HasOne(d => d.Package).WithMany(p => p.PipelineAgents)
+                .HasForeignKey(d => d.PackageId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_PipelineAgents_Packages");
+        });
+
+        modelBuilder.Entity<PipelineAgentTag>(entity =>
+        {
+            entity.HasKey(e => new { e.PackageId, e.PipelineName, e.Tag }).HasName("PipelineAgentTags_pkey");
+
+            entity.HasOne(d => d.Package).WithMany(p => p.PipelineAgentTags)
+                .HasForeignKey(d => d.PackageId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_PipelineAgentTags_Packages");
         });
 
         modelBuilder.Entity<PipelineDisplayName>(entity =>

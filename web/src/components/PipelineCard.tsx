@@ -1,10 +1,13 @@
 import { ActionIcon, Badge, Button, Card, Group, Menu, Stack, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconDots, IconEdit, IconHistory, IconPackage, IconPlayerPlay, IconTrash } from '@tabler/icons-react';
+import { IconAlertTriangle, IconDots, IconEdit, IconHistory, IconPackage, IconPlayerPlay, IconServer, IconTrash } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
+import { useAgents } from '../api/hooks';
 import type { Pipeline } from '../api/types';
+import { describeAssignment, eligibleAgents, isAnyAgent } from '../lib/assignment';
 import { formatRelative } from '../lib/format';
 import { pipelineLabel } from '../lib/pipelineLabels';
+import { AssignAgentsModal } from './AssignAgentsModal';
 import { ClearHistoryModal } from './ClearHistoryModal';
 import { RenamePipelineModal } from './RenamePipelineModal';
 import { StatusBadge } from './StatusBadge';
@@ -23,6 +26,11 @@ export function PipelineCard({
 }) {
   const [renaming, rename] = useDisclosure();
   const [clearing, clear] = useDisclosure();
+  const [assigning, assign] = useDisclosure();
+  const { data: agents = [] } = useAgents();
+  const restricted = !isAnyAgent(pipeline.assignment);
+  // Only meaningful once the agents are loaded: until then nothing is known to be missing.
+  const nobodyOnline = restricted && agents.length > 0 && !eligibleAgents(pipeline.assignment, agents).some((agent) => agent.status === 'Online');
 
   return (
     <Card withBorder padding="lg" radius="md">
@@ -51,6 +59,9 @@ export function PipelineCard({
                   <Menu.Item leftSection={<IconEdit size={16} />} onClick={rename.open}>
                     Rename
                   </Menu.Item>
+                  <Menu.Item leftSection={<IconServer size={16} />} onClick={assign.open}>
+                    Choose agents...
+                  </Menu.Item>
                   <Menu.Item component={Link} to={`/packages?search=${encodeURIComponent(pipeline.packageId)}`} leftSection={<IconPackage size={16} />}>
                     Go to the package
                   </Menu.Item>
@@ -70,6 +81,19 @@ export function PipelineCard({
           <Text size="sm" c="dimmed">
             {pipeline.packageId} {pipeline.packageVersion}
           </Text>
+          {restricted && (
+            <Group gap={4} wrap="nowrap" mt={2}>
+              {nobodyOnline ? <IconAlertTriangle size={14} color="var(--mantine-color-orange-6)" /> : <IconServer size={14} />}
+              <Text
+                size="xs"
+                c={nobodyOnline ? 'orange' : 'dimmed'}
+                truncate
+                title={nobodyOnline ? 'No agent that may run it is online' : 'The agents that may run it'}
+              >
+                Runs on: {describeAssignment(pipeline.assignment, agents)}
+              </Text>
+            </Group>
+          )}
         </div>
 
         <Group gap="xs" mih={24}>
@@ -96,6 +120,7 @@ export function PipelineCard({
       </Stack>
 
       <RenamePipelineModal pipeline={pipeline} opened={renaming} onClose={rename.close} />
+      <AssignAgentsModal pipeline={pipeline} opened={assigning} onClose={assign.close} />
       <ClearHistoryModal pipeline={pipeline} opened={clearing} onClose={clear.close} />
     </Card>
   );

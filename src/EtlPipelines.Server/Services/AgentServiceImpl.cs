@@ -32,7 +32,17 @@ public sealed class AgentServiceImpl(
     /// <inheritdoc />
     public override async Task<RegisterAgentResponse> RegisterAgent(RegisterAgentRequest request, ServerCallContext context)
     {
+        // An agent that has registered before brings the id it was given, and is then the same agent.
+        Guid? requestedId = null;
+        if (request.AgentId.Length > 0)
+        {
+            requestedId = Guid.TryParse(request.AgentId, out var parsed) && parsed != Guid.Empty
+                ? parsed
+                : throw new RpcException(new Status(StatusCode.InvalidArgument, $"'{request.AgentId}' is not a valid agent id."));
+        }
+
         var agentId = await liveState.RegisterAgentAsync(
+            requestedId,
             request.MachineName,
             request.Tags.ToList(),
             request.Version,

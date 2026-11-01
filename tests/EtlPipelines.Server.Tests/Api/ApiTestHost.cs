@@ -188,14 +188,15 @@ internal sealed class ApiTestHost : IAsyncDisposable
         return pipeline.Id;
     }
 
-    public async Task<Guid> SeedAgentAsync(string machineName = "agent-01", string status = "Online", DateTime? startedAt = null)
+    public async Task<Guid> SeedAgentAsync(
+        string machineName = "agent-01", string status = "Online", DateTime? startedAt = null, string[]? tags = null)
     {
         await using var context = NewContext();
         var agent = new Database.Entities.Agent
         {
             Id = Guid.NewGuid(),
             MachineName = machineName,
-            Tags = ["linux"],
+            Tags = [.. tags ?? ["linux"]], AssignedTags = [],
             Version = "1.2.3",
             Status = status,
             LastHeartbeatAt = DateTime.UtcNow,

@@ -105,7 +105,7 @@ public class AgentLivenessMonitorTests
         var agentId = Guid.NewGuid();
         context.Agents.Add(new Database.Entities.Agent
         {
-            Id = agentId, MachineName = "agent-01", Tags = [], Version = "1.0.0", Status = "Online", LastHeartbeatAt = now.UtcDateTime - heartbeatAge,
+            Id = agentId, MachineName = "agent-01", Tags = [], AssignedTags = [], Version = "1.0.0", Status = "Online", LastHeartbeatAt = now.UtcDateTime - heartbeatAge,
         });
 
         var runId = Guid.NewGuid();

@@ -101,6 +101,7 @@ public class ServerDbContextTests
             Id = agentId,
             MachineName = "agent-01",
             Tags = ["linux", "gpu"],
+            AssignedTags = ["eu-west"],
             Version = "1.0.0",
             Status = "Online",
             LastHeartbeatAt = DateTime.UtcNow,
@@ -112,8 +113,33 @@ public class ServerDbContextTests
         var reloaded = await context.Agents.SingleAsync(agent => agent.Id == agentId);
 
         //assert
-        reloaded.Tags.Should().BeEquivalentTo(["linux", "gpu"]);
+        reloaded.Tags.Should().BeEquivalentTo(["linux", "gpu"], "what the agent reports about itself");
+        reloaded.AssignedTags.Should().BeEquivalentTo(["eu-west"], "what a user gave it, kept apart from the above");
         reloaded.Status.Should().Be("Online");
+    }
+
+    [Test]
+    public async Task Where_a_pipeline_may_run_is_kept_per_package_and_pipeline_name_as_tags_and_agent_ids()
+    {
+        //arrange
+        await using var context = await SeedPipelineAsync();
+        var packageId = await context.Packages.Select(package => package.Id).SingleAsync();
+        var pipelineName = await context.Pipelines.Select(pipeline => pipeline.Name).FirstAsync();
+        var agentId = Guid.NewGuid();
+
+        context.PipelineAgentTags.AddRange(
+            new PipelineAgentTag { PackageId = packageId, PipelineName = pipelineName, Tag = "gpu" },
+            new PipelineAgentTag { PackageId = packageId, PipelineName = pipelineName, Tag = "eu" });
+        context.PipelineAgents.Add(new PipelineAgent { PackageId = packageId, PipelineName = pipelineName, AgentId = agentId });
+
+        //act
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        //assert
+        (await context.PipelineAgentTags.Where(row => row.PipelineName == pipelineName).Select(row => row.Tag).ToListAsync())
+            .Should().BeEquivalentTo(["gpu", "eu"]);
+        (await context.PipelineAgents.SingleAsync()).AgentId.Should().Be(agentId, "the agent need not be in Agents yet: it may not have been written");
     }
 
     [Test]

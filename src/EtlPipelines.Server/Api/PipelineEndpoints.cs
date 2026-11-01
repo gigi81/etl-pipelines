@@ -1,15 +1,17 @@
 using EtlPipelines.Server.Contracts;
 using EtlPipelines.Server.Database;
 using EtlPipelines.Server.Database.Entities;
+using EtlPipelines.Server.Agents;
 using EtlPipelines.Server.Live;
+using EtlPipelines.Server.Runs;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 
 namespace EtlPipelines.Server.Api;
 
 /// <summary>
-/// What can be done to one pipeline, beyond running it: giving it a display name, and clearing its
-/// history. (Listing and running are in <see cref="ApiEndpoints"/>.)
+/// What can be done to one pipeline, beyond running it: giving it a display name, choosing which agents may
+/// run it, and clearing its history. (Listing and running are in <see cref="ApiEndpoints"/>.)
 /// </summary>
 internal static class PipelineEndpoints
 {
@@ -20,6 +22,7 @@ internal static class PipelineEndpoints
     public static void Map(RouteGroupBuilder api)
     {
         api.MapPut("/pipelines/{pipelineId:guid}/display-name", SetDisplayNameAsync);
+        api.MapPut("/pipelines/{pipelineId:guid}/assignment", SetAssignmentAsync);
         api.MapDelete("/pipelines/{pipelineId:guid}/runs", ClearHistoryAsync);
     }
 
@@ -78,6 +81,46 @@ internal static class PipelineEndpoints
         }
 
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // Everyone showing the pipelines list refetches it.
+        live.PipelinesChanged();
+        return TypedResults.NoContent();
+    }
+
+    /// <summary>
+    /// Sets which agents may run a pipeline: those with any of the tags, and those named. Nothing at all
+    /// means any agent. Kept per (package, name), so it survives the package being updated.
+    /// </summary>
+    private static async Task<Results<NoContent, ProblemHttpResult>> SetAssignmentAsync(
+        Guid pipelineId, PipelineAssignmentDto body, ServerDbContext db, LiveState live, CancellationToken cancellationToken)
+    {
+        var pipeline = await db.Pipelines
+            .AsNoTracking()
+            .Where(candidate => candidate.Id == pipelineId)
+            .Select(candidate => new { candidate.Name, candidate.PackageVersion.PackageId })
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (pipeline is null)
+        {
+            return TypedResults.Problem(detail: $"No pipeline '{pipelineId}' is known to this server.", statusCode: StatusCodes.Status404NotFound);
+        }
+
+        if (!TagNames.TryNormalize(body.Tags, out var tags, out var error))
+        {
+            return TypedResults.Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var agentIds = (body.AgentIds ?? []).Distinct().ToList();
+        var unknown = agentIds.Where(id => !live.IsKnownAgent(id)).ToList();
+        if (unknown.Count > 0)
+        {
+            return TypedResults.Problem(
+                detail: $"No such agent: {string.Join(", ", unknown)}. It may have been removed.", statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        await PipelineAssignmentStore.SaveAsync(db, pipeline.PackageId, pipeline.Name, new PipelineAssignment(tags, agentIds), cancellationToken)
+            .ConfigureAwait(false);
 
         // Everyone showing the pipelines list refetches it.
         live.PipelinesChanged();

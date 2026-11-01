@@ -30,12 +30,15 @@ these is in [docs/articles/server/limitations.md](docs/articles/server/limitatio
 - [x] **Install-aware agent selection.** `ExecutePipeline` prefers an agent known to have the version
   (tracked in memory per connection), and an agent without it installs it on demand from the feed
   URLs the work item now carries.
-- [ ] **Use `Agents.Tags` for selection.** Tags are recorded at registration and never used.
+- [x] **Use tags for selection.** Agents have tags (reported by `Agent:Tags`, plus ones given in the WebUI), and
+  a pipeline can be assigned to tags and/or named agents; a run goes to the least busy allowed agent.
+  Not done: `InstallPackage` still goes to any connected agent, assignments are "any of" (no "all of"
+  or exclusions), and load means runs in flight, not CPU or memory.
 - [ ] **Concurrent work items per agent.** `AgentRegistration` handles its `Subscribe` stream one
   item at a time, so a long run blocks installs, which time out after 5 minutes, and other runs.
-- [ ] **In-process reconnect.** A dropped `Subscribe` stream ends the agent process, which relies on
-  `restart: unless-stopped` to come back as a new registration. Reconnect instead, keeping the
-  same agent id.
+- [ ] **In-process reconnect.** A dropped `Subscribe` stream (a Server restart, say) ends the agent process,
+  which relies on `restart: unless-stopped` to start again - as the same agent, since it keeps its id in
+  `agent-cache`. Reconnect in the same process instead.
 - [ ] **Per-run liveness.** `PipelineExecutionService.Heartbeat` records nothing, so a hung pipeline
   process on a healthy agent stays `Running` forever. It needs a column (e.g.
   `Runs.LastHeartbeatAt`) and a sweep like `AgentLivenessMonitor`'s.

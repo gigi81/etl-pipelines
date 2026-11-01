@@ -20,7 +20,7 @@ and tooling surface.
 | `ExecutePipeline(pipeline_id)` | ✅ | Creates a run, dispatches it to a connected agent, and returns its `run_id` at once, without waiting for the run to finish. |
 | `StreamRunProgress(run_id)` | ✅ | A server stream of `StageCompleted` events, then one `RunCompleted`, after which the stream ends. Every stage the run has already completed is sent first, so subscribing late loses nothing. Served from the Server's in-memory state; a finished run older than an hour (no longer held there) is answered from `Runs` and `StageResults`. `NOT_FOUND` for a `run_id` the Server has no record of. |
 | `SetConfigurationEntry(key, value)` | ✅ | Creates or replaces one encrypted configuration entry. See [Configuration](configuration.md#pipeline-configuration-entries). |
-| `ListAgents()` | ✅ | Every agent that has ever registered (from the in-memory state), with its tags, version, `ONLINE`/`OFFLINE` status and last heartbeat. A restarted agent registers again under a new id, so its old registration stays listed as `OFFLINE`. |
+| `ListAgents()` | ✅ | Every agent that has ever registered (from the in-memory state), with its tags (reported and given), version, `ONLINE`/`OFFLINE` status and last heartbeat. An agent that registers again with its id is the same agent, so a restart does not add one; an old agent that is gone for good can be removed from the WebUI. |
 | `UninstallPackage(package_id)` | ✅ | Every installed version of the package stops being listed by `ListInstalledPipelines` and can no longer be executed (`FAILED_PRECONDITION`). Runs already in flight finish; agents' copies are left to cache eviction. `NOT_FOUND` if no version is installed. `InstallPackage` brings a version back. |
 | `UpdatePackage(package_id)` | ✅ | Installs the feed's latest stable version on a connected agent, then retires every older installed version, so the package's pipelines are listed and run at the new version only. Runs already in flight are not interrupted. Already on the latest version, it only retires the older ones and needs no agent. `FAILED_PRECONDITION` if the package is not installed. |
 
@@ -53,7 +53,7 @@ call it.
 
 | RPC | What it does |
 |---|---|
-| `RegisterAgent(machine_name, tags, version)` | Creates the `Agents` row and returns the agent's id. An agent registers once each time it starts. |
+| `RegisterAgent(machine_name, tags, version, host_info, agent_id)` | Returns the agent's id. An agent registers once each time it starts. With no `agent_id` (its first start, or an older agent) the Server issues a new one; with the `agent_id` the agent was issued before, it is the same agent starting over: its row is updated in place, keeping the tags a user gave it and the runs it carried out (`INVALID_ARGUMENT` if the id is not a GUID). The agent keeps the id in a file in its cache directory. |
 | `Heartbeat(agent_id)` | Updates `Agents.LastHeartbeatAt`. Agents call it every 10 seconds, and it is what the liveness sweep watches. |
 | `Subscribe(agent_id)` | A long-lived server stream of `WorkItem`s, each either an `InstallPackageWorkItem` or an `ExecutePipelineWorkItem`. The agent counts as connected, and can be dispatched to, for as long as this stream is open. |
 | `ReportInstallResult(work_item_id, succeeded, pipeline_names, error)` | Resolves a pending `InstallPackage`. |
